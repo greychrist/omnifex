@@ -1,17 +1,4 @@
 // @vitest-environment node
-//
-// The control-protocol passthrough layer (sessions/queries.ts).
-//
-// Every method here but setPermissionMode swallows engine errors and reports
-// null/[] so a CLI hiccup can't crash the IPC layer. That is the right posture and also the
-// reason this file went untested for so long: when it breaks, nothing says
-// so. The `logControl` rows in app_logs are the ONLY trace a mid-session
-// setting change left, which is exactly why the "silently no-op" bugs
-// (effort / permission / model) were so hard to find the first time.
-//
-// So the assertions here are deliberately about the two things that are
-// invisible at runtime: which control_request went out with which payload,
-// and what got written to the log when one didn't.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -55,7 +42,6 @@ function handle(engine: AgentEngine, launchMode = 'default'): SessionHandle {
   } as unknown as SessionHandle;
 }
 
-/** Captures what would have been persisted to app_logs. */
 function createLogging() {
   const rows: Record<string, unknown>[] = [];
   const logging = {
@@ -63,7 +49,6 @@ function createLogging() {
       rows.push(...batch);
     }),
   } as unknown as LoggingService;
-  /** The parsed `metadata` blob of the nth control row. */
   const meta = (n = 0) => JSON.parse(rows[n].metadata as string) as Record<string, unknown>;
   return { logging, rows, meta };
 }
@@ -71,7 +56,6 @@ function createLogging() {
 function setup(opts: {
   engine?: AgentEngine;
   registered?: boolean;
-  /** The `--permission-mode` the CLI was spawned with. */
   launchMode?: string;
   inspectMod?: import('../services/sessions/mods').ModInspector;
 } = {}) {
@@ -92,10 +76,6 @@ beforeEach(() => {
   vi.useRealTimers();
 });
 
-// ---------------------------------------------------------------------------
-// liveEngine: the gate every control_request passes through
-// ---------------------------------------------------------------------------
-
 describe('live-engine gating', () => {
   it('treats an unknown tab as having no live engine', async () => {
     const { q, meta } = setup({ registered: false });
@@ -103,10 +83,6 @@ describe('live-engine gating', () => {
     expect(meta().reason).toBe('no-live-engine');
   });
 });
-
-// ---------------------------------------------------------------------------
-// Control requests — wire subtype + payload
-// ---------------------------------------------------------------------------
 
 describe('setModel', () => {
   it('sends set_model and logs the round trip', async () => {
@@ -117,8 +93,7 @@ describe('setModel', () => {
     expect(meta()).toMatchObject({ op: 'set_model', ok: true, model: 'claude-opus-5' });
   });
 
-  // An undefined model is "use the account default" — the CLI reads the
-  // absent key, so it must still go out rather than being short-circuited.
+  // An undefined model means the account default: the CLI reads the absent key.
   it('sends an undefined model rather than skipping the request', async () => {
     const { engine, calls } = createEngine();
     const { q } = setup({ engine });
@@ -126,9 +101,7 @@ describe('setModel', () => {
     expect(calls).toEqual([{ subtype: 'set_model', payload: { model: undefined } }]);
   });
 
-  // Since 2.1.307 the CLI waits up to 15 s for the API to confirm the model
-  // before refusing. The registry's 10 s default would log a failure for a
-  // switch the CLI then applied.
+  // Since 2.1.307 the CLI waits up to 15 s for the API to confirm a model.
   it('waits longer than the CLI does for the model confirmation', async () => {
     const { engine } = createEngine();
     const { q } = setup({ engine });
@@ -137,8 +110,6 @@ describe('setModel', () => {
     expect(opts?.timeoutMs).toBeGreaterThan(15_000);
   });
 
-  // Swallowing the error made both renderer fallbacks dead: the picker never
-  // rolled back a refused model, and useSendPrompt never restarted.
   it('logs and rethrows the engine error so the caller can roll back', async () => {
     const { engine } = createEngine({
       control: () => {
@@ -164,15 +135,8 @@ describe('setModel', () => {
   });
 });
 
-// The CLI persists a rename as a `custom-title` record and lets it outrank
-// the `ai-title` it generated itself, so this request — not a write of our
-// own into its transcript — is what makes a rename official. `source: 'host'`
-// is the CLI's own name for "the user renamed it in the hosting app", which
-// is exactly what the pencil in the status bar is.
-// Naming is user-triggered: the CLI stopped auto-naming stdin-driven sessions
-// in 2.1.277, and Greg does not want a model call fired on his behalf. The
-// Suggest button asks for a name and writes NOTHING (`persist: false`); the
-// user saves it through the ordinary rename path if they like it.
+// The CLI lets a `custom-title` outrank its own `ai-title`; `source: 'host'`
+// is its name for a rename made in the hosting app.
 describe('suggestTitle', () => {
   it('asks the CLI for a title without persisting it and returns the suggestion', async () => {
     const { engine, calls } = createEngine({ control: () => ({ title: 'Tomato watering schedule' }) });
@@ -214,9 +178,6 @@ describe('setTitle', () => {
     expect(meta()).toMatchObject({ op: 'rename_session', ok: true, title: 'Rate-limit spike' });
   });
 
-  // Unlike its neighbours, this one reports back. A rename that quietly did
-  // nothing would leave the pencil looking like it worked while the session
-  // kept its old name — the silent-no-op failure this file exists to catch.
   it('reports whether the rename actually went out', async () => {
     const { engine } = createEngine({ control: () => ({ ok: true }) });
     const live = setup({ engine });
@@ -238,9 +199,7 @@ describe('setTitle', () => {
     expect(meta()).toMatchObject({ ok: false, error: 'control channel closed' });
   });
 
-  // The CLI treats an empty custom title as "clear the rename", which would
-  // silently drop the session back to its generated name — never what the
-  // pencil meant. Trim here so the intent is decided in one place.
+  // The CLI treats an empty custom title as "clear the rename".
   it('trims the title and refuses a blank one', async () => {
     const { engine, calls } = createEngine();
     const { q } = setup({ engine });
@@ -265,10 +224,6 @@ describe('setPermissionMode', () => {
     expect(sessions.get('tab1')!.permissionMode).toBe('acceptEdits');
   });
 
-  // The decider reads the remembered mode on every permission request, so a
-  // mode the CLI refused must not stay remembered: OmniFex would auto-answer
-  // under a mode the CLI is not in. The restart path is unaffected — it
-  // relaunches from startParams, not from this field.
   it('rolls the remembered mode back and rejects when the request fails', async () => {
     const { engine } = createEngine({
       control: () => {
@@ -281,10 +236,8 @@ describe('setPermissionMode', () => {
     expect(meta()).toMatchObject({ op: 'set_permission_mode', ok: false, error: 'nope' });
   });
 
-  // The CLI only allows Bypass mid-session when it was spawned in Bypass
-  // (CLI 2.1.287: isBypassPermissionsModeAvailable = launch mode is bypass,
-  // or --allow-dangerously-skip-permissions, which OmniFex never passes).
-  // Refused here rather than sent, so the error names the way out.
+  // The CLI allows Bypass mid-session only when it was spawned in Bypass
+  // (2.1.287).
   it('refuses Bypass without asking the CLI when the session was not launched in it', async () => {
     const { engine, calls } = createEngine();
     const { q, sessions, meta } = setup({ engine, launchMode: 'acceptEdits' });
@@ -300,7 +253,6 @@ describe('setPermissionMode', () => {
     });
   });
 
-  // Launched in Bypass, it can leave and come back.
   it('sends Bypass when the session was launched in it', async () => {
     const { engine, calls } = createEngine();
     const { q, sessions } = setup({ engine, launchMode: 'bypassPermissions' });
@@ -325,11 +277,8 @@ describe('setEffort', () => {
     ]);
   });
 
-  // null and 'auto' both mean "back to the model's default". On the wire that
-  // is an explicit `effortLevel: null`: the CLI (2.1.281) clears the session
-  // effort on null and deletes the key from the flag layer. An absent key is
-  // nothing to apply — `{ effortLevel: undefined }` serialises to `{}`, which
-  // was how a reset silently did nothing.
+  // Reset is an explicit `effortLevel: null` (CLI 2.1.281 clears on null);
+  // `{ effortLevel: undefined }` serializes to `{}`.
   it.each([null, 'auto'] as const)('sends %s as an explicit effortLevel: null', async (level) => {
     const { engine, calls } = createEngine();
     const { q } = setup({ engine });
@@ -348,18 +297,12 @@ describe('setEffort', () => {
     expect(meta()).toMatchObject({ op: 'set_effort', ok: false, level: 'max', error: 'boom' });
   });
 
-  // The no-engine path logs rather than sending. This is the trace that was
-  // missing when mid-session effort changes silently did nothing.
   it('logs a no-live-engine miss instead of failing silently', async () => {
     const { q, meta } = setup({ registered: false });
     await q.setEffort('tab1', 'high');
     expect(meta()).toMatchObject({ op: 'set_effort', ok: false, reason: 'no-live-engine', level: 'high' });
   });
 });
-
-// ---------------------------------------------------------------------------
-// The two paths that tell the USER something went wrong
-// ---------------------------------------------------------------------------
 
 describe('interrupt', () => {
   it('forwards to the engine', async () => {
@@ -371,8 +314,6 @@ describe('interrupt', () => {
     expect(sent).toEqual([]);
   });
 
-  // A failed Stop is the one control error the user MUST see: the turn keeps
-  // running and burning tokens, and the UI would otherwise look merely slow.
   it('notifies the renderer when the interrupt fails', async () => {
     const { engine } = createEngine({
       interrupt: async () => {
@@ -394,9 +335,7 @@ describe('interrupt', () => {
 });
 
 describe('applyPermissions', () => {
-  // The CLI loads settings files only at session start, so a rule edited
-  // mid-session sits on disk unseen. apply_flag_settings shallow-merges the
-  // permissions key, so the FULL effective list has to go every time.
+  // The CLI loads settings files only at session start.
   it('pushes the full rule list into the live session', async () => {
     const { engine, calls } = createEngine();
     const { q } = setup({ engine });
@@ -407,8 +346,6 @@ describe('applyPermissions', () => {
     ]);
   });
 
-  // Also user-visible on failure: the rule IS saved, so silence would leave
-  // the user believing a rule is active while the session keeps prompting.
   it('warns the renderer that the rule reached disk but not the session', async () => {
     const { engine } = createEngine({
       control: () => {
@@ -424,10 +361,7 @@ describe('applyPermissions', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// init-data readers — these use the raw handle, NOT liveEngine, so they
-// answer on a TUI tab too
-// ---------------------------------------------------------------------------
+// Init-data readers use the raw handle, not liveEngine.
 
 describe('init-data readers', () => {
   const initData = {
@@ -532,10 +466,8 @@ describe('stopTask', () => {
   });
 });
 
-// 2.1.326: the person is typing in the host's composer. The CLI may use the
-// time between turns to get the next request ready. A hint, so it never
-// throws, never writes app_logs (it is sent every ~10 s while typing), and
-// stops going to a CLI that refused it once (older than 2.1.326).
+// 2.1.326's typing hint is sent every ~10 s, so it never throws or logs, and
+// stops after a CLI refuses it once.
 describe('promptDraftActivity', () => {
   it('sends prompt_draft_activity with no body', async () => {
     const { engine, calls } = createEngine({ control: () => undefined });
@@ -660,7 +592,6 @@ describe('getMcpServerStatus', () => {
     await expect(q.getMcpServerStatus('tab1')).resolves.toEqual([]);
   });
 
-  // A hung mcp_status must not hold the popover open forever.
   it('gives up after the 3s race and reports empty', async () => {
     vi.useFakeTimers();
     const { engine } = createEngine({ control: () => new Promise(() => {}) });
@@ -675,8 +606,6 @@ describe('getMcpServerStatus', () => {
 describe('getPlugins', () => {
   const plugins = { plugins: [{ name: 'superpowers', path: '/p/superpowers' }] };
 
-  // reload_plugins is side-effectful, so the result is cached per tab and
-  // only refreshed when the caller explicitly asks.
   it('caches after the first call', async () => {
     const { engine, calls } = createEngine({ control: () => plugins });
     const { q } = setup({ engine });
@@ -694,8 +623,6 @@ describe('getPlugins', () => {
     expect(calls).toHaveLength(2);
   });
 
-  // Eviction is called by lifecycle on session stop so entries don't
-  // accumulate for the life of the process.
   it('re-requests after the tab is evicted', async () => {
     const { engine, calls } = createEngine({ control: () => plugins });
     const { q } = setup({ engine });
@@ -711,8 +638,6 @@ describe('getPlugins', () => {
     await expect(q.getPlugins('tab1')).resolves.toEqual([]);
   });
 
-  // Both failure paths keep the last good answer rather than blanking the
-  // list — a transient reload must not look like "you have no plugins".
   it('falls back to the cached list when a forced reload errors', async () => {
     let fail = false;
     const { engine } = createEngine({
@@ -747,8 +672,8 @@ describe('getPlugins', () => {
     await expect(q.getPlugins('tab1')).resolves.toEqual([]);
   });
 
-  // reload_plugins re-runs every mod's session.start, so merely looking at
-  // the list must not send it. system:init already carries the list.
+  // reload_plugins re-runs every mod's session.start; system:init already
+  // carries the list.
   it('lists from the system:init payload without sending reload_plugins', async () => {
     const { engine, calls } = createEngine({ initData: { plugins: [{ name: 'superpowers', path: '/p/superpowers' }] } });
     const { q } = setup({ engine });
@@ -784,10 +709,6 @@ describe('getPlugins', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Optional collaborators
-// ---------------------------------------------------------------------------
-
 describe('optional deps', () => {
   it('works with no logging and no renderer wired', async () => {
     const { engine, calls } = createEngine();
@@ -798,8 +719,6 @@ describe('optional deps', () => {
     expect(calls).toHaveLength(1);
   });
 
-  // Logging is diagnostics. A failing logger must never take down the
-  // control request it was only observing.
   it('survives a logging service that throws', async () => {
     const { engine, calls } = createEngine();
     const sessions = new Map<string, SessionHandle>([['tab1', handle(engine)]]);
@@ -814,20 +733,8 @@ describe('optional deps', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// listPermissionRules — the read-back for applyPermissions
-// ---------------------------------------------------------------------------
-//
-// OmniFex pushes rules INTO a live session (applyPermissions -> flag_settings)
-// after reading the three settings files itself. Until CLI 2.1.269 there was
-// no way to read back what the session actually ended up with, so the
-// permissions panel showed a file-derived guess: `allow`/`deny` only, no
-// `ask`, no policy/managed rules, and no way to see that the push landed in
-// `flagSettings` as its own source rather than merging into the file sources.
-//
-// `list_permission_rules` is that read-back. It is READ-ONLY by contract
-// ("this request never changes rules"), so these tests pin that we send no
-// payload and mutate no handle state.
+// `list_permission_rules` (CLI >= 2.1.269) is read-only by contract: send no
+// payload, mutate no handle state.
 describe('listPermissionRules', () => {
   const state = {
     rules: [
@@ -848,8 +755,6 @@ describe('listPermissionRules', () => {
     expect(got).toEqual(state);
   });
 
-  // The whole point is surfacing what the file-derived view cannot: `ask`
-  // rules (permissions-io reads only allow/deny) and read-only policy rules.
   it('carries ask rules and non-file sources through', async () => {
     const { engine } = createEngine({ control: () => ({ state }) });
     const { q } = setup({ engine });
@@ -859,7 +764,7 @@ describe('listPermissionRules', () => {
   });
 
   // An older CLI answers "list_permission_rules is not available on this
-  // connection". That must degrade to the file view, not blank the panel.
+  // connection".
   it('returns null when the CLI rejects the request', async () => {
     const { engine } = createEngine({
       control: () => {
@@ -870,17 +775,12 @@ describe('listPermissionRules', () => {
     expect(await q.listPermissionRules('tab1')).toBeNull();
   });
 
-  // A success envelope with no `state` is malformed; treat it as no answer.
   it('returns null when the response carries no state', async () => {
     const { engine } = createEngine({ control: () => ({}) });
     const { q } = setup({ engine });
     expect(await q.listPermissionRules('tab1')).toBeNull();
   });
 });
-
-// ---------------------------------------------------------------------------
-// Side chat — the CLI's /btw over side_question
-// ---------------------------------------------------------------------------
 
 describe('side chat', () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -902,7 +802,6 @@ describe('side chat', () => {
     expect(meta()).toMatchObject({
       op: 'side_question', ok: true, model: 'claude-fable-5-1', fallback_model: null, response_chars: 9,
     });
-    // The reply carries no usage on stdio, so the log does not pretend to.
     expect(meta()).not.toHaveProperty('usage');
   });
 
@@ -970,10 +869,6 @@ describe('side chat', () => {
   });
 });
 
-
-// ---------------------------------------------------------------------------
-// MCP server row actions
-// ---------------------------------------------------------------------------
 
 describe('mcp server actions', () => {
   it('mcpAuthenticate sends mcp_authenticate with serverName and a 60 s timeout', async () => {

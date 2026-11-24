@@ -4,8 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-// Capture what start() was asked to do. The engine is stubbed so nothing
-// spawns; `resume` is the whole subject of these tests.
 const startSpy = vi.fn(async (_opts: Record<string, unknown>) => {});
 
 vi.mock('../services/agents/claude-cli-engine', () => ({
@@ -49,14 +47,8 @@ afterEach(() => {
   fs.rmSync(tmpConfig, { recursive: true, force: true });
 });
 
-// A session's UUID is pinned at spawn and pushed to the renderer immediately,
-// so `claudeSessionId` exists long before the CLI writes a transcript. Reconnect
-// and restart both hand that id back as `resumeSessionId`. If the user never
-// sent a message, there is no JSONL, and `--resume` makes the CLI exit with
-// "No conversation found with session ID: …" — the session dies on the spot.
-//
-// restartQuery() already guards this by checking the JSONL; start() is the
-// other resume path and was missing the same check.
+// With no JSONL yet, `--resume` makes the CLI exit "No conversation found with
+// session ID".
 describe('start() with resumeSessionId — resume vs fresh transcript', () => {
   const projectPath = '/Users/test/proj';
 
@@ -83,9 +75,6 @@ describe('start() with resumeSessionId — resume vs fresh transcript', () => {
   });
 
   it('keeps the same session id when it declines to resume', () => {
-    // Falling back to a fresh UUID would strand the renderer, which already
-    // has the old id, and orphan whatever the user does next under a
-    // different transcript.
     const sessions = createSessionsService(vi.fn());
     const orphanId = '2355e496-3a5d-4013-989b-0477635adc4f';
 
@@ -125,11 +114,8 @@ describe('start() with resumeSessionId — resume vs fresh transcript', () => {
   });
 
   it('resumes a transcript the CLI moved into a worktree project directory', () => {
-    // EnterWorktree moves <id>.jsonl into the worktree's projects/ dir. The
-    // CLI's `--resume <id>` finds it there from the original cwd and keeps
-    // appending to it (verified against 2.1.290). Checking only the project's
-    // own directory sent `--session-id` instead: a blank conversation under
-    // the same id, the whole history orphaned in the worktree directory.
+    // The CLI's `--resume <id>` finds a transcript moved into a worktree from the
+    // original cwd (2.1.290).
     const sessions = createSessionsService(vi.fn());
     const movedId = '7277e428-749a-4af5-bc73-18e7d2b2b15f';
     const dir = path.join(

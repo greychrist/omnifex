@@ -2,11 +2,8 @@ import { describe, it, expect } from 'vitest';
 import type { JsonlNode } from '@/types/jsonl';
 import { parseMcpServerErrors, latestMcpServerErrors } from '../mcpServerErrors';
 
-/**
- * A system:init node. `mcp_server_errors` shape verified against a live
- * `--output-format stream-json` run with a deliberately malformed
- * `--mcp-config`.
- */
+// `mcp_server_errors` shape verified against a live stream-json run with a
+// malformed `--mcp-config`.
 function sysInit(errors?: unknown, sessionId = 'sess-1'): JsonlNode {
   return {
     kind: 'cli-stream-init',
@@ -51,8 +48,7 @@ describe('parseMcpServerErrors', () => {
   });
 
   it('returns null for the empty cases', () => {
-    // The field ships as `null` on the overwhelming majority of inits. An
-    // empty array would make callers render a "0 servers skipped" banner.
+    // The field ships as `null` on most inits.
     expect(parseMcpServerErrors(null)).toBeNull();
     expect(parseMcpServerErrors(undefined)).toBeNull();
     expect(parseMcpServerErrors([])).toBeNull();
@@ -60,8 +56,6 @@ describe('parseMcpServerErrors', () => {
   });
 
   it('drops entries with no usable name', () => {
-    // The name is what identifies the server to the user; without it the row
-    // says nothing actionable.
     expect(
       parseMcpServerErrors([
         { name: 'ok', type: 'invalid_config', message: 'bad config' },
@@ -90,8 +84,7 @@ describe('latestMcpServerErrors', () => {
   });
 
   it('returns null when there is no init node at all', () => {
-    // Replayed sessions have no init: the CLI never persists it to the
-    // session JSONL, so it only exists on a live stream.
+    // The CLI never persists system:init to the session JSONL.
     expect(latestMcpServerErrors([assistant()])).toBeNull();
     expect(latestMcpServerErrors([])).toBeNull();
   });

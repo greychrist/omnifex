@@ -24,7 +24,6 @@ vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: any) => children,
 }));
 
-// The sessions popover pulls in TabContext; it's irrelevant here.
 vi.mock('@/components/TabStatusPopover', () => ({
   TabStatusPopover: () => null,
 }));
@@ -46,8 +45,6 @@ vi.mock('@/lib/api', () => ({
     notifyClaudeCliRelease: () => Promise.resolve(false),
     onNotificationClicked: () => () => {},
     onInstallStatus: () => () => {},
-    // The titlebar hosts the Brain run indicator. Nothing indexing is the
-    // right default here — these tests are about the changelog watermark.
     brainActiveRun: () => Promise.resolve(null),
     onBrainRunProgress: () => () => {},
   },
@@ -68,21 +65,13 @@ afterEach(() => {
   cleanup();
 });
 
-// Selected by attribute, not by text: the popover's own header also reads
-// "Updates", so a text query matches twice the moment the panel is open.
+// Selected by attribute: the popover's header also reads "Updates".
 const updatesButton = () =>
   document.querySelector<HTMLButtonElement>('[data-updates-trigger]')!;
 const openUpdates = () => { fireEvent.click(updatesButton()); };
 
-/**
- * Render, open the Updates popover, and let everything settle. The popover
- * only mounts its content while open, so the version rows don't exist in the
- * DOM until the trigger is clicked.
- *
- * BOTH waits have to clear MIN_CHECK_SPIN_MS (700), because there are two
- * checks to outlast: the one on mount and the one opening the popover now
- * triggers.
- */
+// The popover mounts its content only while open, and both waits must clear
+// MIN_CHECK_SPIN_MS (700): one check on mount, one on opening.
 async function renderSettled() {
   const result = render(<CustomTitlebar />);
   await vi.advanceTimersByTimeAsync(1000);
@@ -91,9 +80,7 @@ async function renderSettled() {
   return result;
 }
 
-/** The unreviewed-release icon on the Updates button. */
 const unreviewedIcon = () => document.querySelector('[data-updates-unreviewed]');
-/** Whether the Updates icon is showing the green "upgrade waiting" state. */
 const upgradeLit = () => {
   const icon = document.querySelector('[data-updates-icon]');
   return !!icon && icon.getAttribute('data-upgrade') === 'true'
@@ -115,10 +102,7 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     await renderSettled();
 
     await waitFor(() => { expect(unreviewedIcon()).not.toBeNull(); });
-    // Drift is work to do, not an upgrade: the icon is not green.
     expect(upgradeLit()).toBe(false);
-    // The popover explains *which* watermark we're behind, so the badge
-    // isn't a mystery dot.
     expect(seen(/ahead of the 2\.1\.222 changelog/)).toBeGreaterThan(0);
     expect(seen('2.1.230')).toBeGreaterThan(0);
   });
@@ -142,8 +126,6 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
   });
 
   it('reports "not found" rather than badging when no CLI is installed', async () => {
-    // A missing binary is a different problem from an unreviewed changelog;
-    // flagging drift we can't measure would be a false alarm.
     getClaudeCliReviewStatus.mockResolvedValue({
       installed_version: null,
       reviewed_version: '2.1.222',
@@ -159,13 +141,8 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     expect(unreviewedIcon()).toBeNull();
   });
 
-  /**
-   * The bug this closes: the Claude Code row reported only the installed
-   * version, so a popover titled "Check for Upgrade" sat at what looked like a
-   * steady state while three CLI releases shipped. The CLI self-updates only
-   * when it is launched directly — OmniFex's own pty spawns don't trigger it —
-   * so nothing here was ever going to say a newer release existed.
-   */
+  // The CLI self-updates only when launched directly, never from OmniFex's
+  // spawns.
   it('offers the newer published release next to the installed one', async () => {
     getClaudeCliReviewStatus.mockResolvedValue({
       installed_version: '2.1.241',
@@ -195,12 +172,10 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     await renderSettled();
 
     await waitFor(() => { expect(seen('2.1.246')).toBeGreaterThan(0); });
-    // No "→ available" noise on the steady state, which is most of the time.
     expect(seen(/available/)).toBe(0);
   });
 
   it('says nothing about upgrades when the registry was unreachable', async () => {
-    // Offline must degrade to the old row, not to a false "up to date".
     getClaudeCliReviewStatus.mockResolvedValue({
       installed_version: '2.1.241',
       reviewed_version: '2.1.241',
@@ -216,15 +191,6 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     expect(seen(/available/)).toBe(0);
   });
 
-  /**
-   * Semantics changed deliberately. The dot used to mean exactly "the binary
-   * you are running has moved past our watermark" — reviewable drift, and
-   * nothing else — so an available-but-uninstalled upgrade was excluded on the
-   * grounds that a review pass cannot act on it. Now that the button opens a
-   * popover instead of firing a check, the dot means "there is something in
-   * here worth opening", and the three rows inside say which. An upgrade
-   * waiting on npm qualifies.
-   */
   it('badges the button for an upgrade the user has not installed', async () => {
     getClaudeCliReviewStatus.mockResolvedValue({
       installed_version: '2.1.241',
@@ -240,7 +206,6 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     await waitFor(() => { expect(seen(/2\.1\.246 available/)).toBeGreaterThan(0); });
     expect(upgradeLit()).toBe(true);
     expect(unreviewedIcon()).toBeNull();
-    // Badged, but not as drift — we have reviewed the version being run.
     expect(seen(/ahead of the/)).toBe(0);
   });
 
@@ -251,8 +216,6 @@ describe('CustomTitlebar — Claude Code changelog watermark', () => {
     expect(upgradeLit()).toBe(false);
     expect(unreviewedIcon()).toBeNull();
     expect(seen('Claude Code')).toBe(0);
-    // The app row still renders — a CLI probe failure must not take the
-    // rest of the popover down with it.
     expect(seen('OmniFex 0.4.109')).toBeGreaterThan(0);
   });
 });
@@ -281,7 +244,6 @@ describe('CustomTitlebar — launching the changelog review', () => {
 
     await waitFor(() => { expect(launchButtons().length).toBeGreaterThan(0); });
     fireEvent.click(launchButtons()[0]);
-    // The handler gets the range that actually drifted, not just a ping.
     expect(onCliReviewClick).toHaveBeenCalledWith({
       repoDir: '/repos/omnifex',
       reviewedVersion: '2.1.222',
@@ -290,8 +252,6 @@ describe('CustomTitlebar — launching the changelog review', () => {
   });
 
   it('stays plain text when no OmniFex checkout could be found', async () => {
-    // A launch button with nowhere to launch is worse than no button; point
-    // at the setting that fixes it instead.
     getClaudeCliReviewStatus.mockResolvedValue(drifted(null));
     await renderSettled();
 
@@ -328,13 +288,6 @@ describe('CustomTitlebar — launching the changelog review', () => {
   });
 });
 
-/**
- * The Updates button used to be a hover tooltip whose CLICK fired the check.
- * That put the action and its result on two different surfaces: you clicked,
- * the panel you were reading vanished with the pointer, and the answer landed
- * somewhere you were no longer looking. Click now opens the popover and does
- * nothing else; checking is an explicit button inside it.
- */
 describe('CustomTitlebar — Updates disclosure', () => {
   const clean: CliReviewStatus = {
     installed_version: '2.1.246',
@@ -346,13 +299,6 @@ describe('CustomTitlebar — Updates disclosure', () => {
     repo_dir: null,
   };
 
-  /**
-   * Opening the panel IS the request, so it checks every time it opens — no
-   * freshness window. A 60s window was tried and was wrong: the launch check
-   * stamps the clock, so opening the panel in the first minute after starting
-   * the app — the exact thing anyone does to try the feature — silently did
-   * nothing and read as broken.
-   */
   it('checks every time the popover opens, including right after launch', async () => {
     getClaudeCliReviewStatus.mockResolvedValue(clean);
     render(<CustomTitlebar />);
@@ -383,9 +329,8 @@ describe('CustomTitlebar — Updates disclosure', () => {
   });
 
   it('fires once per open, not once per render while open', async () => {
-    // The check moves updateState through checking -> up-to-date -> idle. If
-    // this were an effect keyed on the open FLAG rather than the open EVENT,
-    // each of those transitions would re-fire it forever.
+    // Keyed on the open EVENT, not the flag: checking -> up-to-date -> idle would
+    // otherwise re-fire it forever.
     getClaudeCliReviewStatus.mockResolvedValue(clean);
     await renderSettled();
     await vi.advanceTimersByTimeAsync(10_000);
@@ -405,8 +350,6 @@ describe('CustomTitlebar — Updates disclosure', () => {
   });
 
   it('does not stack a second check onto one already in flight', async () => {
-    // Open while the on-mount check is still running: the auto-check must see
-    // it and stand down rather than doubling every probe.
     getClaudeCliReviewStatus.mockResolvedValue(clean);
     render(<CustomTitlebar />);
     openUpdates();
@@ -415,8 +358,6 @@ describe('CustomTitlebar — Updates disclosure', () => {
     expect(checkForUpdate.mock.calls.length).toBe(1);
   });
 
-  // Opening the popover checks, but a popover left open goes stale: the
-  // refresh icon by the title checks both again without closing it.
   it('re-checks both from the refresh icon by the title, popover still open', async () => {
     getClaudeCliReviewStatus.mockResolvedValue(clean);
     await renderSettled();
@@ -447,8 +388,6 @@ describe('CustomTitlebar — Updates disclosure', () => {
   });
 
   it('badges independently for a drifted watermark and for a published upgrade', async () => {
-    // Two different signals: drift gets its own icon, an upgrade turns the
-    // Updates icon green. Neither implies the other.
     getClaudeCliReviewStatus.mockResolvedValue({
       ...clean, unreviewed: true, reviewed_version: '2.1.241', checked_version: '2.1.241',
     });
@@ -475,12 +414,6 @@ describe('CustomTitlebar — Updates disclosure', () => {
   });
 });
 
-/**
- * Marking a release checked without cutting a build. `reviewed_version` is
- * the watermark compiled into this build; `checked_version` is the newest
- * release the user has marked read (app_settings, floored at the built-in
- * value). The popover keeps the gap between them visible.
- */
 describe('CustomTitlebar — marking a CLI release as checked', () => {
   const drifted: CliReviewStatus = {
     installed_version: '2.1.290',
@@ -558,7 +491,6 @@ describe('CustomTitlebar — marking a CLI release as checked', () => {
   });
 
   it('starts the next review from the checked release, not the built-in one', async () => {
-    // Otherwise marking 2.1.290 checked would re-review it on 2.1.291.
     const onCliReviewClick = vi.fn();
     getClaudeCliReviewStatus.mockResolvedValue({
       ...drifted, installed_version: '2.1.291', checked_version: '2.1.290',

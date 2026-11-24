@@ -5,14 +5,6 @@ import { createDatabase, type Database } from '../services/database';
 import { createCostHistoryService, type CostHistoryService } from '../services/cost/cost-history';
 import type { SessionCostDailyRow } from '../services/cost/session-cost-core';
 
-/**
- * The handler layer between the renderer and cost-history.ts: param
- * normalisation (camelCase / snake_case, arrays, booleans) and the adapter
- * wiring. The service's own tests use its typed API directly, so nothing else
- * exercises this hop — and a channel that is registered but drops a filter
- * looks exactly like a service bug from the UI.
- */
-
 function row(p: Partial<SessionCostDailyRow>): SessionCostDailyRow {
   return {
     session_id: 's1', date: '2026-08-01', model: 'claude-opus-5',
@@ -26,7 +18,6 @@ function row(p: Partial<SessionCostDailyRow>): SessionCostDailyRow {
   };
 }
 
-/** The `cost:` adapter exactly as daemon/main.ts builds it. */
 function costAdapter(svc: CostHistoryService) {
   const g = (f: Record<string, unknown>) => ((f.groupBy as string) ?? 'day') as 'day' | 'week' | 'month';
   return {
@@ -103,9 +94,6 @@ describe('Cost Report IPC handlers', () => {
   });
 
   it('carries isSubagent, including the false case', async () => {
-    // `false` is the value most likely to be lost to a truthiness check, and
-    // losing it silently shows subagent spend inside the main-loop total.
-    // Main loop across BOTH sessions: s1's $10/5 plus s2's $5/3.
     const main = await call('session_cost_subagent_split', { isSubagent: false });
     expect(main).toEqual([{ is_subagent: 0, cost_usd: 15, request_count: 8, usd_per_request: 15 / 8 }]);
     const sub = await call('session_cost_subagent_split', { is_subagent: true });
@@ -134,8 +122,6 @@ describe('Cost Report IPC handlers', () => {
     expect(f.minDate).toBe('2026-08-01');
   });
 
-  // Every handler resolves rather than throwing when its service is absent —
-  // the renderer gets a defined empty response instead of a blocked channel.
   it('degrades to empty when the cost service is not wired', async () => {
     const bare = getHandlerMap({});
     for (const ch of COST_REPORT_CHANNELS) {

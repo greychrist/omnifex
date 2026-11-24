@@ -26,8 +26,7 @@ describe('useSessionMcpStatus', () => {
     expect(sessionMcpServerStatus).toHaveBeenCalledWith('tab1');
   });
 
-  // The CLI's control channel answers nothing until it has read its first
-  // prompt, so an empty list right after Start is "not yet", not "none".
+  // The CLI's control channel answers nothing until it has read its first prompt.
   it('keeps asking while the list is empty, then stops', async () => {
     sessionMcpServerStatus.mockResolvedValueOnce([]).mockResolvedValue(list);
     const { result } = renderHook(() => useSessionMcpStatus('tab1', true, 5));
@@ -116,8 +115,8 @@ describe('useSessionMcpStatus watchUntil', () => {
     expect(sessionMcpServerStatus.mock.calls.length).toBe(calls);
   });
 
-  // The main process answers [] on its 3 s timeout, control errors, or a
-  // non-live engine: that is "no answer this tick", not "no servers".
+  // [] arrives on a 3 s timeout, a control error or a non-live engine: no answer
+  // this tick, not no servers.
   it('an empty tick between two real answers neither blanks servers nor resolves the watch', async () => {
     vi.useFakeTimers();
     const disabled = [{ name: 'gh', status: 'disabled', scope: 'user' }];
@@ -141,7 +140,6 @@ describe('useSessionMcpStatus watchUntil', () => {
     expect(result.current.servers).toEqual(pending);
   });
 
-  // A 180 s watch must not re-render the whole session tab every tick.
   it('an unchanged tick keeps the same servers reference', async () => {
     vi.useFakeTimers();
     const needsAuth = () => [{ name: 'atlassian', status: 'needs-auth', scope: 'claudeai' }];

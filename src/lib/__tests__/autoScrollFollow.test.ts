@@ -52,11 +52,6 @@ describe("isFollowing", () => {
   });
 });
 
-/**
- * Only the user can turn following off. A scroll event the user did not cause
- * — layout settling, the live bubble swapping for the final message, our own
- * scroll-to-bottom measured a frame late — must never leave the tail.
- */
 describe("nextFollowing", () => {
   it("follows whenever the view is within followPx, whoever scrolled", () => {
     expect(nextFollowing({ following: false, distanceFromBottom: 100, followPx: 300, userScrolling: false })).toBe(true);

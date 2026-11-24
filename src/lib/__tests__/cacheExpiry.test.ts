@@ -12,7 +12,6 @@ import {
 
 const AT = (iso: string) => Date.parse(iso);
 
-/** An assistant turn with an explicit cache_creation breakdown. */
 const assistant = (
   receivedAt: string,
   cacheCreation?: { ephemeral_1h_input_tokens?: number; ephemeral_5m_input_tokens?: number } | null,
@@ -55,8 +54,8 @@ describe('observeCacheTtlMs', () => {
     expect(CACHE_TTL_5M_MS).toBe(300_000);
   });
 
-  // Cache-read-only turns leave both counters at zero and carry no signal, so
-  // the last non-zero observation is what sticks.
+  // Cache-read-only turns leave both counters at zero, so the last non-zero
+  // observation sticks.
   it('skips zero-counter turns in favour of an older real write', () => {
     const msgs = [
       assistant('2026-07-30T10:00:00Z', { ephemeral_1h_input_tokens: 12_000, ephemeral_5m_input_tokens: 0 }),
@@ -107,8 +106,6 @@ describe('lastCacheTtlChange', () => {
     expect(lastCacheTtlChange([])).toBeNull();
   });
 
-  // The notice is dismissal-driven now, so a later confirming write must not
-  // change what gets reported — only the user clicking the X clears it.
   it('still reports the change after a later write confirms the new TTL', () => {
     const msgs = [
       oneHour('2026-07-30T10:00:00Z'),

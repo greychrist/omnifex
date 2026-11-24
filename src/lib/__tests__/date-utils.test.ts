@@ -7,11 +7,6 @@ import {
   formatTimeAgo,
 } from '../date-utils';
 
-// All the date-aware helpers compare against `new Date()` / `Date.now()`,
-// so we pin "now" with fake timers to make assertions deterministic.
-// Picked a fixed point in the middle of an arbitrary week so we have
-// meaningful "yesterday" / "within a week" / "this year" / "earlier
-// years" boundaries to land on.
 const NOW = new Date('2026-06-15T15:30:00Z').getTime();
 
 beforeEach(() => {
@@ -54,11 +49,9 @@ describe('getFirstLine', () => {
 
 describe('formatUnixTimestamp', () => {
   it('returns a time-of-day when the timestamp is today', () => {
-    // "Now" is 2026-06-15T15:30:00Z. A timestamp earlier today is still
-    // "today" by toDateString() comparison (local TZ).
+    // "Now" is 2026-06-15T15:30:00Z.
     const today = Math.floor(NOW / 1000);
     const result = formatUnixTimestamp(today);
-    // Some form of HH:MM AM/PM — don't over-pin the locale string.
     expect(result).toMatch(/\d{1,2}:\d{2}\s*(AM|PM)/);
   });
 
@@ -70,21 +63,17 @@ describe('formatUnixTimestamp', () => {
   it('uses the weekday name for timestamps within the last week', () => {
     const fourDaysAgo = Math.floor((NOW - 4 * 24 * 60 * 60 * 1000) / 1000);
     const result = formatUnixTimestamp(fourDaysAgo);
-    // The result should start with a full weekday name (Monday..Sunday).
     expect(result).toMatch(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),/);
   });
 
   it('omits the year when the timestamp is in the current year (but older than a week)', () => {
-    // 30 days ago is still 2026, past the within-week branch.
     const monthAgo = Math.floor((NOW - 30 * 24 * 60 * 60 * 1000) / 1000);
     const result = formatUnixTimestamp(monthAgo);
-    // Should look like "May 16" (no year).
     expect(result).not.toMatch(/202\d/);
     expect(result).toMatch(/^[A-Z][a-z]{2,8}\s+\d{1,2}$/);
   });
 
   it('includes the year when the timestamp is in a previous year', () => {
-    // 2024-01-01 — clearly previous year vs. 2026 "now".
     const olderYear = Math.floor(new Date('2024-01-01T12:00:00Z').getTime() / 1000);
     expect(formatUnixTimestamp(olderYear)).toMatch(/2024/);
   });
@@ -92,7 +81,6 @@ describe('formatUnixTimestamp', () => {
 
 describe('formatISOTimestamp', () => {
   it('delegates to formatUnixTimestamp after ISO → seconds conversion', () => {
-    // Same calendar day as our pinned NOW → should match the today branch.
     const isoToday = new Date(NOW).toISOString();
     expect(formatISOTimestamp(isoToday)).toMatch(/\d{1,2}:\d{2}\s*(AM|PM)/);
   });

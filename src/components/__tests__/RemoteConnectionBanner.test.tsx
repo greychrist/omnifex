@@ -5,13 +5,6 @@ import { render, screen, cleanup, act } from '@testing-library/react';
 
 import { RemoteConnectionBanner } from '../RemoteConnectionBanner';
 
-/**
- * What the socket to the daemon is doing. The app has one transport since
- * Electron went (2026-10-23): there is no local mode to offer as a way out,
- * so the banner reports and the client keeps reconnecting. Restarting the
- * daemon is the title bar's Daemon popover's job.
- */
-
 type Listener = (p: unknown) => void;
 const listeners = new Set<Listener>();
 
@@ -37,7 +30,6 @@ afterEach(() => {
   setRemote(undefined);
 });
 
-/** The daemon's state changes arrive as `remote-connection` events. */
 const emit = (state: string) => {
   act(() => { for (const l of listeners) l({ state }); });
 };

@@ -80,8 +80,8 @@ describe("Tooltip primitives are re-exported", () => {
   });
 });
 
-// Popovers sit above the titlebar (z 300). A tooltip inside one must still
-// paint over it — at z-[100] it now would not.
+// Popovers sit above the titlebar (z 300); a tooltip inside one must still
+// paint over it.
 describe("TooltipContent stacking", () => {
   it("paints above popovers", () => {
     render(

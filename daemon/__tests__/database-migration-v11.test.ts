@@ -5,12 +5,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-/**
- * Seed a v10-shaped DB and record schema_version=10 in the canonical
- * schema_version table so only migration v11 runs. The accounts columns mirror
- * the post-v7 shape (session_defaults, cli_path, summarize fields) so v11's
- * accounts transform is exercised in isolation.
- */
 function seedSchemaVersion10(db: Database.Database): void {
   db.exec(`
     CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
@@ -88,11 +82,9 @@ describe('migration v11 — codex account parity', () => {
     expect(rules[0]).toMatchObject({ path_prefix: '/Users/me/CodexProjects', account_id: codexAccount.id });
     expect(rules[1]).toMatchObject({ path_prefix: '/Users/me/Repos', account_id: 1 });
 
-    // agent column gone
     const ruleCols = db.pragma('table_info(account_path_rules)') as { name: string }[];
     expect(ruleCols.some((c) => c.name === 'agent')).toBe(false);
 
-    // Discovery flag set
     expect(
       (db.prepare('SELECT value FROM app_settings WHERE key = ?').get('codex_discovery_completed') as any)?.value,
     ).toBe('true');
@@ -103,7 +95,6 @@ describe('migration v11 — codex account parity', () => {
 
   it('drops orphan Codex rules when no ~/.codex/ exists', () => {
     const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-mig-'));
-    // No ~/.codex/ inside tmpHome
 
     const db = new Database(':memory:');
     db.exec(`

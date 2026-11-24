@@ -39,8 +39,7 @@ describe("CodexItemFallback", () => {
         })}
       />,
     );
-    // The <details> is collapsed by default; jsdom still renders inner
-    // children in the DOM, so we can assert the JSON text is present.
+    // jsdom renders a closed <details>'s children.
     expect(screen.getByText(/"hello": "world"/)).toBeTruthy();
     expect(screen.getByText("raw payload")).toBeTruthy();
   });

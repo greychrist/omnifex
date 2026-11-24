@@ -10,13 +10,6 @@ import {
   watchOauthIdentity,
 } from '../services/account-identity';
 
-/**
- * Every directory this file has created, so `afterEach` can remove them.
- *
- * Without this the fixtures were pure leak: one run left ~30 directories in
- * the system temp dir forever, and a machine that had run the suite for a
- * while had accumulated 1314 of them.
- */
 const createdDirs: string[] = [];
 
 function tmpConfigDir(contents?: string): string {
@@ -29,8 +22,7 @@ function tmpConfigDir(contents?: string): string {
 }
 
 afterEach(() => {
-  // Best-effort: a watcher test disposes its watcher first, but removal racing
-  // a still-draining fs event must never fail the test that just passed.
+  // Removal can race a still-draining fs event; never fail the test over it.
   while (createdDirs.length > 0) {
     const dir = createdDirs.pop();
     if (dir !== undefined) {
@@ -139,7 +131,6 @@ describe('probeAuthStatus', () => {
     });
   });
 
-  // CLI >= 2.1.318 reports when a stored claude.ai sign-in ends.
   it('reads loginExpiresAt', async () => {
     const status = await probeAuthStatus('/tmp/x', {
       resolveBinary: () => '/usr/local/bin/claude',
@@ -191,39 +182,18 @@ describe('probeAuthStatus', () => {
 
 describe('watchOauthIdentity', () => {
   function writeIdentity(dir: string, email: string): void {
-    // Atomic rewrite (tmp + rename) — the same shape the CLI and OmniFex's own
-    // scratch-cwd helper use. A file-targeted watcher would detach here, which
-    // is exactly why the watcher must target the directory.
+    // Atomic tmp + rename, as the CLI writes it: a file-targeted watcher would
+    // detach here.
     const tmp = path.join(dir, '.claude.json.tmp');
     fs.writeFileSync(tmp, JSON.stringify({ oauthAccount: { emailAddress: email } }), 'utf8');
     fs.renameSync(tmp, path.join(dir, '.claude.json'));
   }
 
-  /**
-   * How long to leave the watcher undisturbed before writing again.
-   *
-   * MUST exceed the watcher's own 150ms debounce. Each fs event resets that
-   * timer, so a retry loop faster than the debounce would keep pushing the
-   * callback into the future and starve the very thing it is waiting for.
-   */
+  // Must exceed the watcher's 150ms debounce, or retries starve the callback.
   const RETRY_MS = 400;
 
-  /**
-   * Perform `write` until `observed()` reports the watcher noticed, or fail.
-   *
-   * Retrying the WRITE, not merely waiting longer, is the whole point. Under
-   * vitest's worker pool an `fs.watch` event is occasionally dropped outright
-   * rather than delivered late: instrumenting a failing run with a second,
-   * independent watcher on the same directory recorded ZERO raw events in ten
-   * seconds while the file on disk held the new value the entire time. No
-   * timeout can wait out an event that is never coming, which is why raising
-   * this test's window to 10s did not stop it flaking.
-   *
-   * Repeating the write is safe because the watcher compares by VALUE against
-   * the identity it snapshotted when it attached — so re-writing the same new
-   * address stays a change until it has actually been observed, and a
-   * duplicate delivery can only produce the callback the test is waiting for.
-   */
+  // Retries the write, not the wait: under vitest's worker pool an fs.watch
+  // event is sometimes dropped outright, so no timeout can wait it out.
   async function writeUntilObserved(
     write: () => void,
     observed: () => boolean,
@@ -255,14 +225,11 @@ describe('watchOauthIdentity', () => {
 
     expect(onChange).toHaveBeenCalled();
     sub.dispose();
-    // 20s test timeout: the retry loop above can legitimately spend several
-    // seconds, and vitest's default per-test timeout is 5s.
+    // 20s: the retry loop can outlast vitest's 5s default.
   }, 20000);
 
-  // macOS FSEvents names `.claude.json` in the event stream even when an
-  // unrelated file in the same dir was written, so the watcher cannot filter
-  // on filename alone. The real contract is value-based: no identity change,
-  // no callback.
+  // macOS FSEvents can name `.claude.json` for an unrelated write in the same
+  // dir, so the contract is value-based.
   it('does not fire for unrelated writes in the same dir', async () => {
     const dir = tmpConfigDir(JSON.stringify({ oauthAccount: { emailAddress: 'a@example.com' } }));
     const onChange = vi.fn();
@@ -303,8 +270,7 @@ describe('watchOauthIdentity', () => {
 
     expect(onChange).toHaveBeenCalled();
     sub.dispose();
-    // 20s test timeout: the retry loop above can legitimately spend several
-    // seconds, and vitest's default per-test timeout is 5s.
+    // 20s: the retry loop can outlast vitest's 5s default.
   }, 20000);
 
   it('stops firing after dispose', async () => {
@@ -370,9 +336,6 @@ describe('classifyIdentity', () => {
     ).toBe('unverified');
   });
 
-  // This is the state that used to be silent: no account row owns the config
-  // dir, so nothing can be checked. Collapsing it into 'unverified' would let
-  // a routing bug masquerade as a deliberate opt-out.
   it('reports unknown-account when no account owns the config dir', () => {
     expect(
       classifyIdentity({ accountExists: false, expected: null, detected: null }),

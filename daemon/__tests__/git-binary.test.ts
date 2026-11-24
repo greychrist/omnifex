@@ -5,10 +5,7 @@ import path from 'node:path';
 
 import { gitBinary } from '../services/git-binary';
 
-// A bare 'git' makes libuv on macOS posix_spawn once per PATH entry until one
-// succeeds, and XNU creates a process for every miss — measured at 11 pids per
-// `git status` with the daemon's PATH, against 1 for an absolute path. The
-// lookup itself is util/spawn.ts's resolveCommand, tested there.
+// A bare `git` makes libuv posix_spawn once per PATH entry until one succeeds.
 
 describe('gitBinary', () => {
   const dirs: string[] = [];

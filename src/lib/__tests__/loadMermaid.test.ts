@@ -22,8 +22,7 @@ describe('renderMermaid', () => {
         securityLevel: 'strict',
         htmlLabels: false,
         // `base` is the only mermaid theme whose colors come entirely from
-        // themeVariables; the stock ones (default/dark) were what read as
-        // rudimentary — lavender boxes and a yellow subgraph.
+        // themeVariables.
         theme: 'base',
         look: 'neo',
         themeVariables: expect.objectContaining({ darkMode: false, primaryColor: '#ffffff' }),

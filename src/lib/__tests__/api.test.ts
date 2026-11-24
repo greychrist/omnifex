@@ -1,9 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock the transport BEFORE importing api.ts. Every api method runs
-// through this single function, so we only need one mock to drive every
-// test path.
 const apiCallMock = vi.fn();
 vi.mock('../apiAdapter', () => ({
   apiCall: (...args: unknown[]) => apiCallMock(...args),
@@ -21,9 +18,7 @@ afterEach(() => {
 });
 
 describe('api — channel + params mapping (table-driven)', () => {
-  // Each row: [label, () => api.method(...args), expectedChannel, expectedParams]
-  // The mock returns a sentinel; we assert the channel/params shape, not the
-  // return value (each method's payload-shape is the type-checker's job).
+  // Each row: [label, () => api.method(...args), expectedChannel, expectedParams].
   const cases: {
     label: string;
     call: () => Promise<unknown>;
@@ -105,10 +100,6 @@ describe('api — channel + params mapping (table-driven)', () => {
       params: { tabId: 'tab-1' },
     },
     {
-      // Pre-Codex callers omit the agent param entirely; main process
-      // defaults to 'claude'. Verify the wrapper forwards `undefined`
-      // (not 'claude') so the default lives in exactly one place — the
-      // backend. Layering defaults on both sides drifts inevitably.
       label: 'startSession without agent → forwards undefined',
       call: () => api.startSession('tab-1', '/p', 'sonnet', 'default'),
       channel: 'session_start',
@@ -214,9 +205,7 @@ describe('api — channel + params mapping (table-driven)', () => {
       apiCallMock.mockResolvedValue('ok');
       await call();
       expect(apiCallMock).toHaveBeenCalledTimes(1);
-      // Some api methods call apiCall(channel) with a single arg when no
-      // params are needed; the table marks those rows with params=undefined.
-      // Match flexibly so we don't assert on arity vs presence-of-undefined.
+      // Rows with params=undefined call apiCall(channel) with a single arg.
       const callArgs = apiCallMock.mock.calls[0];
       expect(callArgs[0]).toBe(channel);
       if (params === undefined) {
@@ -268,7 +257,6 @@ describe('api — optional-param assembly', () => {
     );
 
     await api.getClaudeSettings();
-    // Default: empty params object (no projectPath / configDir keys assigned).
     const [, params] = apiCallMock.mock.calls[apiCallMock.mock.calls.length - 1];
     expect(params).toEqual({});
   });
@@ -284,9 +272,6 @@ describe('api — optional-param assembly', () => {
   });
 });
 
-// The Mac app renders the print view by loading the page at a hash, and the
-// hash encoding (URLSearchParams escaping, repeated keys) is TypeScript's —
-// so the renderer computes it and sends it along with the filters.
 describe('api.costReportExportPdf', () => {
   it('sends the print hash for the filters it exports', async () => {
     const { buildPrintHash } = await import('../costReportPrint');

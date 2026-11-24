@@ -2,9 +2,6 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { createTailnetWatch } from '../remote/tailnet-watch';
 
-// A daemon launched before Tailscale came up (login at boot, wake from sleep)
-// found no tailnet address and listened on loopback only — the iPad lost it
-// until the next restart. The watch adds the address when it appears.
 describe('tailnet watch', () => {
   function make(ip: string | null, hosts: string[] = ['127.0.0.1'], added = true) {
     const listening = [...hosts];

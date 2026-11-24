@@ -5,8 +5,6 @@ import '@testing-library/jest-dom/vitest';
 import { render, cleanup, fireEvent } from '@testing-library/react';
 import type { JsonlNode } from '@/types/jsonl';
 
-// The transcript's contexts read app_settings over IPC and the message bodies
-// are irrelevant here — this file is about the auto-scroll follow marker.
 vi.mock('@/contexts/MessageRenderingContext', async () => {
   const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
   const config = createDefaultConfig();
@@ -66,12 +64,8 @@ function fakeScroll(el: HTMLElement, m: { scrollHeight: number; clientHeight: nu
   fireEvent.scroll(el);
 }
 
-/**
- * Following is decided by `distanceFromBottom <= followPx`. A marker anchored
- * in the CONTENT `followPx` above its end is therefore on screen exactly when
- * the transcript is following — a viewport-fixed marker could not show that,
- * since the threshold is measured below the visible area.
- */
+// Following is `distanceFromBottom <= followPx`, so a marker anchored in the
+// content followPx above its end is on screen exactly while following.
 describe('ClaudeTranscript — auto-scroll follow marker', () => {
   it('sits followPx above the end of the content, against the right edge', () => {
     const { container } = renderTranscript();
@@ -79,7 +73,6 @@ describe('ClaudeTranscript — auto-scroll follow marker', () => {
     expect(marker).not.toBeNull();
     expect(marker!.style.bottom).toBe('240px');
     expect(marker!.getAttribute('aria-hidden')).toBe('true');
-    // Inside the scrolled content, so it moves with it.
     const content = container.querySelector('[data-transcript-scroll] > div');
     expect(content!.contains(marker)).toBe(true);
   });
@@ -100,9 +93,8 @@ describe('ClaudeTranscript — auto-scroll follow marker', () => {
     expect(marker.dataset.following).toBe('true');
   });
 
-  // The swap race: a tall row lands in the frame between our scroll-to-bottom
-  // and the scroll event it queued, so the event measures the view as far
-  // from the bottom. Nobody scrolled; following must survive it.
+  // A tall row can land between our scroll-to-bottom and the scroll event it
+  // queued.
   it('keeps following through a scroll event the user did not cause', () => {
     const ref = { current: true };
     const { container } = renderTranscript(ref);
@@ -145,8 +137,6 @@ describe('ClaudeTranscript — auto-scroll follow marker', () => {
     }
   });
 
-  // A scrollbar drag is one pointerdown followed by however long the drag
-  // takes; it must count for as long as the button is held.
   it('counts a held pointer as user scrolling for its whole duration', () => {
     const now = vi.spyOn(performance, 'now');
     try {
@@ -170,8 +160,6 @@ describe('ClaudeTranscript — auto-scroll follow marker', () => {
     }
   });
 
-  // Opening a step near the bottom grows the content; pinning to the bottom
-  // then would carry the row the user just opened out from under them.
   describe('content resizes', () => {
     let fire: () => void = () => {};
     beforeEach(() => {

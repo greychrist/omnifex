@@ -23,8 +23,6 @@ describe('AccountPicker — single mode', () => {
   it('renders the selected account as its badge, not as plain text', () => {
     render(<AccountPicker accounts={NAMES} value="Work" onChange={vi.fn()} />);
     const trigger = screen.getByRole('combobox');
-    // The badge carries the account's own color and subscription label —
-    // the thing that distinguishes it from a bare <select>.
     expect(within(trigger).getByText('Work')).toBeTruthy();
     expect(within(trigger).getByText(': Enterprise')).toBeTruthy();
   });
@@ -46,8 +44,6 @@ describe('AccountPicker — single mode', () => {
     expect(screen.getByRole('combobox').textContent).not.toContain('All');
   });
 
-  // The Projects list carries a legacy bucket for projects whose account did
-  // not resolve. It is not an account, so it must not wear an account badge.
   it('renders the unassigned sentinel as muted text, never as a badge', () => {
     render(<AccountPicker accounts={[UNASSIGNED]} value={UNASSIGNED} onChange={vi.fn()} />);
     expect(screen.getByText('No account')).toBeTruthy();
@@ -59,8 +55,6 @@ describe('AccountPicker — multi mode', () => {
 
   const open = () => fireEvent.click(screen.getByRole('button'));
 
-  // Empty means "all", matching the query layer: clearing every checkbox must
-  // show everything, not nothing.
   it('summarises an empty selection as All', () => {
     render(<AccountPicker mode="multi" accounts={NAMES} selected={[]} onChange={vi.fn()} />);
     expect(screen.getByRole('button').textContent).toContain('All');
@@ -112,8 +106,6 @@ describe('AccountPicker — multi mode', () => {
 describe('AccountPicker — shared chrome', () => {
   afterEach(cleanup);
 
-  // The whole point of the extraction: both modes must present the same
-  // trigger, or they read as two different controls.
   it('gives both modes the same trigger classes', () => {
     const { container: single } = render(
       <AccountPicker accounts={NAMES} value="Work" onChange={vi.fn()} />,

@@ -2,11 +2,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 
-// Container tiles are compact: start/stop live in the header beside the name,
-// and image/status/ports are tight labelled rows rather than a grid of pills
-// with a separate action bar — a VM with a dozen containers should fit
-// without scrolling.
-
 const api = vi.hoisted(() => ({
   limaCheckInstalled: vi.fn(),
   limaListVms: vi.fn(),

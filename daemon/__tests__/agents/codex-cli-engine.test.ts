@@ -38,8 +38,7 @@ function makeFakeChild(): FakeChild {
   emitter.stdin = stdin;
   emitter.kill = vi.fn();
   emitter.pid = 54321;
-  // Mirror real spawn — `'spawn'` fires on next tick after the OS exec'd
-  // the binary. engine.start() awaits this before sending the handshake.
+  // 'spawn' fires on the next tick; start() awaits it before the handshake.
   setImmediate(() => emitter.emit('spawn'));
   return emitter;
 }
@@ -71,8 +70,8 @@ describe('CodexCliEngine', () => {
         resume: false,
         codex: { sandboxPolicy: 'workspace-write', reasoningEffort: 'medium' },
       });
-      // Catch the pending rejection until we drive the response below — keeps
-      // vitest from flagging an "unhandled rejection" if assertions fail.
+      // Caught early so a failing assertion doesn't surface as an unhandled
+      // rejection.
       startPromise.catch(() => {});
 
       await flushMicrotasks();
@@ -175,9 +174,6 @@ describe('CodexCliEngine', () => {
       const sent = JSON.parse(fake.stdin._writes[0].trim());
       expect(sent.method).toBe('resumeConversation');
 
-      // Server replies with an empty result — no conversationId in the
-      // response. Engine should fall back to the originally-supplied
-      // sessionId so resume identity isn't lost.
       fake.stdout.push(
         JSON.stringify({
           jsonrpc: '2.0',
@@ -298,8 +294,6 @@ describe('CodexCliEngine', () => {
         codexBinaryPath: '/usr/local/bin/codex',
       });
 
-      // start() never called — conversationId stays null. send() should
-      // reject loudly rather than silently no-op or write a bogus request.
       await expect(engine.send('hello')).rejects.toThrow(/no active conversation/i);
     });
   });
@@ -666,8 +660,6 @@ describe('CodexCliEngine', () => {
         codexBinaryPath: '/usr/local/bin/codex',
       });
 
-      // start() never called — conversationId stays null. interrupt() should
-      // resolve without writing anything (no rpc client, nothing to interrupt).
       await expect(engine.interrupt()).resolves.toBeUndefined();
     });
   });
@@ -744,7 +736,6 @@ describe('CodexCliEngine', () => {
 
       fake.stderr.push('partial');
       await flushMicrotasks();
-      // Partial line — no newline yet, so nothing should have been emitted.
       expect(errs.length).toBe(3);
 
       fake.stderr.push('-finish\n');
@@ -760,11 +751,9 @@ describe('CodexCliEngine', () => {
       await expect(engine.close()).resolves.toBeUndefined();
       expect(fake.kill).toHaveBeenCalledTimes(1);
 
-      // Second close — should be a no-op (no additional kill call).
       await expect(engine.close()).resolves.toBeUndefined();
       expect(fake.kill).toHaveBeenCalledTimes(1);
 
-      // kill() after close — also a no-op.
       expect(() => engine.kill()).not.toThrow();
       expect(fake.kill).toHaveBeenCalledTimes(1);
     });

@@ -108,8 +108,8 @@ describe('deriveSessionSignals — session activity', () => {
   });
 
   it('does not claim a session is thinking once the turn has ended', () => {
-    // An interrupted turn leaves a thinking ping as the permanent tail of the
-    // transcript; without the turn gate the pill would say "thinking" forever.
+    // An interrupted turn leaves a thinking ping as the transcript's permanent
+    // tail.
     const signals = deriveSessionSignals(
       input({ messages: [thinkingPing(1300, '2026-09-11T10:00:00Z')], turnInFlight: false }),
     );
@@ -176,7 +176,6 @@ describe('deriveSessionSignals — context delta events', () => {
   });
 
   it('stays silent on a transcript loaded from a dead session', () => {
-    // A history opened from disk must not announce jumps that happened days ago.
     expect(byKey(deriveSessionSignals(input({ messages, sessionLive: false })), 'context.delta')).toHaveLength(0);
   });
 });
@@ -248,7 +247,6 @@ describe('deriveSessionSignals — the other migrated notices', () => {
 
     const skipped = signals.filter((s) => s.anchor === 'mcp');
     expect(skipped.map((s) => s.key)).toEqual(['mcp.skipped.github', 'mcp.skipped.jira']);
-    // The CLI's own message names the offending field; paraphrasing loses it.
     expect(skipped[0].detail).toBe('bad token');
     expect(skipped[1].detail).toBe('config_error');
   });

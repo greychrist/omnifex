@@ -19,16 +19,12 @@ const state = (rules: CliPermissionRule[], extra: Partial<CliPermissionRulesStat
 });
 
 describe('diffLiveRules — what the settings-file panel cannot show', () => {
-  // permissions-io.ts reads `permissions.allow` and `permissions.deny` only.
-  // An `ask` rule sitting in the very same file is invisible to the panel,
-  // and "Add Rule" cannot create one (behavior is typed 'allow' | 'deny').
+  // permissions-io.ts reads only `permissions.allow` and `permissions.deny`.
   it('flags an ask rule even when it lives in a settings file', () => {
     const ask = rule({ behavior: 'ask', source: 'projectSettings' });
     expect(diffLiveRules(state([ask])).hidden).toEqual([ask]);
   });
 
-  // The panel models three sources. Everything else — policy, --allowedTools,
-  // slash-command grants, session approvals — is structurally unreachable.
   it('flags rules from every non-file source', () => {
     const rules = [
       rule({ source: 'policySettings', behavior: 'deny' }),
@@ -39,9 +35,7 @@ describe('diffLiveRules — what the settings-file panel cannot show', () => {
     expect(diffLiveRules(state(rules)).hidden).toEqual(rules);
   });
 
-  // flagSettings is where OmniFex's OWN applyPermissions push lands. Showing
-  // it would be showing the user their own echo, so it is deliberately not a
-  // gap — but it is also not a file source, so this pins the intent.
+  // flagSettings is where OmniFex's own applyPermissions push lands.
   it('does not flag flagSettings, which is our own rule push echoed back', () => {
     expect(diffLiveRules(state([rule({ source: 'flagSettings' })])).hidden).toEqual([]);
   });
@@ -54,15 +48,12 @@ describe('diffLiveRules — what the settings-file panel cannot show', () => {
     expect(diffLiveRules(state(rules)).hidden).toEqual([]);
   });
 
-  // The inverse failure: the panel shows a rule from a settings file that the
-  // session is ignoring, so the user reads it as active when it is not.
   it('separates rules the session is ignoring under managed policy', () => {
     const dead = rule({ notInEffect: true, source: 'projectSettings' });
     const live = rule({ source: 'userSettings' });
     const got = diffLiveRules(state([dead, live], { managedOnly: true }));
     expect(got.ignored).toEqual([dead]);
     expect(got.managedOnly).toBe(true);
-    // An ignored rule is reported once, as ignored — not also as hidden.
     expect(got.hidden).toEqual([]);
   });
 
@@ -73,7 +64,7 @@ describe('diffLiveRules — what the settings-file panel cannot show', () => {
 
 describe('describeRule', () => {
   // The CLI splits its plain-language reading into fixed words plus the rule
-  // content, so hosts can bold the content fragment the way the terminal does.
+  // content.
   it('joins the CLI description parts in order', () => {
     const r = rule({ description: { prefix: 'Any Bash command starting with', emphasis: 'npm run' } });
     expect(describeRule(r)).toBe('Any Bash command starting with npm run');
@@ -84,8 +75,6 @@ describe('describeRule', () => {
     expect(describeRule(r)).toBe('Edits to /src/** in this project');
   });
 
-  // Absent where the terminal shows no subtitle either — fall back to the
-  // verbatim rule rather than rendering an empty line.
   it('falls back to the verbatim rule when the CLI gives no description', () => {
     expect(describeRule(rule({ rule: 'Bash(git status:*)' }))).toBe('Bash(git status:*)');
   });

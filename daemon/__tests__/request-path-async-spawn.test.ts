@@ -1,13 +1,3 @@
-/**
- * Request-path spawns must never block the daemon's event loop.
- *
- * One event loop serves every live CLI session's streaming. An
- * `execFileSync` on an IPC handler — `claude --version` with a 5 s timeout,
- * `claude -p /usage` with 15 s, `git rev-parse` with none — froze every
- * session for as long as the child took. Each of these now goes through the
- * async `execFile`; this suite makes `execFileSync` throw so a regression to
- * the sync form fails loudly rather than degrading to a null version.
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';

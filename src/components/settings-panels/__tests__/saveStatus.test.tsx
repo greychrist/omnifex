@@ -13,7 +13,6 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** Exposes `track` to the test body. */
 function Harness({ onTrack }: { onTrack: (t: ReturnType<typeof useSaveStatus>['track']) => void }) {
   const { track } = useSaveStatus();
   onTrack(track);

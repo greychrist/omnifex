@@ -24,8 +24,6 @@ describe('database', () => {
   });
 
   it('waits on a locked database instead of failing instantly (busy_timeout)', () => {
-    // The Remote daemon and Electron main share greychrist.db during the
-    // migration; without a busy timeout the second writer throws SQLITE_BUSY.
     expect(db.raw.pragma('busy_timeout', { simple: true })).toBe(5000);
   });
 
@@ -44,12 +42,10 @@ describe('database', () => {
   });
 
   it('migration v13 turns fetched_at into ISO-8601 TEXT and converts existing epoch-ms rows', () => {
-    // fetched_at is TEXT on a fully-migrated DB.
     const info = db.raw.pragma('table_info(model_catalog)') as { name: string; type: string }[];
     expect(info.find((c) => c.name === 'fetched_at')!.type).toBe('TEXT');
 
-    // A pre-v13 DB (INTEGER epoch-ms rows) gets its data converted in place.
-    // Pin schema_version at 12 so only v13 runs against this minimal fixture.
+    // Pin schema_version at 12 so only v13 runs.
     const legacy = new BetterSqlite3(':memory:');
     legacy.exec(`
       CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
@@ -81,8 +77,7 @@ describe('database', () => {
   });
 
   it('a fresh DB has the same accounts + overrides columns as a legacy DB migrated up (no init/migration drift)', () => {
-    // Legacy pre-v11 DB: old accounts/overrides shape, no schema_version rows,
-    // so every migration runs against it.
+    // No schema_version rows, so every migration runs against it.
     const legacy = new BetterSqlite3(':memory:');
     legacy.exec(`
       CREATE TABLE accounts (
@@ -165,7 +160,6 @@ describe('database', () => {
       .all() as { name: string; notnull: number }[];
     const cols = info.map((c) => c.name);
     expect(cols).not.toContain('agent');
-    // account_id is NOT NULL after v11.
     expect(info.find((c) => c.name === 'account_id')?.notnull).toBe(1);
   });
 
@@ -190,8 +184,6 @@ describe('runMigrations', () => {
     raw.pragma('journal_mode = WAL');
     raw.pragma('foreign_keys = ON');
 
-    // Bootstrap the schema_version table and accounts table so migrations have
-    // something to work against.
     raw.exec(`
       CREATE TABLE IF NOT EXISTS schema_version (
         version INTEGER PRIMARY KEY,
@@ -221,7 +213,6 @@ describe('runMigrations', () => {
       .prepare('SELECT version FROM schema_version ORDER BY version')
       .all() as { version: number }[];
 
-    // At minimum migration version 1 should have been applied.
     expect(rows.length).toBeGreaterThanOrEqual(1);
     expect(rows[0].version).toBe(1);
   });
@@ -245,7 +236,6 @@ describe('runMigrations', () => {
       .prepare('SELECT version FROM schema_version ORDER BY version')
       .all() as { version: number }[];
 
-    // Exactly one row per migration version — no duplicates.
     const versions = rows.map((r) => r.version);
     const unique = [...new Set(versions)];
     expect(versions).toEqual(unique);
@@ -295,18 +285,15 @@ describe('runMigrations', () => {
 
     expect(upCalls).toBe(1);
 
-    // schema_version row recorded for the synthetic migration.
     const row = raw
       .prepare('SELECT applied_at FROM schema_version WHERE version = 99')
       .get() as { applied_at: string } | undefined;
     expect(row).toBeDefined();
     expect(row!.applied_at).toBeTruthy();
 
-    // Second run is a no-op — version already applied.
     runMigrations(raw, { migrationsOverride: synthetic });
     expect(upCalls).toBe(1);
 
-    // Sanity: the `up` actually ran against the real DB.
     const tables = raw
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='synthetic_marker'")
       .all() as { name: string }[];
@@ -319,7 +306,6 @@ describe('runMigrations', () => {
         version: 42,
         description: 'deliberately failing migration',
         up: (db) => {
-          // Create a table first so we can verify it's rolled back with the throw.
           db.exec('CREATE TABLE should_not_exist (id INTEGER PRIMARY KEY)');
           throw new Error('migration boom');
         },
@@ -328,13 +314,11 @@ describe('runMigrations', () => {
 
     expect(() => runMigrations(raw, { migrationsOverride: bad })).toThrow(/migration boom/);
 
-    // No schema_version row for the failed migration.
     const row = raw
       .prepare('SELECT version FROM schema_version WHERE version = 42')
       .get() as { version: number } | undefined;
     expect(row).toBeUndefined();
 
-    // And the partial table write was rolled back with the transaction.
     const tables = raw
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='should_not_exist'")
       .all() as { name: string }[];
@@ -355,13 +339,10 @@ describe('runMigrations', () => {
   });
 
   it('migration 1 is skipped when color column already exists', () => {
-    // Add the color column manually to simulate a database that already had it.
     raw.exec('ALTER TABLE accounts ADD COLUMN color TEXT');
 
-    // Should not throw.
     expect(() => runMigrations(raw)).not.toThrow();
 
-    // Still records migration 1 as applied.
     const row = raw
       .prepare('SELECT version FROM schema_version WHERE version = 1')
       .get();
@@ -417,7 +398,6 @@ describe('runMigrations', () => {
 
   it('migration v8 drops the is_default column from existing installs', () => {
     const db = new BetterSqlite3(':memory:');
-    // Old schema with is_default still present (a pre-v8 install).
     db.exec(`
       CREATE TABLE accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -436,7 +416,6 @@ describe('runMigrations', () => {
 
     const cols = db.pragma('table_info(accounts)') as { name: string }[];
     expect(cols.some((c) => c.name === 'is_default')).toBe(false);
-    // Row data preserved (just without the dropped column).
     const row = db.prepare('SELECT name, config_dir FROM accounts').get() as
       | { name: string; config_dir: string }
       | undefined;
@@ -446,9 +425,6 @@ describe('runMigrations', () => {
   });
 
   it('fresh installs (initSchema only) never have an is_default column', () => {
-    // Goes through the full createDatabase path so initSchema + runMigrations
-    // both fire. initSchema creates the new schema (no is_default), and v8 is
-    // a no-op when the column was never there to begin with.
     const db = createDatabase(':memory:');
     const cols = db.raw.pragma('table_info(accounts)') as { name: string }[];
     expect(cols.some((c) => c.name === 'is_default')).toBe(false);
@@ -553,8 +529,6 @@ describe('ensureDefaultSettings', () => {
   });
 
   it('treats an empty-string stored value as a user-set value (does not overwrite)', () => {
-    // An empty string means the user deliberately cleared the setting
-    // (disabling local updates). Do not re-write the default over that.
     db.saveSetting('local_update_dir', '');
 
     ensureDefaultSettings(db, { local_update_dir: '/default/path' });
@@ -598,10 +572,7 @@ describe('database disk-space reclamation', () => {
   });
 
   it('creates new databases in incremental auto-vacuum mode', () => {
-    // 2 === INCREMENTAL. This has to be set before the first table is created;
-    // afterwards the only way to change it is a full VACUUM. Greg's existing
-    // greychrist.db was created without it, which is how it reached 2.15 GB
-    // holding 36 MB of live data.
+    // 2 === INCREMENTAL; it must be set before the first table is created.
     expect(db.raw.pragma('auto_vacuum', { simple: true })).toBe(2);
   });
 

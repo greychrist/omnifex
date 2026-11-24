@@ -111,9 +111,6 @@ describe('enrichPlugin', () => {
     });
   });
 
-  // A mod is a plugin whose hooks.json names a hooks module. Inspection
-  // (what it can do) is async and added by the caller; enrichment only
-  // records that it is one.
   it('marks a plugin whose hooks.json names modules as a mod', () => {
     const pluginPath = '/home/me/.claude/plugins/m';
     const fakeFs = {
@@ -123,9 +120,8 @@ describe('enrichPlugin', () => {
     expect(result.mod).toEqual({ modules: ['./register.ts'], inspection: null });
   });
 
-  // Built-ins arrive as `path: "builtin"` (verified on CLI 2.1.288 init).
-  // There is no directory to read, and the CLI does not say which of them
-  // hold mod code, so neither is guessed.
+  // Built-ins arrive as `path: "builtin"` (CLI 2.1.288 init): no directory to
+  // read.
   it('scopes a built-in plugin without reading a manifest', () => {
     const reads: string[] = [];
     const result = enrichPlugin(
@@ -153,13 +149,6 @@ describe('enrichPlugin', () => {
   });
 });
 
-// Plugin manifests are attacker-adjacent input: a marketplace plugin's
-// plugin.json is written by whoever published it, and OmniFex reads it
-// directly rather than through the CLI. Claude Code 2.1.247 started rejecting
-// marketplace names carrying control or invisible characters and escaping
-// marketplace-supplied text in its own output; these cover the same ground for
-// the fields we surface ourselves. Escapes are spelled out rather than pasted
-// literally — the whole point is that these characters are invisible in source.
 describe('enrichPlugin sanitizes manifest text', () => {
   const configDir = '/home/me/.claude';
   const pluginPath = '/home/me/.claude/plugins/demo';
@@ -186,7 +175,6 @@ describe('enrichPlugin sanitizes manifest text', () => {
   });
 
   it('turns newlines and tabs into spaces instead of merging words', () => {
-    // Dropping the control character outright would yield "firstsecond".
     const result = enrichWith({ description: 'first\nsecond\tthird' });
     expect(result.description).toBe('first second third');
   });
@@ -197,7 +185,6 @@ describe('enrichPlugin sanitizes manifest text', () => {
   });
 
   it('drops a field that is nothing but invisible characters', () => {
-    // An empty string would render as a present-but-blank Description row.
     const result = enrichWith({ description: '\u200B\u200B', author: '   ' });
     expect(result.description).toBeUndefined();
     expect(result.author).toBeUndefined();
@@ -213,8 +200,6 @@ describe('enrichPlugin sanitizes manifest text', () => {
   });
 
   it('names a plugin whose name is entirely invisible, rather than blanking it', () => {
-    // An empty name renders as a nameless row the user cannot identify. The
-    // CLI has the same fallback wording for unprintable marketplace names.
     const result = enrichWith(
       { version: '1.0.0' },
       { name: '\u200B\u202E', path: pluginPath },
@@ -235,9 +220,6 @@ describe('enrichPlugin sanitizes manifest text', () => {
 });
 
 // The CLI records each install's scope in <config>/plugins/installed_plugins.json.
-// Guessing from the folder put a plugin read in place from a folder
-// marketplace (~/.claude-personal/mods/post-compact) under "Other", though
-// the CLI had it installed for the whole account.
 describe('scope from the install record', () => {
   const configDir = '/home/me/.claude';
   const projectPath = '/repo';

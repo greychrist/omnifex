@@ -13,16 +13,11 @@ vi.mock('node:child_process', async () => {
 
 const execFileMock = execFile as unknown as ReturnType<typeof vi.fn>;
 
-/**
- * Answer the async `execFile` the version probe makes with what `run`
- * returns, or fail it with what `run` throws.
- */
 function answerExec(run: (file: string, args: string[]) => string): void {
   execFileMock.mockImplementation((file: string, args: string[], _opts: unknown, cb: (e: Error | null, out: string, err: string) => void) => {
     let out = '';
     let error: Error | null = null;
     try {
-      // The defaults the callbacks used to carry: a call without args sees [].
       out = run(file, args ?? []);
     } catch (e) {
       error = e as Error;
@@ -45,7 +40,7 @@ describe('claude-binary findBestBinary fallback chain', () => {
     originalNvmBin = process.env.NVM_BIN;
     process.env.HOME = tmpHome;
     delete process.env.NVM_BIN;
-    // `which` is an in-process PATH lookup now; an empty PATH is "not found".
+    // `which` is an in-process PATH lookup: an empty PATH is "not found".
     originalPath = process.env.PATH;
     process.env.PATH = path.join(tmpHome, 'empty-path');
     homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmpHome);
@@ -62,13 +57,11 @@ describe('claude-binary findBestBinary fallback chain', () => {
   });
 
   it('falls back to NVM installation when which fails and custom is unset', async () => {
-    // tryWhich -> throws (simulates `which` not found)
     answerExec((file: string, args: string[]) => {
       const cmd = [file, ...args].join(' ');
       if (cmd.includes('which') || cmd.includes('where')) {
         throw new Error('not found');
       }
-      // version check
       return '1.2.3';
     });
 
@@ -126,11 +119,10 @@ describe('claude-binary findBestBinary fallback chain', () => {
     const db = createDatabase(':memory:');
     try {
       const service = createClaudeBinaryService(db);
-      // /usr/local/bin/claude may exist on the host, so we just confirm we got
-      // SOME existing standard install path back.
+      // /usr/local/bin/claude may exist on the host, so only confirm SOME standard
+      // install path came back.
       const result = service.findBestBinary();
       expect(typeof result === 'string' || result === null).toBe(true);
-      // installations should include our standard candidate
       const installations = await service.listInstallations();
       expect(installations.some((i) => i.path === standardClaude)).toBe(true);
     } finally {

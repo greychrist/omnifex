@@ -12,7 +12,6 @@ describe('createControlRequestRegistry', () => {
     reg.settle('a', { ok: true });
     await expect(p).resolves.toEqual({ ok: true });
     expect(reg.size()).toBe(0);
-    // Advancing past the timeout must NOT re-reject a settled request.
     vi.advanceTimersByTime(5000);
   });
 

@@ -1,10 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, runMigrations, type Database } from '../services/database';
 
-/**
- * v29 deletes the two-threshold auto-scroll settings. The chat now follows on
- * one distance (`autoscroll_follow_px`); nothing reads the old pair.
- */
 describe('old auto-scroll threshold settings removed (v29)', () => {
   let db: Database;
 

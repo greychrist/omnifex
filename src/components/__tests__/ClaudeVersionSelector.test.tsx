@@ -21,16 +21,12 @@ beforeEach(() => { listClaudeInstallations.mockResolvedValue(INSTALLS); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('ClaudeVersionSelector', () => {
-  // The first-run dialog relies on this: its Save needs a choice to save.
   it('picks the best installation for a caller with no selection, by default', async () => {
     const onSelect = vi.fn();
     render(<ClaudeVersionSelector selectedPath={null} onSelect={onSelect} simplified />);
     await waitFor(() => { expect(onSelect).toHaveBeenCalledWith(INSTALLS[0]); });
   });
 
-  // Settings saves on every pick, so an automatic pick was a write the user
-  // never made: the "Saved" banner on opening the tab, and — when the list
-  // loaded before the saved path did — the saved choice overwritten.
   it('reports nothing it was not asked to pick when autoSelect is off', async () => {
     const onSelect = vi.fn();
     render(

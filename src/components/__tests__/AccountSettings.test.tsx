@@ -3,9 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import type { Account } from '@/lib/api';
 
-// Hoist mocks alongside the vi.mock() factories so the closure references
-// resolve before the module under test imports them. See AccountDialog.test.tsx
-// for the same pattern.
+// Hoisted: bare consts would land after the hoisted vi.mock factory.
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
     listAccounts: vi.fn(),
@@ -39,17 +37,12 @@ vi.mock('@/contexts/AccountsContext', () => ({
   }),
 }));
 
-// AccountBadge pulls AccountsContext + theme; render a lightweight stub that
-// just surfaces the name so list assertions stay simple.
 vi.mock('@/components/AccountBadge', () => ({
   AccountBadge: ({ name }: { name: string }) => <span data-testid="account-badge">{name}</span>,
 }));
 
-// AccountDialog is heavy (xterm via CodexSignInModal, framer-motion via
-// IconPicker). Stub it down to a dialog whose accessible name reflects the
-// mode so we can assert open/mode without exercising its internals. The
-// stub also surfaces a "Save" button that fires onSave with a fixed payload
-// so tests can drive the create/update wiring in AccountSettings.
+// AccountDialog pulls in xterm and framer-motion; the stub names its mode and
+// exposes a Save button.
 const SAVE_PAYLOAD = {
   name: 'Edited',
   configDir: '/home/test/.claude-edited',
@@ -153,12 +146,9 @@ describe('AccountSettings', () => {
   it('renders Claude and Codex accounts in one list, engine-disambiguated', async () => {
     render(<AccountSettings />);
 
-    // Both account names land in the same list.
     expect(await screen.findByText('Personal')).toBeTruthy();
     expect(screen.getByText('Work')).toBeTruthy();
 
-    // Engine markers present for both. The EnginePill renders "Claude"/"Codex"
-    // text; assert both appear (case-insensitive, the pill uppercases via CSS).
     expect(screen.getAllByText(/claude/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/codex/i).length).toBeGreaterThan(0);
   });
@@ -193,7 +183,6 @@ describe('AccountSettings', () => {
     await waitFor(() => {
       expect(apiMock.scanForNewAccounts).toHaveBeenCalledTimes(1);
     });
-    // A non-empty scan triggers a reload of the account list.
     await waitFor(() => {
       expect(apiMock.listAccounts.mock.calls.length).toBeGreaterThan(callsBeforeScan);
     });
@@ -225,7 +214,6 @@ describe('AccountSettings', () => {
     await waitFor(() => {
       expect(apiMock.updateAccount).toHaveBeenCalledTimes(1);
     });
-    // Work is account id 2 — update must target it, not create a new account.
     expect(apiMock.updateAccount).toHaveBeenCalledWith(2, expect.objectContaining({ name: 'Edited' }));
     expect(apiMock.createAccount).not.toHaveBeenCalled();
   });
@@ -282,10 +270,6 @@ describe('AccountSettings', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Expected-vs-detected email badge.
-  // -------------------------------------------------------------------------
-
   describe('account identity badge', () => {
     const WITH_EXPECTATION = makeAccount({
       id: 1,
@@ -307,9 +291,6 @@ describe('AccountSettings', () => {
       expect(await screen.findByText(/signed in as personal@example\.com/i)).toBeTruthy();
     });
 
-    // A passing check must produce POSITIVE evidence. Rendering nothing on
-    // success makes "verified", "not configured", and "the check itself never
-    // ran" indistinguishable — which defeats the point of a safety check.
     it('shows the verified email when expected and detected agree', async () => {
       apiMock.listAccounts.mockResolvedValue([WITH_EXPECTATION]);
       apiMock.accountIdentityVerdict.mockResolvedValue({
@@ -322,7 +303,6 @@ describe('AccountSettings', () => {
       render(<AccountSettings />);
 
       expect(await screen.findByText(/verified: WORK@example\.com/i)).toBeTruthy();
-      // ...and specifically NOT the failure phrasing.
       expect(screen.queryByText(/signed in as/i)).toBeNull();
       expect(screen.queryByText(/not signed in/i)).toBeNull();
     });
@@ -333,8 +313,6 @@ describe('AccountSettings', () => {
 
       render(<AccountSettings />);
 
-      // A failed read is NOT evidence of being logged out — saying "not signed
-      // in" here would be an outright false claim about account state.
       expect(await screen.findByText(/couldn't verify/i)).toBeTruthy();
       expect(screen.queryByText(/not signed in/i)).toBeNull();
     });
@@ -366,8 +344,6 @@ describe('AccountSettings', () => {
 
     it('shows no verdict before the identity read resolves', async () => {
       apiMock.listAccounts.mockResolvedValue([WITH_EXPECTATION]);
-      // Never resolves — this is the pre-load state. Without a `loaded` flag
-      // the row would flash "Not signed in" on every Settings open.
       apiMock.accountIdentityVerdict.mockReturnValue(new Promise(() => { /* pending */ }));
 
       render(<AccountSettings />);
@@ -392,7 +368,6 @@ describe('AccountSettings', () => {
       await screen.findByText(/signed in as personal@example\.com/i);
       const callsBefore = apiMock.accountIdentityVerdict.mock.calls.length;
 
-      // The user has re-logged-in elsewhere; the next read finds it fixed.
       apiMock.accountIdentityVerdict.mockResolvedValue({
         status: 'verified',
         expected: 'work@example.com',
@@ -407,11 +382,7 @@ describe('AccountSettings', () => {
       expect(await screen.findByText(/verified: work@example\.com/i)).toBeTruthy();
     });
 
-    // The watcher is what makes a logout/login done in a terminal self-correct
-    // without the user hunting for a refresh.
     it('self-corrects when the identity changes on disk', async () => {
-      // Every subscriber hears the broadcast (the verdict and the sign-in
-      // expiry both listen), as the real event does.
       const subscribers: ((v: unknown) => void)[] = [];
       const push = (v: unknown) => { for (const cb of subscribers) cb(v); };
       apiMock.subscribeAccountIdentity.mockImplementation(
@@ -431,7 +402,6 @@ describe('AccountSettings', () => {
       render(<AccountSettings />);
       await screen.findByText(/not signed in/i);
 
-      // Main observed a real change on disk and pushed the new verdict.
       push({
         status: 'verified',
         expected: 'work@example.com',

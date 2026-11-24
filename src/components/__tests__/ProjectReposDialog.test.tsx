@@ -88,7 +88,6 @@ describe('ProjectReposDialog', () => {
     expect(name.className).not.toContain('truncate');
     const path = screen.getByText('/p/api');
     expect(path.className).not.toContain('truncate');
-    // Separate lines: the path is not inside the name's line.
     expect(name.parentElement!.contains(path)).toBe(false);
     expect(name.closest('[data-repo-row-text]')!.contains(path)).toBe(true);
   });

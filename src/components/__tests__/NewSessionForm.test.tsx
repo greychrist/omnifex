@@ -6,8 +6,6 @@ import { NewSessionForm } from '../NewSessionForm';
 import type { Account, AgentKind, CodexAuthStatus, ResolvePair, ResolveSlot } from '@/lib/api';
 import type { EffortLevel } from '../ControlBar';
 
-// AccountBadge consumes useAccounts() + useTheme(). Stub both so the
-// form renders without a real provider tree.
 vi.mock('@/contexts/AccountsContext', () => ({
   useAccounts: () => ({
     accounts: [],
@@ -22,9 +20,7 @@ vi.mock('@/hooks', () => ({
   useTheme: () => ({ theme: 'gray' as const, setTheme: async () => {} }),
 }));
 
-// The form fetches the resolved account's model catalog on mount. Resolve
-// to an empty list so the picker exercises the static FALLBACK_MODELS path
-// deterministically (no preload bridge exists under jsdom).
+// Resolves empty so the picker uses FALLBACK_MODELS.
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>();
   return {
@@ -39,7 +35,6 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 afterEach(() => { cleanup(); });
 
-/** Minimal valid Account for a slot. Only `name` is displayed by the form. */
 function makeAccount(over: Partial<Account> & Pick<Account, 'name' | 'engine'>): Account {
   return {
     id: 1,
@@ -71,12 +66,6 @@ const PAIR: ResolvePair = {
   codex: makeSlot('Codex Work', 'codex'),
 };
 
-/**
- * Mounts the form with stateful agent + setAgent so user-interaction
- * tests can flip the picker and observe the form rerender. Other props
- * are stubbed to constants since the tests below only assert on the
- * agent/account interaction.
- */
 function Harness({
   initialAgent = 'claude',
   pair = PAIR,
@@ -119,11 +108,8 @@ function Harness({
 describe('NewSessionForm — model picker', () => {
   it('lists the fallback catalog (incl. Fable 5 and Default) when no live catalog resolves', async () => {
     render(<Harness />);
-    // Trigger shows the current selection ('sonnet' → 'Sonnet').
     fireEvent.click(await screen.findByTitle('Sonnet'));
     expect(screen.getAllByText('Fable 5').length).toBeGreaterThan(0);
-    // The catalog "default" entry renders as "Account Default" (the picker
-    // names the account's real default rather than the generic CLI label).
     expect(screen.getAllByText('Account Default').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Haiku').length).toBeGreaterThan(0);
   });
@@ -140,7 +126,6 @@ describe('NewSessionForm — model picker', () => {
     ]);
     render(<Harness />);
     fireEvent.click(await screen.findByTitle('Sonnet'));
-    // Detail segment (before the ·) is shown; the marketing tail is not.
     expect(screen.getAllByText('Opus 4.8 with 1M context').length).toBeGreaterThan(0);
     expect(screen.queryByText(/Best for everyday/)).toBeNull();
   });
@@ -151,7 +136,6 @@ describe('NewSessionForm — model picker', () => {
       { value: 'sonnet', displayName: 'Sonnet', description: 'Sonnet 4.6 · Efficient for routine tasks' },
     ]);
     render(<Harness />);
-    // Without opening the dropdown, the trigger carries the detail line.
     expect(await screen.findByText('Sonnet 4.6')).toBeTruthy();
   });
 });
@@ -159,10 +143,8 @@ describe('NewSessionForm — model picker', () => {
 describe('NewSessionForm — agent picker', () => {
   it('renders the AgentPicker with Claude selected and shows the Claude slot account', () => {
     render(<Harness />);
-    // Picker renders both options
     expect(screen.getByRole('radio', { name: 'Claude' }).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('radio', { name: 'Codex' }).getAttribute('aria-checked')).toBe('false');
-    // Account label + the Claude slot's account badge are visible
     expect(screen.getByText('Account')).toBeTruthy();
     expect(screen.getByText('Personal')).toBeTruthy();
     expect(screen.queryByText('Codex Work')).toBeNull();
@@ -170,13 +152,10 @@ describe('NewSessionForm — agent picker', () => {
 
   it('flipping the AgentPicker to Codex swaps the displayed account to the codex slot', () => {
     render(<Harness />);
-    // Initially Claude — Personal shown, Codex Work not.
     expect(screen.queryByText('Personal')).not.toBeNull();
     expect(screen.queryByText('Codex Work')).toBeNull();
-    // Flip to Codex.
     fireEvent.click(screen.getByRole('radio', { name: 'Codex' }));
     expect(screen.getByRole('radio', { name: 'Codex' }).getAttribute('aria-checked')).toBe('true');
-    // Account cell now shows the codex slot's account; Claude's is gone.
     expect(screen.getByText('Account')).toBeTruthy();
     expect(screen.getByText('Codex Work')).toBeTruthy();
     expect(screen.queryByText('Personal')).toBeNull();
@@ -194,8 +173,6 @@ describe('NewSessionForm — agent picker', () => {
   });
 
   it('shows a "Choose account" button when the active engine slot is null', () => {
-    // Codex slot null + agent=codex — the leftmost cell renders the
-    // "Choose account" affordance instead of an account badge.
     const onChooseAccount = vi.fn();
     render(
       <Harness
@@ -224,14 +201,11 @@ describe('NewSessionForm — Codex auth banner', () => {
         onStart={onStart}
       />,
     );
-    // Banner present.
     const banner = screen.getByTestId('codex-auth-banner');
     expect(banner).toBeTruthy();
     expect(banner.textContent).toContain('You need to sign in to Codex');
-    // Submit button disabled.
     const submit = screen.getByRole<HTMLButtonElement>('button', { name: /Start Session/ });
     expect(submit.disabled).toBe(true);
-    // Clicking the disabled submit does nothing.
     fireEvent.click(submit);
     expect(onStart).not.toHaveBeenCalled();
   });
@@ -254,8 +228,6 @@ describe('NewSessionForm — Codex auth banner', () => {
   });
 
   it('treats null auth status as unauthenticated (loading state)', () => {
-    // While useCodexAuthStatus is still resolving the initial snapshot we
-    // pass null. Submit should stay disabled until we know.
     render(
       <Harness
         initialAgent="codex"

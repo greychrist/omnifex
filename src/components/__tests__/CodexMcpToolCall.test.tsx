@@ -39,8 +39,7 @@ describe("McpToolCallItem", () => {
         })}
       />,
     );
-    // <details> is collapsed by default, but the inner <pre> still
-    // exists in the DOM — jsdom doesn't strip non-open <details> children.
+    // jsdom renders a closed <details>'s children.
     expect(screen.getByText(/"foo": "bar"/)).toBeTruthy();
     expect(screen.getByText("input")).toBeTruthy();
   });
@@ -55,8 +54,6 @@ describe("McpToolCallItem", () => {
         })}
       />,
     );
-    // No surrounding quotes — the widget recognizes string outputs and
-    // surfaces them raw.
     expect(screen.getByText("plain text output line")).toBeTruthy();
   });
 

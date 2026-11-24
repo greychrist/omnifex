@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// The Lima tab polls limactl every few seconds. Spawned by bare name it cost
-// 6 throwaway processes per call (one per PATH miss) and 18 syspolicyd lines
-// per tick, so the default runner must go through the resolving helper.
+// A bare `limactl` spawns once per PATH miss.
 
 const execFileOnPath = vi.hoisted(() => vi.fn());
 vi.mock('../services/util/spawn', () => ({ execFileOnPath }));

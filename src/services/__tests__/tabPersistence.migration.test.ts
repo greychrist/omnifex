@@ -2,12 +2,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TabPersistenceService } from '../tabPersistence';
 
-/**
- * The Usage dashboard was removed once it turned out to be unreachable — its
- * only entry point was a window event nothing dispatched — and the Cost Report
- * supersedes it. A tab persisted by an older build must not restore into a
- * type that no longer renders, which shows as a blank tab with no error.
- */
 describe('tabPersistence — retired usage tab', () => {
   beforeEach(() => { window.localStorage.clear(); });
 
@@ -36,8 +30,6 @@ describe('tabPersistence — retired usage tab', () => {
     expect(TabPersistenceService.loadTabs().activeTabId).toBe('t1');
   });
 
-  // Two of them would restore as two Cost tabs, breaking the singleton the
-  // opener relies on to find-or-create.
   it('collapses a usage tab alongside an existing cost-report tab', () => {
     write([
       tab({ id: 't1' }),

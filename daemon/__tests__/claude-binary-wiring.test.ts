@@ -2,16 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-// `claudeBinaryService.getPath()` is only the path saved in Settings — null
-// until the user picks one. Anything that launches the CLI must use
-// `findBestBinary()`, which honours that pick and otherwise discovers the
-// install the Settings page is already showing. Wiring launches to getPath()
-// made sign-in fail with "claude binary not found" and made the identity
-// probe report every account signed out, for anyone who never touched the
-// selector; wiring them to nothing let sessions, the model and command
-// catalogs and summaries ignore the selector entirely.
-
-/** The source text of the first `name(...)` call, parens balanced. */
 function callText(src: string, name: string): string {
   const start = src.indexOf(`${name}(`);
   if (start === -1) throw new Error(`${name}( not found`);
@@ -43,29 +33,20 @@ describe('claude binary wiring in the composition root', () => {
       });
     }
 
-    // `claude auth login` moved here from Electron main with the one-shot
-    // pty; sign-in from the bare saved setting is the exact failure above.
     it(`${root} hands findBestBinary to createClaudeAuthService`, () => {
       expect(callText(src, 'createClaudeAuthService')).toMatch(
         new RegExp(`resolveBinary:\\s*${FIND_BEST.source}`),
       );
     });
 
-    // The /usage scraper used to carry its own `which claude` finder, so it
-    // ignored the Settings pick and shelled out on every 5-minute refresh.
     it(`${root} hands findBestBinary to createUsageRunnerService`, () => {
       expect(callText(src, 'createUsageRunnerService')).toMatch(
         new RegExp(`findClaudeBinary:\\s*${FIND_BEST.source}`),
       );
     });
 
-    // Positional, so the order is the contract: resolveClaudeBinary, the
-    // CLI-usage recorder (the spend no transcript records), the auto-recap
-    // policy, the bundled mod's plugin dirs, then the mod-notifications gate
-    // (Settings › Notifications). Both roots must pass each —
-    // the parameters are optional, so a root that forgot one would compile
-    // and silently stop counting that spend, never recap an idle session, or
-    // start every session without step progress, or ignore the setting.
+    // Positional and optional: a root that omits one still compiles, so the order
+    // is the contract.
     it(`${root} hands findBestBinary, the CLI-usage recorder, the auto-recap policy, the bundled mod, then the mod-notifications gate to createSessionsService last`, () => {
       expect(callText(src, 'createSessionsService')).toMatch(
         new RegExp(`${FIND_BEST.source},\\s*(//[^\\n]*\\s*)*createCliProcessUsageStore\\(db\\)\\.record,\\s*\\(\\) => readAutoRecapPolicy\\(\\(key\\) => db\\.getSetting\\(key\\)\\),\\s*\\(\\) => modNotificationsEnabled\\(db\\.getSetting\\(MOD_NOTIFICATIONS_SETTING_KEY\\)\\),?\\s*\\)$`),

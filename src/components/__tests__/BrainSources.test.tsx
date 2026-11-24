@@ -15,22 +15,13 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-/**
- * Hands back the callback the component subscribed with, so a test can push
- * progress frames the way the main process would.
- */
 function runProgressListener(): (run: unknown) => void {
   const calls = vi.mocked(api.onBrainRunProgress).mock.calls;
   if (calls.length === 0) throw new Error('component never subscribed to run progress');
   return calls[calls.length - 1][0] as (run: unknown) => void;
 }
 
-// The queue panel has its own tests; here it only needs to report which
-// account it was handed, which is what keeps these assertions about the
-// sources list rather than about queue depth.
 vi.mock('@/components/brain/BrainQueuePanel', () => ({
-  // Only the actions half renders here now — the persistent switches moved to
-  // the Brain tab's Settings tab.
   BrainQueueActions: (
     { accountId, refreshToken }: { accountId: number | null; refreshToken?: number },
   ) => (
@@ -130,8 +121,6 @@ describe('BrainSources', () => {
     render(<BrainSources accountId={1} />);
 
     fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
-    // Without this the reader cannot tell they are looking at a tail, which is
-    // the same failure the distiller's own marker exists to prevent.
     expect(await screen.findByText(/truncated/i)).toBeTruthy();
   });
 
@@ -146,10 +135,6 @@ describe('BrainSources', () => {
     vi.mocked(api.brainListSources).mockResolvedValue([]);
     rerender(<BrainSources accountId={2} />);
 
-    // An item key is only meaningful inside the account it came from. Holding
-    // a selection across a switch would render one account's distilled
-    // transcript under another account's header — the same rule BrainTab
-    // applies to note selection.
     await waitFor(() => {
       expect(screen.queryByText(/PERSONAL PROSE/)).toBeNull();
     });
@@ -175,17 +160,10 @@ describe('BrainSources', () => {
     await screen.findByText(/USER: do the thing/);
     fireEvent.click(screen.getByRole('button', { name: /^index$/i }));
 
-    // A one-row run is still a run: it goes through the same main-process path
-    // so it survives the sub-tab switch that used to erase it.
     await waitFor(() => {
-      // Forced: a press on a ticked row indexes what the unattended gate
-      // would decline, or pressing Index on a short session does nothing and
-      // leaves the row looking untouched.
       expect(api.brainIndexSelection)
         .toHaveBeenCalledWith(1, ['sess-a'], { force: true });
     });
-    // Refreshing is what turns the row's status from null to indexed. Without
-    // it the button looks like it did nothing.
     await waitFor(() => { expect(api.brainListSources).toHaveBeenCalledTimes(2); });
   });
 
@@ -196,7 +174,6 @@ describe('BrainSources', () => {
 
     fireEvent.click(await screen.findByText('/Users/dev/omnifex'));
     await screen.findByText(/USER: do the thing/);
-    // Indexing a rejected item would spend a token the gate exists to save.
     expect(screen.queryByRole('button', { name: /^index$/i })).toBeNull();
   });
 
@@ -216,7 +193,6 @@ describe('BrainSources', () => {
     expect(await screen.findByText(/validation blew up/)).toBeTruthy();
   });
 
-  /** A whole-run failure — no vault, a run already going — not a per-item one. */
   it('surfaces an indexing failure', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
@@ -230,11 +206,6 @@ describe('BrainSources', () => {
     expect(await screen.findByText(/no vault configured/)).toBeTruthy();
   });
 
-  /**
-   * The preview is a consequence of a selection, so with nothing selected it
-   * has nothing to say — and half the pane spent saying "select something" is
-   * half the pane not showing rows.
-   */
   it('renders no preview panel until a row is selected', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     render(<BrainSources accountId={1} />);
@@ -270,10 +241,6 @@ describe('BrainSources', () => {
     await waitFor(() => { expect(screen.queryByText(/USER: do the thing/)).toBeNull(); });
   });
 
-  /**
-   * A mousedown inside the preview must NOT deselect: it would unmount the
-   * panel before the click reached the button being pressed.
-   */
   it('keeps the preview open when the press lands inside it', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
@@ -287,12 +254,6 @@ describe('BrainSources', () => {
     expect(screen.getByText(/USER: do the thing/)).toBeTruthy();
   });
 
-  /**
-   * The splitter sits BETWEEN the table and the preview, so it is "away from
-   * the table" by the dismissal rule's own reading — and a mousedown there is
-   * the first half of a drag. Left alone, grabbing the divider would unmount
-   * the pane the drag exists to resize.
-   */
   it('keeps the preview open when the press lands on the splitter', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
@@ -306,11 +267,6 @@ describe('BrainSources', () => {
     expect(screen.getByText(/USER: do the thing/)).toBeTruthy();
   });
 
-  /**
-   * A disabled button whose label changed was the only sign a 20-second model
-   * call was running, and it sits in the preview — off to the side of where
-   * the user is looking.
-   */
   it('announces an indexing run above the table, not just on the button', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
@@ -326,7 +282,6 @@ describe('BrainSources', () => {
 
     const banner = await screen.findByRole('status');
     expect(banner.textContent).toMatch(/indexing/i);
-    // Names what is being worked on, so it is not just a moving bar.
     expect(banner.textContent).toContain('sess-a');
 
     // The main process ends a run by pushing null, not by this call returning.
@@ -334,12 +289,6 @@ describe('BrainSources', () => {
     await waitFor(() => { expect(screen.queryByRole('status')).toBeNull(); });
   });
 
-  /**
-   * `indexSource` is one opaque await — nothing reports partway through a
-   * distill-plus-extract. So a single-item run has no percentage to show, and
-   * a determinate bar could only invent one: it read 100% from the first frame
-   * and sat there for the whole call, which is the same picture as "finished".
-   */
   it('shows an indeterminate bar for a single-item run', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     vi.mocked(api.brainSourcePreview).mockResolvedValue(preview());
@@ -357,11 +306,6 @@ describe('BrainSources', () => {
     expect(bar.getAttribute('aria-valuenow')).toBeNull();
   });
 
-  /**
-   * The bar counts items FINISHED, not items started. Counting starts put it
-   * one item ahead the whole way: it opened at 1/N before any work happened
-   * and hit 100% as the last item began, so it never showed that item running.
-   */
   it('measures a multi-row run by items completed, not items started', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([
       summary({ itemKey: 'a' }), summary({ itemKey: 'b' }),
@@ -377,13 +321,11 @@ describe('BrainSources', () => {
 
     const bar = await screen.findByRole('progressbar');
     expect(bar.getAttribute('aria-valuemax')).toBe('2');
-    // First item in flight, nothing done yet.
     expect(bar.getAttribute('aria-valuenow')).toBe('0');
 
     const push = runProgressListener();
     push({ accountId: 1, total: 2, completed: 1, item: 'b', written: 1, skipped: 0 });
 
-    // Second item in flight, one done.
     await waitFor(() => {
       expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('1');
     });
@@ -406,11 +348,6 @@ describe('BrainSources', () => {
     expect(banner.textContent).toMatch(/1 of 2/);
   });
 
-  /**
-   * The pane unmounts whenever the Brain tab's sub-tab changes, so a run
-   * started here and left running is, on return, a run this component never
-   * saw begin. Asking the main process on mount is the only way to draw it.
-   */
   it('rebuilds the banner for a run that started before it mounted', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     vi.mocked(api.brainCurrentRun).mockResolvedValue({
@@ -431,12 +368,6 @@ describe('BrainSources', () => {
     await waitFor(() => { expect(api.brainCurrentRun).toHaveBeenCalledWith(7); });
   });
 
-  /**
-   * The banner and the titlebar pill report the same run and must not disagree.
-   * A one-item run used to read just "Indexing" here, which is the same hole
-   * the pill had: the counter vanished exactly when a background drain claimed
-   * the last pending entry, i.e. most of the time.
-   */
   it('keeps the counter, and names the stage and the item, for a one-item run', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     render(<BrainSources accountId={1} />);
@@ -450,8 +381,6 @@ describe('BrainSources', () => {
     const banner = await screen.findByRole('status');
     expect(banner.textContent).toMatch(/1 of 1/);
     expect(banner.textContent).toMatch(/extracting/);
-    // The human name beside the key: the key is what the table highlights, the
-    // name is what the user recognises.
     expect(banner.textContent).toContain('pi-tuitive');
   });
 
@@ -467,10 +396,6 @@ describe('BrainSources', () => {
     expect(banner.textContent).toMatch(/2 of 3/);
   });
 
-  /**
-   * The terminating null is what ends the banner. Without honouring it the bar
-   * would hang on its last frame for as long as the pane stayed mounted.
-   */
   it('drops the banner and re-lists when the run reports it ended', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     render(<BrainSources accountId={1} />);
@@ -483,12 +408,9 @@ describe('BrainSources', () => {
     push(null);
 
     await waitFor(() => { expect(screen.queryByRole('status')).toBeNull(); });
-    // A finished run changed row statuses; leaving the list stale is what made
-    // the button look like it had done nothing.
     await waitFor(() => { expect(api.brainListSources).toHaveBeenCalledTimes(2); });
   });
 
-  /** Another account's run is not this pane's business to draw. */
   it('ignores progress frames belonging to a different account', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     render(<BrainSources accountId={1} />);
@@ -523,18 +445,11 @@ describe('BrainSources', () => {
     fireEvent.click(screen.getByLabelText('Select b'));
     fireEvent.click(screen.getByRole('button', { name: /index selected \(2\)/i }));
 
-    // One call carrying the whole selection: a per-item loop in the renderer is
-    // what died with the component.
     await waitFor(() => {
       expect(api.brainIndexSelection).toHaveBeenCalledWith(1, ['a', 'b'], { force: true });
     });
   });
 
-  /**
-   * The stats bar ("Spent indexing", "Notes in vault") is a SIBLING of this
-   * pane, reading `brain_stats` on its own. Nothing here can re-read it, so a
-   * finished run left the cost figure showing a number from before the spend.
-   */
   it('tells its owner the vault changed when a run ends', async () => {
     const onVaultChanged = vi.fn();
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
@@ -556,12 +471,9 @@ describe('BrainSources', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /refresh/i }));
 
-    // Refresh has to mean "re-read everything on this page", or the figure the
-    // user is staring at stays wrong no matter how many times they press it.
     await waitFor(() => { expect(onVaultChanged).toHaveBeenCalled(); });
   });
 
-  /** Another account's run must not trigger a re-read of this one's figures. */
   it('stays quiet for a run belonging to a different account', async () => {
     const onVaultChanged = vi.fn();
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
@@ -576,11 +488,6 @@ describe('BrainSources', () => {
     expect(onVaultChanged).not.toHaveBeenCalled();
   });
 
-  /**
-   * The queue chip sits on the same bar as the Refresh button, so "refresh"
-   * has to reach it too — a background drain changes those counts with no
-   * action in this pane to notice it.
-   */
   it('refreshes the queue counts when Refresh is pressed', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     render(<BrainSources accountId={1} />);
@@ -606,10 +513,6 @@ describe('BrainSources', () => {
     await waitFor(() => { expect(api.brainListSources).toHaveBeenCalledTimes(2); });
   });
 
-  /**
-   * Enabled mid-run on purpose: a run only re-lists when the WHOLE selection
-   * finishes, so this is the one way to watch statuses land one at a time.
-   */
   it('keeps Refresh usable while a run is in flight', async () => {
     vi.mocked(api.brainListSources).mockResolvedValue([summary()]);
     render(<BrainSources accountId={1} />);
@@ -626,8 +529,6 @@ describe('BrainSources', () => {
   it('shows a listing error even with no row selected', async () => {
     vi.mocked(api.brainListSources).mockRejectedValue(new Error('config dir unreadable'));
     render(<BrainSources accountId={1} />);
-    // The preview used to host this, which put it behind a selection that a
-    // listing failure can never produce.
     expect(await screen.findByText(/config dir unreadable/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /close preview/i })).toBeNull();
   });

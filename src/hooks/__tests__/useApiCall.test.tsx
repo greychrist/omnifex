@@ -7,9 +7,6 @@ let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
-  // The hook logs via console.log / console.error for the toast TODO —
-  // suppress so test output stays clean while still letting us assert
-  // call counts.
   consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -143,9 +140,6 @@ describe('useApiCall — lifecycle', () => {
     let exec: Promise<string | null>;
     act(() => { exec = result.current.call(); });
     unmount();
-    // Resolving after unmount: hook should silently no-op (the previous
-    // call returned `null` for unmounted callers). If the hook tried to
-    // setState we'd see an unmounted-component warning in jsdom.
     await act(async () => {
       resolveIt('late');
       await exec;

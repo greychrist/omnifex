@@ -87,11 +87,6 @@ describe('buildClaudeEnv', () => {
   });
 
   it('allows ~/.claude when explicitly configured (single-account users)', () => {
-    // Single-account users with only the stock ~/.claude need this to work.
-    // The "no silent default" property is enforced at the resolution layer
-    // (accounts.resolve() returns null if no override/rule matches), not here
-    // — so any configDir that arrives at buildClaudeEnv was already chosen
-    // explicitly by an account row.
     const env = buildClaudeEnv('~/.claude', {}, fakeDeps());
     expect(env.CLAUDE_CONFIG_DIR).toBe(path.join(HOME, '.claude'));
 
@@ -112,9 +107,6 @@ describe('buildClaudeEnv', () => {
   });
 
   it('uses the real process.env / homedir when deps are omitted', () => {
-    // Smoke test that the default deps path works (real os.homedir + real
-    // process.env). We can't assert specific values, but we can assert no
-    // throw on a clearly-valid input.
     const env = buildClaudeEnv(
       path.join(os.homedir(), '.claude-personal'),
     );
@@ -122,15 +114,8 @@ describe('buildClaudeEnv', () => {
   });
 });
 
-// Claude Code 2.1.234 added CLAUDE_CODE_PROJECT_DIR_NAME. In the binary it is
-// read as `CGc = memo(() => CLAUDE_CONFIG_DIR ? validate(CLAUDE_CODE_PROJECT_DIR_NAME) : undefined)`
-// and consumed as `projectDir = CGc() ?? encodedCwd(path)` — so it is honored
-// ONLY when CLAUDE_CONFIG_DIR is set, which OmniFex always sets. An inherited
-// value would therefore redirect EVERY project's transcripts into one flat
-// `<configDir>/projects/<name>/`, silently breaking `encodeProjectId` and all
-// of its consumers (JSONL tailing, cost history, the summary sweep) and making
-// the Brain cross-attribute projects, since it keys ownership on that
-// directory name. We own the derivation, so we own the variable.
+// CLI 2.1.234 honors CLAUDE_CODE_PROJECT_DIR_NAME whenever CLAUDE_CONFIG_DIR is
+// set (always, here), so an inherited value would redirect transcripts.
 describe('buildClaudeEnv — CLAUDE_CODE_PROJECT_DIR_NAME (CLI 2.1.234)', () => {
   it('strips an inherited CLAUDE_CODE_PROJECT_DIR_NAME', () => {
     const env = buildClaudeEnv(
@@ -166,9 +151,8 @@ describe('buildClaudeEnv — CLAUDE_CODE_PROJECT_DIR_NAME (CLI 2.1.234)', () => 
     expect('CLAUDE_CODE_PROJECT_DIR_NAME' in env).toBe(false);
   });
 
-  // CLI 2.1.300 turned request replay on by default. In auto mode each
-  // `api-request` record carries a classifier context that grows per call up
-  // to 256 KB, and every OmniFex reader of the transcript pays for it.
+  // CLI 2.1.300 turned request replay on by default; each api-request record can
+  // grow to 256 KB.
   describe('request replay opt-out', () => {
     it('turns request replay off by default', () => {
       const env = buildClaudeEnv('/Users/test/.claude-personal', {}, fakeDeps());

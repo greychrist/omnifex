@@ -53,7 +53,6 @@ describe('Modern chain of thought — shadcn Trace steps', () => {
     expect(kindOf(/^Read c\.ts/)).toBe('read');
     expect(kindOf(/^Edited x\.ts/)).toBe('edit');
     expect(kindOf(/^Ran git commit/)).toBe('commit');
-    // The run's header keeps its summary status; no step carries one.
     document.querySelectorAll('[data-step]').forEach((step) => {
       expect(step.querySelector('.lucide-circle-check, .lucide-circle-alert')).toBeNull();
     });
@@ -116,7 +115,6 @@ describe('Modern chain of thought — shadcn Trace steps', () => {
 
   it('drops the blank lines a thought ends with, so it has no gap under it', () => {
     const trailing: WorkEntry = { ...thought, key: 'tt', text: 'I will grep for it.\n\n' };
-    // A run that only thought has no "Worked in" header around it.
     render(<ChainOfThought entries={[trailing]} nodes={[]} live={false} ctx={ctx} />);
     fireEvent.click(screen.getByRole('button', { name: /^Thought/ }));
     const body = screen.getByText(/I will grep for it\./);
@@ -157,8 +155,8 @@ describe('Modern chain of thought — shadcn Trace steps', () => {
     const icon = document.querySelector('[data-step-kind]')!;
     expect(icon.closest('[data-status="error"]')).not.toBeNull();
     expect(icon.className).toMatch(/in-data-\[status=error\]:text-destructive/);
-    // Its border is red via `.modern-step-icon` in styles.css: border-color
-    // utilities lose to the unlayered `* { border-color }` reset.
+    // Red via `.modern-step-icon` in styles.css: border-color utilities lose to the
+    // unlayered `* { border-color }` rule.
     expect(icon).toHaveClass('modern-step-icon');
   });
 
@@ -246,12 +244,10 @@ describe('Modern chain of thought — Settings › Chats › Modern', () => {
     const chip = screen.getByText(/^Ran npm test/).closest('[data-slot="trace-line"]')!.querySelector<HTMLElement>('[data-step-kind]')!;
     expect(chip.style.color).toBe('rgb(34, 197, 94)');
     expect(chip.style.borderColor).not.toBe('');
-    // The title takes the color too, as the answered question's does.
     expect(screen.getByText(/^Ran npm test/).closest<HTMLElement>('[data-slot="trace-title"]')!.style.color).toBe('rgb(34, 197, 94)');
     fireEvent.click(screen.getByRole('button', { name: /Ran npm test/ }));
     const rule = screen.getByText('ok').closest<HTMLElement>('[data-slot="trace-collapsible-content"] > div')!;
     expect(rule.style.borderLeftColor).toBe('rgb(34, 197, 94)');
-    // Another kind keeps the gray.
     const other = document.querySelector<HTMLElement>('[data-step-kind="search"]')!;
     expect(other.style.color).toBe('');
     expect(other.closest('[data-slot="trace-line"]')!.querySelector<HTMLElement>('[data-slot="trace-title"]')!.style.color).toBe('');
@@ -263,7 +259,6 @@ describe('Modern chain of thought — Settings › Chats › Modern', () => {
     expect(document.querySelector<HTMLElement>('[data-step-kind="thought"]')!.style.color).toBe('rgb(14, 165, 233)');
     const title = document.querySelector<HTMLElement>('[data-slot="trace-title"]')!;
     expect(title.style.color).toBe('rgb(14, 165, 233)');
-    // A running title shimmers in the color, not the gray.
     expect(title.style.getPropertyValue('--modern-shimmer-color')).toBe('#0ea5e9');
     fireEvent.click(screen.getByRole('button', { name: /^Thought/ }));
     const rule = screen.getByText('hmm').closest<HTMLElement>('[data-slot="trace-collapsible-content"] > div')!;
@@ -340,7 +335,6 @@ describe('Modern chain of thought — a Claude Design run', () => {
     expect(chip.querySelector('.lucide-palette')).not.toBeNull();
     const link = screen.getByRole('link', { name: /Open in Claude/ });
     expect(link).toHaveAttribute('href', 'https://claude.ai/artifact/9aQk');
-    // The inner steps wait behind the fold.
     expect(screen.queryByText(/Read the design guide/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Designed Habit Tracker Today/ }));
     expect(screen.getByText(/Read the design guide/)).toBeInTheDocument();
@@ -377,11 +371,8 @@ describe('Modern chain of thought — a Claude Design run', () => {
     expect(row).toContainElement(count);
     expect(title.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(link.compareDocumentPosition(count) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // The link is never inside a button.
     expect(link.closest('button')).toBeNull();
-    // Drawn as a small outlined button, so it does not read as more title.
     expect(link).toHaveClass('rounded-md', 'border', 'text-xs');
-    // The step count opens the fold too.
     fireEvent.click(count);
     expect(screen.getByText(/Read the design guide/)).toBeInTheDocument();
   });

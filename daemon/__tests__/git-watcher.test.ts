@@ -77,11 +77,8 @@ describe('git-watcher service', () => {
       const fromMain = await listWorktrees(repo);
       expect(fromMain).toHaveLength(2);
       expect(fromMain.map((w) => w.branch).sort()).toEqual(['feature-a', 'feature-b']);
-      // Paths should be the worktree paths, not the main repo
       expect(fromMain.every((w) => w.path !== repo)).toBe(true);
 
-      // Querying from a worktree should exclude that worktree but include the
-      // main repo + the sibling worktree.
       const fromWt1 = await listWorktrees(wt1);
       expect(fromWt1).toHaveLength(2);
       expect(fromWt1.every((w) => w.path !== wt1)).toBe(true);
@@ -206,7 +203,6 @@ describe('git-watcher service', () => {
       const svc = makeService({ pollIntervalMs: 150 });
       const { watchId } = await svc.start(repo);
       try {
-        // Seed a brand-new untracked file inside the peer worktree.
         fs.writeFileSync(path.join(wt, 'new.txt'), 'hi\n');
 
         const call = await waitFor(() =>
@@ -233,7 +229,6 @@ describe('git-watcher service', () => {
       const wt = path.join(wtRoot, 'feat-broken');
       execSync(`git worktree add -b feat-broken "${wt}"`, { cwd: repo, stdio: 'pipe' });
 
-      // Corrupt the peer's gitdir pointer so its `git status` fails.
       fs.writeFileSync(path.join(wt, '.git'), 'gitdir: /nonexistent/path/that/does/not/exist\n');
 
       const svc = makeService({ pollIntervalMs: 5000 });
@@ -265,8 +260,6 @@ describe('git-watcher service', () => {
         const wt = path.join(wtRoot, 'feat-late');
         execSync(`git worktree add -b feat-late "${wt}"`, { cwd: repo, stdio: 'pipe' });
 
-        // Skip the fs.watch path entirely — call reconnect to force a
-        // fresh enumeration.
         const fresh = await svc.reconnect(watchId);
         expect(fresh).not.toBeNull();
         expect(fresh!.repos[0].worktrees.some((w) => w.branch === 'feat-late')).toBe(true);

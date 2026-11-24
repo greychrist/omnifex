@@ -14,9 +14,8 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-// MDEditor pulls in a large ESM bundle and a CodeMirror-ish surface that jsdom
-// cannot drive. The editing contract under test is "what the user typed is
-// what gets saved", which a textarea expresses exactly.
+// MDEditor's ESM bundle is beyond jsdom; a textarea expresses the same
+// contract.
 vi.mock('@uiw/react-md-editor', () => ({
   default: ({ value, onChange }: { value?: string; onChange?: (v?: string) => void }) => (
     <textarea
@@ -172,11 +171,6 @@ describe('BrainNoteViewer', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  /**
-   * The editor holds unsaved text that exists nowhere else. Closing is one
-   * click away from Save, and a panel that discards a draft silently is a
-   * panel that loses work to a misclick.
-   */
   it('asks before closing on an unsaved edit', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const onClose = vi.fn();
@@ -218,7 +212,6 @@ describe('BrainNoteViewer', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  /** An untouched draft is not work, so closing it needs no ceremony. */
   it('does not ask when the editor is open but nothing was typed', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const onClose = vi.fn();
@@ -239,10 +232,6 @@ describe('BrainNoteViewer', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  /**
-   * A deleted note leaves the panel pointing at a path that no longer exists,
-   * which read as "cannot read note" where the note used to be.
-   */
   it('closes the panel after the note is deleted', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     const onClose = vi.fn();
@@ -283,8 +272,6 @@ describe('BrainNoteViewer', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
     expect(screen.getByTestId('md-editor')).toBeTruthy();
 
-    // An open editor carrying one note's draft into another note's path is a
-    // save that silently overwrites the wrong file.
     rerender(<BrainNoteViewer accountId={1} notePath="Projects/omnifex.md" onNavigate={vi.fn()} onChanged={vi.fn()} />);
     await waitFor(() => { expect(screen.queryByTestId('md-editor')).toBeNull(); });
   });

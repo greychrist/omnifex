@@ -51,8 +51,6 @@ describe('buildPathTree', () => {
   });
 
   describe('single-child chain collapsing', () => {
-    // A tree that renders `aws-components` → `edge` → `terraform` as three
-    // rows wastes three lines to convey one location.
     it('collapses a chain of directories that each hold only one directory', () => {
       const tree = buildPathTree([
         e('aws-components/edge/terraform/iam.tf'),
@@ -142,7 +140,6 @@ describe('filterPaths', () => {
   });
 
   it('treats the query as literal text, not a regular expression', () => {
-    // A user typing `api.ts` should not have `.` behave as "any character".
     expect(filterPaths(entries, 'apiXts')).toEqual([]);
   });
 });

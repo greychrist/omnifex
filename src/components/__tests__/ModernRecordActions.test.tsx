@@ -16,8 +16,6 @@ afterEach(() => { cleanup(); });
 
 const ctx = { tabId: 't' } as ModernRowContext;
 
-// The orange "Status" line: a system record with no text, so no body and no
-// chevron. Its JSON used to be unreachable.
 const statusNode = {
   kind: 'system',
   subtype: 'status',

@@ -42,7 +42,6 @@ describe('GitBranchBadge — view changes', () => {
   });
 
   it('offers nothing when the working tree is clean', () => {
-    // Nothing to diff — the control would open an empty viewer.
     render(<GitBranchBadge {...base} changed={0} untracked={0} onViewChanges={vi.fn()} />);
     openPopover();
     expect(screen.queryByRole('button', { name: /view changes/i })).toBeNull();
@@ -50,7 +49,6 @@ describe('GitBranchBadge — view changes', () => {
 });
 
 describe('GitBranchBadge — bar size', () => {
-  // On a status bar the badge keeps its chip, at the bar's 10px type.
   it('takes the status bar\'s text size, keeping its chip', () => {
     render(<GitBranchBadge {...base} size="bar" />);
     const chip = screen.getByRole('button', { name: /main/i });
@@ -121,8 +119,8 @@ describe('GitBranchBadge — text variant', () => {
     expect(badge.textContent).toBe('21');
   });
 
-  // The color carries `!`: the global \`* { border-color }\` reset outranks
-  // layered border-color utilities.
+  // The color carries `!`: the global `* { border-color }` reset outranks layered
+  // border-color utilities.
   it('outlines the count badge', () => {
     render(<GitBranchBadge {...base} variant="text" />);
     const cls = screen.getByTestId('change-counts').className.split(' ');

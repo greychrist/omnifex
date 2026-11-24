@@ -25,8 +25,7 @@ describe('resolveRates', () => {
     expect(resolveRates('claude-3-5-haiku').rates.input).toBeCloseTo(0.25 / M, 12);
   });
 
-  // Sonnet 5 is $2/$10; every earlier Sonnet is $3/$15. One generic
-  // 'sonnet' entry priced them all at $3/$15 and overstated Sonnet 5 by 1.5x.
+  // Sonnet 5 is $2/$10; every earlier Sonnet is $3/$15.
   it('prices Sonnet 5 apart from the older Sonnet family', () => {
     expect(resolveRates('claude-sonnet-5').rates.input).toBeCloseTo(2 / M, 12);
     expect(resolveRates('claude-sonnet-5').rates.output).toBeCloseTo(10 / M, 12);
@@ -106,14 +105,8 @@ describe('splitCacheWriteTokens', () => {
   });
 });
 
-/**
- * The legacy reader exists only for migration 25, which folds a retired
- * `pricing_overrides` blob into `model_pricing` and deletes it. It returns
- * pricing rows like everything else — there is no second shape.
- */
 describe('parseLegacyPricingOverrides', () => {
   it('parses valid JSON, rejects garbage', () => {
-    // The flat legacy shape normalises to one always-applicable row.
     expect(parseLegacyPricingOverrides('{"opus-4-8":{"input":4}}')).toEqual([
       { pattern: 'opus-4-8', effectiveFrom: '1970-01-01', inputPerM: 4 },
     ]);
@@ -149,8 +142,6 @@ describe('parseLegacyPricingOverrides', () => {
   });
 
   it('ignores fields a blob could never have carried', () => {
-    // Fast rates and display metadata arrived with the table. Accepting them
-    // here would be validating a shape that cannot occur.
     expect(parseLegacyPricingOverrides('{"opus":{"label":"Opus","colorSlot":1}}')).toEqual([]);
   });
 });

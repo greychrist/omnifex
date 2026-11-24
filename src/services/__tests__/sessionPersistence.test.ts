@@ -5,8 +5,6 @@ import { SessionPersistenceService, type SessionRestoreData } from '../sessionPe
 const STORAGE_KEY_PREFIX = 'greychrist_session_';
 const SESSION_INDEX_KEY = 'greychrist_session_index';
 
-// api is referenced only by isSessionRestorable; mock it so the rest of
-// the suite runs without the IPC surface.
 vi.mock('@/lib/api', () => ({
   api: { loadSessionHistory: vi.fn() },
 }));
@@ -98,8 +96,7 @@ describe('SessionPersistenceService — cleanupOldSessions', () => {
     const now = new Date('2026-06-15T00:00:00Z').getTime();
     vi.setSystemTime(now);
 
-    // Write a fresh one (now) and a stale one (40 days ago) by hand to
-    // dodge saveSession's `timestamp: Date.now()` write.
+    // Written by hand to dodge saveSession's `timestamp: Date.now()`.
     const fresh: SessionRestoreData = { sessionId: 'fresh', projectId: 'p', projectPath: '/x', timestamp: now };
     const stale: SessionRestoreData = { sessionId: 'stale', projectId: 'p', projectPath: '/x', timestamp: now - 40 * 24 * 60 * 60 * 1000 };
     localStorage.setItem(`${STORAGE_KEY_PREFIX}fresh`, JSON.stringify(fresh));

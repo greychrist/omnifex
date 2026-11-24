@@ -68,10 +68,6 @@ describe('buildSessionRoster — attached rows', () => {
 
 describe('buildSessionRoster — stale summaries', () => {
   it('drops a summary whose tab no longer exists', () => {
-    // The ghost case: a reload left summaries behind in the aggregator. They
-    // are not sessions this window can speak for, so they are never rendered
-    // as attached rows. If the session is genuinely alive the daemon list
-    // below re-adds it as detached.
     const roster = buildSessionRoster({
       summaries: [summary('t1'), summary('gone')],
       tabs: [tab('t1', 0)],
@@ -122,8 +118,6 @@ describe('buildSessionRoster — detached rows', () => {
   });
 
   it('excludes a session the tab owns even when that tab has not published yet', () => {
-    // Otherwise a tab still starting up shows up twice: once as its own
-    // pending row and once as "detached".
     const roster = buildSessionRoster({
       summaries: [],
       tabs: [tab('t1', 0, 'sess-t1')],

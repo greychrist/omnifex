@@ -37,7 +37,6 @@ describe("typefaceCatalog", () => {
     for (const t of APP_FONT_CHOICES) {
       expect(["sans", "display-sans"]).toContain(t.family);
     }
-    // And every sans-tagged catalog entry shows up in APP_FONT_CHOICES.
     const sansIds = TYPEFACE_CATALOG
       .filter((t) => t.family === "sans" || t.family === "display-sans")
       .map((t) => t.id);

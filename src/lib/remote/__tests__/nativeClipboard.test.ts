@@ -4,12 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installNativeClipboard } from '@/lib/remote/nativeClipboard';
 import type { NativeBridge } from '@/lib/platform';
 
-/**
- * The Mac app's page comes from the daemon over plain http on the tailnet
- * address, which WebKit does not count as a secure context — so
- * `navigator.clipboard` and `ClipboardItem` do not exist there, and every
- * copy button threw. The app's bridge supplies the clipboard instead.
- */
+// The tailnet page is no secure context in WebKit, so `navigator.clipboard`
+// and `ClipboardItem` are missing; the bridge supplies them.
 
 function bridge() {
   const invoke = vi.fn(async () => null);
@@ -53,10 +49,7 @@ describe('installNativeClipboard', () => {
     await expect(navigator.clipboard.writeText('x')).rejects.toThrow('denied');
   });
 
-  // From loopback the page has WebKit's own clipboard, but WebKit refuses a
-  // write that comes after an await (image copy encodes the PNG first). The
-  // pasteboard has no such rule, so the Mac keeps the native writes and only
-  // borrows the page's read side.
+  // WebKit refuses a clipboard write after an await; the pasteboard does not.
   it('replaces the write side of a real clipboard, keeping its reads', async () => {
     const readText = vi.fn(async () => 'from page');
     const real = { writeText: vi.fn(), write: vi.fn(), readText, read: vi.fn() };

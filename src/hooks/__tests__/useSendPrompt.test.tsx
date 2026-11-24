@@ -82,17 +82,10 @@ describe('useSendPrompt', () => {
   });
 
   it('reads turnRunningRef.current at call-time, not from a captured render', async () => {
-    // Reproduces the stale-closure bug: the queue drain path holds onto
-    // handleSendPrompt across renders and invokes it later. With a ref-based
-    // gate, flipping turnRunningRef.current to false makes the very next call
-    // dispatch instead of re-queueing — even though no rerender happened.
     const { result } = renderHook(makeHarness(true));
 
-    // Stale capture: grab the function while the turn was running.
     const stale = result.current.hook.handleSendPrompt;
 
-    // The session's turn closes (mirrored into the ref by AgentSession). No
-    // rerender of the hook needed.
     act(() => {
       result.current.turnRunningRef.current = false;
     });
@@ -105,9 +98,8 @@ describe('useSendPrompt', () => {
   });
 
   it('queues a second prompt while the first send is still in flight, before the session has opened the turn', async () => {
-    // The turn opens in main when the prompt is handed over; until that
-    // round-trip lands the ref still reads idle. A send in progress is its
-    // own fact, owned here, and it must gate exactly like a running turn.
+    // The turn opens only once the prompt is handed over; until then the ref reads
+    // idle.
     let release!: () => void;
     (api.sendMessage as any).mockImplementationOnce(() => new Promise<void>((r) => { release = r; }));
     const { result } = renderHook(makeHarness(false));
@@ -119,7 +111,6 @@ describe('useSendPrompt', () => {
     expect(result.current.hook.queuedPrompts.map((q) => q.prompt)).toEqual(['two']);
     release();
     await act(async () => { await first; });
-    // Once the send has landed the latch drops; a further prompt goes straight out.
     await act(async () => { await result.current.hook.handleSendPrompt('three', 'opus'); });
     expect(api.sendMessage).toHaveBeenCalledTimes(2);
   });
@@ -141,9 +132,6 @@ describe('useSendPrompt', () => {
 
   afterEach(() => { cleanup(); });
 
-  // `/btw` is the side chat, never a prompt. This hook is the only place a
-  // prompt is queued, so the check lives here — ahead of the queue — and no
-  // entry path (composer, resend, queue drain, launch prompt) can queue one.
   describe('/btw', () => {
     it('routes /btw <q> to the side chat during a running turn, queueing nothing', async () => {
       const onSideChat = vi.fn();

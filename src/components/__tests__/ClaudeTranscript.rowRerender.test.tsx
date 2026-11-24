@@ -1,13 +1,4 @@
 // @vitest-environment jsdom
-//
-// Guards the fix for the 5.6s window freezes traced 2026-10-13 (v0.4.233): one
-// record appended to an 11 MB background tab re-rendered every StreamMessage
-// row in it, because each row took the whole message array as a prop. The new
-// array defeated React.memo on every row, and each row then rebuilt
-// whole-transcript maps and re-parsed its markdown — quadratic in the tab's
-// length, and paid by the whole window whichever tab was on screen.
-//
-// A new record must re-render the rows it is about, not the transcript.
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
@@ -140,15 +131,11 @@ describe.each(['expanded', 'standard'] as const)('ClaudeTranscript row re-render
     const before = [...conversation(40), prompt(199), call];
     const after = [...before, toolResult(201, 'toolu_1')];
 
-    // At most the work row the Bash call sits in: its result folds into it.
     expect(rowRendersOnUpdate(before, after, viewMode)).toBeLessThanOrEqual(1);
   });
 
   // The CLI's stream `init` is inserted before the first user record, not
-  // appended — it arrives on every process start, including the one after a
-  // /compact. Index-keyed rows each received a different message on that
-  // insert, so the whole tab re-rendered: 1,779 rows on a real 12 MB
-  // transcript, the trigger for the 2026-10-16 post-compact window stall.
+  // appended, on every process start.
   it('renders only the inserted row when a record lands above every other', () => {
     const before = conversation(40);
     const init: JsonlNode = {

@@ -78,8 +78,6 @@ describe('codex binary service', () => {
       service.setPath(fakeBin);
       const installations = await service.listInstallations();
       const custom = installations.find((i) => i.source === 'custom');
-      // Either it shows up as 'custom', or it was already discovered by another source
-      // (in which case the dedup branch in listInstallations short-circuits).
       const seenAtAnySource = installations.some((i) => i.path === fakeBin);
       expect(seenAtAnySource).toBe(true);
       if (custom) expect(custom.path).toBe(fakeBin);

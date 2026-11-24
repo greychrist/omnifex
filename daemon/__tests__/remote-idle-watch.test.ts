@@ -3,16 +3,6 @@ import { describe, it, expect } from 'vitest';
 import { createIdleWatch, IDLE_CHECK_MS, IDLE_GRACE_MS, progressingTurns, STARTUP_GRACE_MS } from '../remote/idle-watch';
 
 describe('createIdleWatch', () => {
-  // A daemon must not outlive the app that spawned it. The app stops it on
-  // quit and it shares the app's process group — but neither survives
-  // `kill -9` or a crash, and a leftover daemon holds stale permissions and
-  // an old build. This is the backstop: no client, no turn, no reason to be
-  // here.
-  //
-  // `everConnected` is asked of the server, not inferred from a poll of
-  // `clients`. A 5s tick genuinely missed a client that was attached for 2s
-  // (2026-09-13), and a watch that decides "nobody ever came" from samples it
-  // may not have taken is a watch that never fires.
   const watch = (
     clients: () => number,
     opts: { inFlight?: () => number; everConnected?: () => boolean; startedAt?: number } = {},
@@ -52,7 +42,6 @@ describe('createIdleWatch', () => {
     clients = 1;
     expect(w.check(2_000)).toBe(false);
     clients = 0;
-    // The clock restarts from the new disconnect, not the old one.
     expect(w.check(3_000)).toBe(false);
     expect(w.check(32_000)).toBe(false);
     expect(w.check(34_000)).toBe(true);
@@ -68,22 +57,17 @@ describe('createIdleWatch', () => {
     expect(w.check(1_000)).toBe(false);
     expect(w.check(120_000)).toBe(false);
     inFlight = 0;
-    // The grace period starts when the turn ends, not when the client left.
     expect(w.check(121_000)).toBe(false);
     expect(w.check(152_000)).toBe(true);
   });
 
   it('gives the app time to make its first connection', () => {
-    // The daemon is listening a second before the app's socket arrives;
-    // exiting there would be a launch that killed itself.
     const w = watch(() => 0, { everConnected: () => false, startedAt: 1_000 });
     expect(w.check(2_000)).toBe(false);
     expect(w.check(60_000)).toBe(false);
   });
 
   it('exits when nothing ever connects — the app it belonged to is gone', () => {
-    // The app died during boot, or was killed before the socket opened.
-    // Nothing will ever attach to this daemon; it is already a leftover.
     const w = watch(() => 0, { everConnected: () => false, startedAt: 1_000 });
     expect(w.check(60_000)).toBe(false);
     expect(w.check(121_000)).toBe(true);
@@ -97,10 +81,8 @@ describe('createIdleWatch', () => {
 });
 
 describe('progressingTurns', () => {
-  // What the watch counts as "a turn still running". A turn blocked on a
-  // permission or question cannot progress once no client is attached —
-  // nobody is left to answer, and permissionTimeoutMs defaults to never — so
-  // counting it kept a crash-orphaned daemon alive forever (review, 2026-11-18).
+  // A turn blocked on a permission cannot progress with no client, and
+  // permissionTimeoutMs defaults to never.
   it('counts turns that can still finish on their own', () => {
     expect(progressingTurns([{ inFlight: true, pendingPermissions: 0 }])).toBe(1);
   });

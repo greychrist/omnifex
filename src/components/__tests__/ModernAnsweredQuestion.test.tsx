@@ -37,9 +37,6 @@ const resultNode = {
 const item = { kind: 'question', key: 'q-1', node, input, resultNode } as ModernItem;
 
 describe('Modern answered question', () => {
-  // Drawn as Modern's other record lines are (RecordLine, RecapLine): a Trace
-  // line over an open body under the left rule, not the classic card. The
-  // icon keeps the question kind's purple accent.
   it('is a Trace line, not the classic answered card', () => {
     const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
     expect(screen.queryByTestId('answered-ask-user-question-card')).toBeNull();
@@ -53,20 +50,16 @@ describe('Modern answered question', () => {
     expect(icon.style.color).toBe('rgb(99, 102, 241)');
   });
 
-  // The title and the rule beside the answers wear the same purple. Inline,
-  // because the unlayered `* { border-color }` reset beats the utilities.
+  // Inline, because the unlayered `* { border-color }` reset beats the utilities.
   it('colors the title and the left rule in that purple too', () => {
     const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
     expect(screen.getByText('2 questions answered').style.color).toBe('rgb(99, 102, 241)');
     const rule = container.querySelector('[data-question-body]') as HTMLElement;
     expect(rule.style.borderLeftColor).toBe('rgb(99, 102, 241)');
-    // A hairline: a solid purple at 1px read heavier than the grey 1px rules.
     expect(rule.style.borderLeftWidth).toBe('0.5px');
     expect(rule.style.borderLeftStyle).toBe('solid');
   });
 
-  // Each question is in the muted text color with its text underlined; the
-  // answer under it is in the foreground color.
   it('underlines each question in the muted color, the answer in the foreground', () => {
     render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
     const q = screen.getByText('Add the review task?');

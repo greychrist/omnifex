@@ -4,10 +4,6 @@ import { createRateLimitsService, type RateLimitsService, type RateLimitInfo } f
 import type { AccountsService, Account } from '../services/accounts';
 import type { LoggingService } from '../services/logging';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function makeAccount(overrides: Partial<Account> = {}): Account {
   return {
     id: 1,
@@ -111,10 +107,6 @@ function makeHarness(opts: { accounts?: Account[]; nowMs?: number } = {}): Harne
   };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe('rate-limits service', () => {
   let h: Harness;
 
@@ -154,9 +146,6 @@ describe('rate-limits service', () => {
     });
 
     it('preserves prior resets_at when called with null', () => {
-      // First write seeds a good reset time; a follow-up call with null
-      // (e.g. parser failed to extract the resets line) must NOT clobber the
-      // good value with null.
       h.service.recordUtilization('/Users/test/.claude', 'five_hour', 30, 1_700_000_000);
       h.service.recordUtilization('/Users/test/.claude', 'five_hour', 35, null);
       const snap = h.service.getSnapshotsByAccount('Personal').find((s) => s.rate_limit_type === 'five_hour')!;
@@ -189,15 +178,11 @@ describe('rate-limits service', () => {
         accounts: makeAccountsService([makeAccount()]),
         notifications: { show: () => {} },
         sendToRenderer: () => {},
-        // Only writeBatch is exercised; the rest of LoggingService is unused here.
         logging: { writeBatch: (entries: Parameters<LoggingService['writeBatch']>[0]) => { writes.push(...entries); } } as unknown as LoggingService,
       });
       return { db, service, writes };
     }
 
-    // Every session reports rate-limit events constantly; a debug row per
-    // event buried the Log tab (645 rows in two weeks) and told us nothing
-    // the snapshot table doesn't already hold.
     it('writes nothing to the app log for a normal event', () => {
       const { db, service, writes } = withLogSpy();
       service.recordEvent('/Users/test/.claude', fiveHourEvent({ utilization: 30 }));
@@ -255,13 +240,10 @@ describe('rate-limits service', () => {
     });
 
     it('preserves prior utilization when a follow-up event omits it', () => {
-      // First event lands with a real percentage
       h.service.recordEvent('/Users/test/.claude', fiveHourEvent({ utilization: 42 }));
       expect(h.service.getSnapshots()[0].utilization).toBe(42);
 
-      // Second event arrives with the same window but no utilization (the
-      // CLI does this — emits status pings without re-stating the percent).
-      // The widget should keep showing 42, not flip to null.
+      // The CLI emits status pings without utilization.
       h.service.recordEvent('/Users/test/.claude', {
         status: 'allowed',
         rateLimitType: 'five_hour',
@@ -312,10 +294,8 @@ describe('rate-limits service', () => {
     });
   });
 
-  // The CLI builds `unifiedWindows` from the API's per-window headers, so a
-  // window it leaves out is one the account no longer has — Max dropped the
-  // 5-hour window around 2026-10-31. Without pruning, the last five_hour row
-  // sat in the status bar forever.
+  // The CLI builds `unifiedWindows` from per-window API headers, so a window it
+  // omits is gone.
   describe('recordEvent — windows the account no longer has', () => {
     const weekly = (unifiedWindows?: Record<string, unknown>): RateLimitInfo =>
       ({ status: 'allowed', rateLimitType: 'seven_day', utilization: 7, resetsAt: 1_700_500_000, unifiedWindows });
@@ -461,7 +441,6 @@ describe('rate-limits service', () => {
       h.service.updateSettings({ five_hour_thresholds_pct: [50, 75, 90] });
       const s = h.service.getSettings();
       expect(s.five_hour_thresholds_pct).toEqual([50, 75, 90]);
-      // unchanged keys should keep defaults
       expect(s.notifications_enabled).toBe(true);
     });
 
@@ -514,8 +493,6 @@ describe('rate-limits service', () => {
       h.service.updateSettings({ notifications_enabled: true });
       h.service.recordEvent('/Users/test/.claude', fiveHourEvent({ utilization: 85 }));
 
-      // Even after re-enabling, 75% should NOT fire because the dedup row was
-      // recorded during the disabled period.
       expect(h.notifications).toHaveLength(0);
     });
   });
@@ -536,7 +513,6 @@ describe('rate-limits service', () => {
       const names = snaps.map((s) => s.account_name).sort();
       expect(names).toEqual(['Personal', 'Work']);
 
-      // Each account fires its own 75% notification
       expect(h2.notifications).toHaveLength(2);
       h2.db.close();
     });

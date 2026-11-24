@@ -17,8 +17,6 @@ vi.mock('@/lib/api', () => ({ api: apiMock }));
 vi.mock('@/lib/platform', () => platformMock);
 vi.mock('@/hooks/useLayoutMode', () => ({ useLayoutMode: () => ({ narrow: false }) }));
 
-// The real Popover portals and animates; a controlled passthrough is enough
-// to reach the account-identity controls.
 vi.mock('@/components/ui/popover', () => ({
   Popover: (props: {
     trigger: React.ReactNode;
@@ -108,9 +106,6 @@ describe('AccountCard — sign in / sign out', () => {
     expect(screen.queryByRole('button', { name: /sign out/i })).toBeNull();
   });
 
-  // An account with no expected email resolves to no verification at all.
-  // Signing in and out does not depend on that check, so the controls must
-  // not either — they follow who is signed in.
   it('offers Sign in with no expected email when nobody is signed in', () => {
     renderCard({ verification: null, signedInEmail: null });
     expect(screen.getByText('Not signed in')).toBeTruthy();
@@ -131,9 +126,6 @@ describe('AccountCard — sign in / sign out', () => {
     expect(screen.getByRole('button', { name: /re-authenticate/i })).toBeTruthy();
   });
 
-  // The identity verdict is only re-read on an on-disk login change. Editing
-  // the expected email in Settings is neither, so the card's refresh button
-  // must re-run the check too — with no expected email there is no Re-check.
   it('re-checks the account identity from the card refresh button', () => {
     const { onRecheck } = renderCard({ verification: null });
     fireEvent.click(screen.getByTitle('Refresh account identity and usage'));
@@ -174,8 +166,6 @@ describe('AccountCard — sign in / sign out', () => {
     expect(screen.queryByRole('button', { name: /re-authenticate/i })).toBeNull();
   });
 
-  // The daemon runs the sign-in now (claude_authenticate), and the web
-  // client finishes it by pasting a code — no pty on the client's machine.
   it('offers the controls in the web client too', () => {
     platformMock.platform.isDesktop = false;
     renderCard();
@@ -184,9 +174,6 @@ describe('AccountCard — sign in / sign out', () => {
   });
 });
 
-// The running CLI process lost its sign-in while the config dir's login still
-// reads as fine (session 845b2f3d). The popover must say so and lead with
-// Sign in, and a successful sign-in must reach every tab on the account.
 describe('AccountCard — session sign-in expired', () => {
   const EXPIRED = {
     at: '2026-09-29T19:43:40Z',

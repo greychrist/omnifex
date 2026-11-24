@@ -3,9 +3,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import type { AgentMessage } from "@/lib/api";
 
-// AgentMessageItem pulls the syntax theme via useTheme(), which would
-// otherwise throw without a ThemeProvider. The 'gray' theme matches
-// production default (same pattern as MarkdownBlock.test.tsx).
+// useTheme() throws without a ThemeProvider.
 vi.mock("@/hooks", () => ({
   useTheme: () => ({ theme: "gray", setTheme: () => {}, isLoading: false }),
 }));
@@ -44,14 +42,10 @@ describe("AgentMessageItem", () => {
 
   it("preserves the dispatch attribute on the root for CodexTranscript", () => {
     render(<AgentMessageItem message={makeMessage({ content: "hi" })} />);
-    // CodexTranscript's existing tests query by this attribute — keeping it
-    // on the new root ensures Task 19's dispatch test stays green.
     expect(document.querySelectorAll('[data-codex-item="agent_message"]')).toHaveLength(1);
   });
 
   it("renders an empty card when content is missing (defensive)", () => {
-    // Some Codex builds have shipped subtly different params shapes. The
-    // widget should degrade gracefully rather than crashing the transcript.
     const msg: AgentMessage = {
       agent: "codex",
       tabId: "t",

@@ -7,13 +7,6 @@ import {
   BrainAutomationSettings,
 } from '@/components/brain/BrainQueuePanel';
 
-/**
- * The panel is now two components in two different tabs: the queue's actions
- * sit above the Sources table, the persistent switches under Settings. The
- * suites below are about what those controls DO, which did not change, so they
- * drive both halves together. WHERE each half renders is asserted in
- * BrainTab.test.tsx, which is the thing that actually decides it.
- */
 const BrainQueuePanel: React.FC<{ accountId: number | null }> = ({ accountId }) => (
   <>
     <BrainQueueActions accountId={accountId} />
@@ -46,11 +39,6 @@ function entry(over: Partial<BrainQueueEntry> = {}): BrainQueueEntry {
   };
 }
 
-/**
- * These pin the failure that prompted the operational pane: the user selected
- * one session, pressed "Drain now", and the worker began indexing all 158
- * queued items with no progress and an unconditional success message.
- */
 describe('BrainQueuePanel controls', () => {
   beforeEach(() => {
     cleanup();
@@ -72,12 +60,6 @@ describe('BrainQueuePanel controls', () => {
   
   
   
-  /**
-   * The queue changes from outside this panel — a background drain on session
-   * close, or the Sources pane's Refresh. Reading only on its own actions is
-   * the stale-read this component's own comment says the tab has shipped three
-   * times; the owner needs a way to say "re-read".
-   */
   it('re-reads the queue when the owner bumps refreshToken', async () => {
     const { rerender } = render(<BrainQueueActions accountId={1} refreshToken={0} />);
     await waitFor(() => { expect(api.brainQueueCounts).toHaveBeenCalledTimes(1); });
@@ -95,7 +77,6 @@ describe('BrainQueuePanel controls', () => {
     const { rerender } = render(<BrainQueueActions accountId={1} refreshToken={3} />);
     await waitFor(() => { expect(api.brainQueueCounts).toHaveBeenCalledTimes(1); });
 
-    // A re-render alone must not cost an IPC round trip per frame.
     rerender(<BrainQueueActions accountId={1} refreshToken={3} />);
     await new Promise((r) => setTimeout(r, 50));
 
@@ -121,10 +102,6 @@ describe('BrainQueuePanel controls', () => {
     });
   });
 
-  /**
-   * The stale-read bug this tab has now shipped three times. A pause applied
-   * from anywhere other than this button must show up here.
-   */
   it('re-reads settings after an action rather than only at mount', async () => {
     render(<BrainQueuePanel accountId={1} />);
     await screen.findByRole('button', { name: /^pause$/i });
@@ -162,8 +139,6 @@ describe('BrainQueuePanel', () => {
     });
     render(<BrainQueuePanel accountId={1} />);
 
-    // Read as one reading: the figures are split across elements so the count
-    // can be weighted against its label.
     const counts = await screen.findByTestId('queue-counts');
     expect(counts.textContent).toMatch(/7\s*queued/);
     expect(counts.textContent).toMatch(/1 running/);
@@ -181,8 +156,6 @@ describe('BrainQueuePanel', () => {
     ]);
     render(<BrainQueuePanel accountId={1} />);
 
-    // Spec §14: failed items with their validation errors. Without the error
-    // text the pane says something broke but not what, which is useless.
     expect(await screen.findByText(/entities\.0\.type/)).toBeTruthy();
   });
 
@@ -230,15 +203,12 @@ describe('BrainQueuePanel', () => {
 
     rerender(<BrainQueuePanel accountId={2} />);
 
-    // Queue depth is per account; showing one account's backlog under another
-    // would misreport what is about to be indexed and where.
     await waitFor(() => { expect(api.brainQueueCounts).toHaveBeenCalledWith(2); });
   });
 
   it('reflects that auto-indexing is off by default', async () => {
     render(<BrainQueuePanel accountId={1} />);
     const toggle = await screen.findByRole('checkbox', { name: /auto-index/i });
-    // Off by default: it spends tokens unattended, so the user opts in.
     expect((toggle as HTMLInputElement).checked).toBe(false);
   });
 
@@ -280,8 +250,6 @@ describe('BrainQueuePanel', () => {
     rerender(<BrainQueuePanel accountId={2} />);
     await waitFor(() => { expect(api.brainQueueCounts).toHaveBeenCalledWith(2); });
 
-    // Both switches are GLOBAL, not per account — re-reading them on every
-    // account switch would imply they are scoped when they are not.
     expect(vi.mocked(api.getSetting).mock.calls.length).toBe(before);
   });
 
@@ -330,16 +298,12 @@ describe('BrainQueuePanel', () => {
 
       fireEvent.click(toggle());
 
-      // Not optimistic: flipping before the write lands would claim residue in
-      // a Claude config dir that was never created.
       expect(await screen.findByText('no vault configured')).toBeTruthy();
       expect((toggle() as HTMLInputElement).checked).toBe(false);
     });
   });
 });
 
-// The split itself. Each half has to be complete on its own, because they
-// render in different tabs and the user only ever sees one at a time.
 describe('queue panel split', () => {
   beforeEach(() => {
     cleanup();

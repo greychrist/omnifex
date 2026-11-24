@@ -3,27 +3,14 @@ import type { JsonlNode } from '@/types/jsonl';
 import { classifyStandaloneKind } from '../messageKind';
 import { KIND_REGISTRY } from '@/lib/messageRenderingConfig';
 
-// ── Classifier ↔ Registry coverage ─────────────────────────────────────────
-// Every ID that the block/message classifiers and MessageFrame can emit must
-// have a registry entry so the three-layer style cascade can resolve it.
-// IDs that are only internal sentinels (tool.askUserQuestion.answered, .result)
-// are handled before the registry lookup and are intentionally excluded.
-//
-// `attachment.*` is no longer wholly dynamic: the six context-source subtypes
-// are registered and emitted by StreamMessage's attachment branch, so they
-// belong here. Every other attachment subtype still returns null before the
-// registry lookup and stays out.
 const EMITTABLE_IDS = [
-  // agent
   "assistant.text", "assistant.text.endTurn", "assistant.thinking",
   "assistant.tool-use", "assistant.askUserQuestion",
-  // user
   "user.prompt", "user.command", "user.commandOutput", "user.subagentPrompt",
   "user.skillInjection", "user.systemContext", "user.sdkSystemBracket",
   "user.taskNotification", "user.coordinatorMessage",
   "user.tool-result", "user.tool-result.image", "user.image",
   "user.compactSummary",
-  // system
   "system.notification.info", "system.notification.warn",
   "system.notification.error", "system.notification.stop",
   "system.hook_started", "system.hook_response", "system.hook_progress", "system.permission_denied",
@@ -31,7 +18,6 @@ const EMITTABLE_IDS = [
   "system.thinking_tokens", "system.rate_limit", "system.feedback_draft_queued",
   "system.local_command", "system.stop_hook_summary", "system.unknown",
   "system.compact_boundary", "system.result", "system.init", "system.progress",
-  // stream-only CLI bookkeeping (default Never)
   "system.background_tasks_changed", "system.dev_intent",
   "system.per_turn_effort_changed", "system.elicitation_complete",
   "system.session_metadata", "system.session_title_changed",
@@ -39,25 +25,17 @@ const EMITTABLE_IDS = [
   "system.ui_scroll", "system.ui_status", "system.commands_changed",
   "system.ui_notify", "system.ui_notify_cancel",
   "system.permission_check_status", "system.status",
-  // mod lines from a headless session (shown)
   "system.ui_log", "system.ui_toast",
-  // permission / summary / fallback
   "permission.request", "permission.askUserQuestion",
   "summary.compaction", "unknown",
-  // bookkeeping (real JSONL lines, rendered as side-line markers)
   "permission-mode", "last-prompt", "ai-title", "custom-title",
   "queue-operation", "file-history-snapshot",
-  // synthetic control-change markers (effort/model/permission)
   "control.effort", "control.model", "control.permission",
-  // the streaming reply card (InflightAssistantBubble), not a classified node
   "assistant.text.live",
-  // session context sources (attachment channel)
   "attachment.instructions", "attachment.nested_memory",
   "attachment.mcp_instructions_delta", "attachment.agent_listing_delta",
   "attachment.deferred_tools_delta", "attachment.skill_listing", "attachment.project_doc_reads",
-  // the CLI's own bookkeeping latches (cliSidechannelRecords.ts)
   "cli-state",
-  // task_started / task_progress / task_notification frames (subagentEvents.ts)
   "task-lifecycle",
 ];
 
@@ -86,10 +64,8 @@ const permReq = (toolName?: string): JsonlNode =>
 const summary = (): JsonlNode =>
   ({ kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'summary', leafUuid: 'leaf-1', summary: 'sum' } }) as unknown as JsonlNode;
 
-// The CLI stamps every user record with where it came from. Observed values
-// across this account's transcripts: `human` (typed), `task-notification`
-// (a background task reporting in) and `coordinator` (an orchestrator
-// messaging a subagent mid-run). Shapes below are copied from real records.
+// The CLI stamps every user record's origin: `human`, `task-notification`,
+// `coordinator`.
 const originUser = (kind: string, text: string, extra: Record<string, unknown> = {}): JsonlNode =>
   ({
     kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
@@ -129,9 +105,6 @@ describe('classifyStandaloneKind — injected user records (origin.kind)', () =>
     expect(classifyStandaloneKind(userText('hello'), [])).toBeNull();
   });
 
-  // origin is what the CLI recorded; the content rules are inference over the
-  // text. When they disagree the stamp wins — that is the whole point of
-  // reading it.
   it('prefers the origin stamp over a content match in the same record', () => {
     const node = originUser('task-notification', '<command-name>/verify</command-name>');
     expect(classifyStandaloneKind(node, [node])).toBe('user.taskNotification');
@@ -149,7 +122,6 @@ describe('classifyStandaloneKind', () => {
     expect(classifyStandaloneKind(notif('stop'), [])).toBe('system.notification.stop');
     expect(classifyStandaloneKind(notif('warn'), [])).toBe('system.notification.warn');
     expect(classifyStandaloneKind(notif('info'), [])).toBe('system.notification.info');
-    // Unknown → info fallback, matching StreamMessage rendering
     expect(classifyStandaloneKind(notif('whatever'), [])).toBe('system.notification.info');
   });
 
@@ -164,23 +136,12 @@ describe('classifyStandaloneKind', () => {
   });
 
   it('routes the live AskUserQuestion prompt to its own kind', () => {
-    // Distinct kind so the AskUserQuestionCard's accent color is editable
-    // independently of the generic Bash/Read permission prompt. (Only the
-    // *answered* card is recategorized to the agent origin — the live prompt
-    // is left under permission.*.)
     expect(classifyStandaloneKind(permReq('AskUserQuestion'), [])).toBe(
       'permission.askUserQuestion',
     );
   });
 
   describe('AskUserQuestion answered-pair elevation', () => {
-    // Once an AskUserQuestion exchange has completed (tool_use + matching
-    // tool_result both in the stream), the renderer pulls the Q+A card
-    // out of the assistant bubble and shows it as its own first-order
-    // chat message. The classifier returns separate kinds for each side
-    // so the renderer can dispatch — assistant side renders the card,
-    // user side returns null.
-
     const askUserQuestion = (id: string): JsonlNode =>
       ({
         kind: 'assistant', sessionId: '', receivedAt: '',
@@ -231,17 +192,11 @@ describe('classifyStandaloneKind', () => {
     });
 
     it('does NOT elevate while the tool_result is still pending (live mid-answer state)', () => {
-      // While the user is still answering, the live AskUserQuestionCard
-      // (rendered from the synthetic permission_request) is doing the
-      // visible work. The assistant message stays unclassified so the
-      // in-bubble fallback path handles it.
       const tu = askUserQuestion('toolu_AUQ');
       expect(classifyStandaloneKind(tu, [tu])).toBeNull();
     });
 
     it('does NOT elevate when the assistant message has other renderable content alongside the tool_use', () => {
-      // Mixed content — text or thinking blocks — should keep the
-      // in-bubble rendering so the prose isn't lost.
       const mixed = {
         kind: 'assistant', sessionId: '', receivedAt: '',
         raw: {
@@ -278,7 +233,6 @@ describe('classifyStandaloneKind', () => {
 
     it('ignores empty text blocks when checking single-block elevation', () => {
       // The CLI sometimes precedes a tool_use with an empty text block.
-      // It shouldn't disqualify the assistant message from elevation.
       const withEmptyText = {
         kind: 'assistant', sessionId: '', receivedAt: '',
         raw: {
@@ -309,8 +263,6 @@ describe('classifyStandaloneKind', () => {
   });
 
   it('returns null for messages whose rendering is per-content-block', () => {
-    // Assistant / user messages can contain mixed blocks; filtering them as a
-    // whole would hide text along with tool_use. Leave to existing renderer.
     const asst: JsonlNode = {
       kind: 'assistant', sessionId: '', receivedAt: '',
       raw: {
@@ -330,16 +282,13 @@ describe('classifyStandaloneKind', () => {
       expect(classifyStandaloneKind(sys('whatever'), [])).toBe('system.unknown');
     });
 
-    // CLI 2.1.283 writes a local slash command's stdout (/usage, /cost, …) as
-    // system/local_command instead of a user record. It gets its own kind so
-    // Appearance can style it apart from the older user-record form.
+    // CLI 2.1.283 writes a local slash command's stdout as system/local_command,
+    // not a user record.
     it('classifies system/local_command as its own kind', () => {
       expect(classifyStandaloneKind(sys('local_command'), [])).toBe('system.local_command');
     });
 
-    // `/recap` lands as local_command too, but it is a recap: it shares the
-    // Away summary kind so both kinds of recap look and hide alike. Keyed on
-    // the record's structured `commandRun`, never on its text.
+    // `/recap` lands as local_command too.
     it('classifies a /recap local_command as an away summary', () => {
       const recap = { kind: 'system', subtype: 'local_command', sessionId: '', receivedAt: '',
         raw: { type: 'system', subtype: 'local_command', content: '<local-command-stdout>We fixed it.</local-command-stdout>', commandRun: { command: 'recap', args: '' } } } as unknown as JsonlNode;
@@ -365,8 +314,6 @@ describe('classifyStandaloneKind', () => {
     });
 
     it('gives the stream init and result envelopes registry kinds', () => {
-      // Without one they returned null: hidden in compact view, and in
-      // verbose a hard-coded badge no Appearance setting could reach.
       const init = { kind: 'cli-stream-init', raw: { type: 'system', subtype: 'init' }, sessionId: 's', receivedAt: '' } as JsonlNode;
       const result = { kind: 'cli-stream-result', raw: { type: 'result', subtype: 'success' }, sessionId: 's', receivedAt: '' } as JsonlNode;
       expect(classifyStandaloneKind(init, [])).toBe('system.init');
@@ -378,28 +325,19 @@ describe('classifyStandaloneKind', () => {
     });
 
     it('classifies feedback_draft_queued as its own separately-stylable kind', () => {
-      // The SendFeedback tool's draft-queued card. It must not fall through to
-      // system.unknown: the system category is verbose-only by default, and
-      // a queued draft is user-facing news, not diagnostics.
       expect(classifyStandaloneKind(sys('feedback_draft_queued'), [])).toBe(
         'system.feedback_draft_queued',
       );
     });
 
     it('routes system.init to system.unknown (cli-stream-init intercepts init before this branch)', () => {
-      // The cli-stream-init classifier handles the `system:init` envelope at
-      // classifyJsonlLine time. If a system node with subtype 'init' somehow
-      // reaches classifyStandaloneKind, it falls through to system.unknown —
-      // the dedicated system.init catalog row was deleted.
       expect(classifyStandaloneKind(sys('init'), [])).toBe('system.unknown');
     });
   });
 
   describe('system.thinking_tokens', () => {
-    // system + thinking_tokens is a running estimate of the current turn's
-    // thinking size, emitted roughly every ~50 thinking tokens. Until
-    // first-classed it fell through to system.unknown like any other
-    // unrecognized subtype.
+    // system thinking_tokens is a running estimate, emitted roughly every ~50
+    // thinking tokens.
     const sys = (extras: Record<string, unknown>): JsonlNode =>
       ({
         kind: 'system', subtype: 'thinking_tokens', sessionId: '', receivedAt: '',
@@ -424,13 +362,8 @@ describe('classifyStandaloneKind', () => {
   });
 
   describe('system.rate_limit', () => {
-    // rate_limit_event is a TOP-LEVEL `type`, not a `system` subtype — it has
-    // no `subtype` field at all. Mapping it onto the existing overlay
-    // `rate-limit` JsonlNode kind would make it invisible: that kind is
-    // explicitly skipped from the transcript in sessionStreamReducer.ts and
-    // StreamMessage.tsx (it only ever drove the live RateLimitWidget). So it
-    // gets its own JsonlNode kind (classifyJsonlLine → 'rate-limit-event')
-    // and its own separately-stylable registry id here.
+    // rate_limit_event is a TOP-LEVEL `type` with no subtype; the overlay
+    // `rate-limit` kind is skipped from the transcript.
     const rateLimitEvent = (extras: Record<string, unknown> = {}): JsonlNode =>
       ({
         kind: 'rate-limit-event', sessionId: '', receivedAt: '',
@@ -452,13 +385,8 @@ describe('classifyStandaloneKind', () => {
   });
 
   describe('system.permission_denied', () => {
-    // CliPermissionDeniedMessage (`type: 'system', subtype: 'permission_denied'`)
-    // is emitted when a tool call is auto-denied without an interactive
-    // permission prompt (auto-mode classifier, dontAsk mode, headless-agent
-    // auto-deny, or a deny rule). Until this kind was first-classed it
-    // fell through to `system.unknown` and rendered as a small gray inline
-    // strip — same treatment as a no-op telemetry event. Auto-deny is a
-    // user-facing action that needs distinct visual weight.
+    // The CLI emits permission_denied when a tool call is auto-denied without a
+    // prompt: classifier, dontAsk, headless auto-deny or a deny rule.
     const sys = (extras: Record<string, unknown>): JsonlNode =>
       ({
         kind: 'system', subtype: 'permission_denied', sessionId: '', receivedAt: '',
@@ -475,10 +403,8 @@ describe('classifyStandaloneKind', () => {
     });
 
     it('classifies the OmniFex hook synthetic shape as system.permission_denied', () => {
-      // `daemon/services/sessions/hooks.ts:355` emits its own
-      // `system + permission_denied` row when the OmniFex PermissionDenied
-      // hook fires. Different field shape (`reason` instead of `message`)
-      // but the same kind classification — both are auto-deny events.
+      // OmniFex's PermissionDenied hook emits its own system/permission_denied row,
+      // with `reason` instead of `message`.
       expect(
         classifyStandaloneKind(
           sys({ tool_name: 'Edit', reason: 'blocked by user rule' }),
@@ -529,8 +455,6 @@ describe('classifyStandaloneKind', () => {
 
     it('classifies the body of a re-invocation, not just the preamble', () => {
       // CLI 2.1.270 emits a "(Re-invocation of …)" record ahead of the body.
-      // Position-based detection matched the preamble and let the body fall
-      // through to user.prompt — the skill's text rendered as the user's.
       const tu = skillToolUse('tu_skill', 'commit');
       const tr = skillToolResult('tu_skill');
       const preamble = skillCompanion('tu_skill', '(Re-invocation of /commit — …)');
@@ -585,8 +509,6 @@ describe('classifyStandaloneKind', () => {
     });
 
     it('routes attachment with any string subtype to attachment.<subtype> (open-ended)', () => {
-      // The classifier always produces attachment.<subtype> for any non-empty string.
-      // Catalog lookup for unknown subtypes falls through to the attachment.unknown row.
       expect(classifyStandaloneKind(attachment('something_new'), [])).toBe('attachment.something_new');
     });
 
@@ -600,11 +522,7 @@ describe('classifyStandaloneKind', () => {
   });
 
   describe('user.systemContext (whole-message)', () => {
-    // The CLI delivers hook output and other system injections as
-    // synthetic user-role messages. Without whole-message classification
-    // these fall through to user.prompt and render as if the user typed
-    // them — which is what the OmniFex chat was doing for Stop-hook
-    // feedback before this fix.
+    // The CLI delivers hook output as synthetic user-role messages.
 
     it('classifies a bare "Stop hook feedback:" user message as user.systemContext', () => {
       const m = userText(
@@ -619,9 +537,8 @@ describe('classifyStandaloneKind', () => {
     });
 
     it('classifies a Stop-hook message containing both a <system-reminder> preamble and hook feedback body', () => {
-      // This is the exact shape seen in OmniFex sessions: the hook content
-      // is wrapped in a <system-reminder>, then followed by a plain
-      // "Stop hook feedback: ..." body in the same text block.
+      // The real shape: hook content in a <system-reminder>, then a plain "Stop hook
+      // feedback: ..." body in the same text block.
       const m = userText(
         '<system-reminder>\nStop hook blocking error from command: "..."/check-unfinished-todos.py: You have 4 unfinished todo items...\n</system-reminder>\nStop hook feedback:\nYou have 4 unfinished todo items in your latest TodoWrite call:\n  - [in_progress] X\n',
       );

@@ -4,13 +4,11 @@ import { render, cleanup, screen, fireEvent, waitFor } from "@testing-library/re
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-// MarkdownBlock (rendered for markdown fences) calls useTheme(); mock so
-// jsdom doesn't need a ThemeProvider.
+// useTheme() throws without a ThemeProvider.
 vi.mock("@/hooks", () => ({
   useTheme: () => ({ theme: "gray", setTheme: () => {}, isLoading: false }),
 }));
 
-// Stand-in for the mermaid block: records what it was handed.
 vi.mock("@/components/diagram/MermaidBlock", () => ({
   MermaidBlock: ({ source, streaming }: { source: string; streaming?: boolean }) => (
     <div data-testid="mermaid-block" data-streaming={String(Boolean(streaming))}>{source}</div>
@@ -78,19 +76,13 @@ describe("buildMarkdownComponents", () => {
     const { container } = render(
       <Code className="language-typescript">{"const x = 1;"}</Code>,
     );
-    // No <h1>, source text is in DOM.
     expect(container.querySelector("h1")).toBeNull();
     expect(container.textContent).toContain("const x = 1;");
   });
 
   it("wraps tagged fences in card chrome (gray background, border)", () => {
-    // The Claude syntax theme uses a transparent background, and the
-    // outer prose <pre> is stripped for tagged fences (to avoid the
-    // concentric-card on markdown blocks). Without this wrapper, a
-    // ```typescript fence would render naked against the surrounding
-    // assistant message tint. Match the panel color prose's own <pre>
-    // uses (var(--color-card)) so tagged, untagged, and markdown
-    // fences all read as the same code panel.
+    // The Claude syntax theme's background is transparent, and the prose <pre> is
+    // stripped for tagged fences.
     const components = buildMarkdownComponents({});
     const Code = components.code;
     const { container } = render(
@@ -103,12 +95,7 @@ describe("buildMarkdownComponents", () => {
   });
 
   it("renders tagged fences with a <pre> ancestor on <code> (lets .prose pre code reset fire)", () => {
-    // SyntaxHighlighter must render <code> inside a <pre> so that the
-    // `.prose pre code { padding: 0; ... }` reset in styles.css fires.
-    // Without it, `.prose code` adds horizontal inline padding which
-    // manifests as a leading first-line indent on multi-line blocks.
-    // (`not-prose` does NOT help here — this codebase's prose CSS is
-    // hand-rolled and doesn't include the not-prose escape selectors.)
+    // <code> must sit in a <pre> so styles.css's `.prose pre code` reset fires.
     const components = buildMarkdownComponents({});
     const Code = components.code;
     const { container } = render(
@@ -118,34 +105,22 @@ describe("buildMarkdownComponents", () => {
     expect(wrapper).toBeTruthy();
     const code = wrapper?.querySelector("code");
     expect(code).toBeTruthy();
-    // <code> must have a <pre> ancestor inside the wrapper.
     expect(code?.closest("pre")).toBeTruthy();
   });
 
   it("does not wrap a markdown fence in a <pre> (no concentric card)", () => {
-    // react-markdown wraps fenced code blocks in <pre><code>...</code></pre>
-    // by default. Tailwind Typography (`prose`) styles <pre> as a dark
-    // padded rounded card — when the inner <code> is replaced by a
-    // <MarkdownBlock> (which has its own card chrome), the result is a
-    // visible card-in-card. The components map must override <pre> to
-    // be a passthrough so MarkdownBlock owns the only card.
+    // react-markdown wraps fences in <pre><code>, and prose styles <pre> as a card,
+    // so the override passes through.
     const components = buildMarkdownComponents({});
     const md = "```markdown\n# Heading\n```\n";
     const { container } = render(
       <ReactMarkdown components={components}>{md}</ReactMarkdown>,
     );
-    // MarkdownBlock rendered (rendered view shows the heading).
     expect(container.querySelector("h1")).toBeTruthy();
-    // No <pre> wrapping it.
     expect(container.querySelector("pre")).toBeNull();
   });
 
   it("preserves <pre> for untagged fenced code (whitespace not collapsed)", () => {
-    // Regression: an earlier version made the `pre` override an
-    // unconditional fragment, which removed the only element that
-    // preserves newlines for untagged ``` fences. Result: multiline
-    // ASCII trees collapsed onto one wrapped line with `|` separators.
-    // Untagged fences must still emit a real <pre>.
     const components = buildMarkdownComponents({});
     const md = "```\nline-one\nline-two\nline-three\n```\n";
     const { container } = render(
@@ -155,17 +130,10 @@ describe("buildMarkdownComponents", () => {
     expect(pre).toBeTruthy();
     const code = pre?.querySelector("code");
     expect(code).toBeTruthy();
-    // Newlines preserved in the rendered text.
     expect(code?.textContent ?? "").toContain("line-one\nline-two\nline-three");
   });
 
   it("re-render with the same components prop preserves the inner code DOM node", () => {
-    // Regression: StreamMessage used to rebuild `mdComponents` on every
-    // render. ReactMarkdown saw a new `components` prop, re-rendered its
-    // tree, and the inner SyntaxHighlighter created fresh DOM nodes —
-    // wiping any active text selection inside the inner code card.
-    // With a stable `components` prop, React's reconciler must keep the
-    // <code> DOM node identical across re-renders.
     const components = buildMarkdownComponents({});
     const remarkPlugins = [remarkGfm];
     const md = "```typescript\nconst x = 1;\n```\n";
@@ -209,8 +177,6 @@ describe("buildMarkdownComponents — copy buttons", () => {
   const renderMd = (md: string) =>
     render(<ReactMarkdown components={buildMarkdownComponents({})}>{md}</ReactMarkdown>);
 
-  // The case that prompted this: a prompt handed over in a bare fence, with
-  // shell syntax that must survive the copy byte-for-byte.
   it("copies an untagged fence exactly as written", async () => {
     const body = 'echo $((i*100/40)) "%%"\n  indented line';
     renderMd("```\n" + body + "\n```\n");
@@ -264,7 +230,6 @@ describe("buildMarkdownComponents — links", () => {
     expect(openPath).not.toHaveBeenCalled();
   });
 
-  // Clicking `/Users/...` used to navigate the whole app window to the file.
   it("opens an absolute file link in its default app", () => {
     renderMd("[draft](/Users/me/Repos/work/management/reports/draft.md)");
     const click = fireEvent.click(screen.getByText("draft"));

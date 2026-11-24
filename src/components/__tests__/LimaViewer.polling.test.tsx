@@ -2,11 +2,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act, cleanup } from '@testing-library/react';
 
-// Every Lima poll is a `limactl` process in the daemon, and every OmniFex tab
-// stays mounted. The viewer polls only while someone can see it: its tab is
-// active, the document is visible, and the machine is awake — the same rule
-// the git watcher follows (useSurfaceVisible).
-
 const api = vi.hoisted(() => ({
   limaCheckInstalled: vi.fn(),
   limaListVms: vi.fn(),

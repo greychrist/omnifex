@@ -7,7 +7,6 @@ import {
   type SearchCall,
 } from '../services/brain/retrieval-eval';
 
-/** Terse constructor so the tests read as data, not as object literals. */
 function call(ordinal: number, query: string, ...results: string[]): SearchCall {
   return { ordinal, query, results };
 }
@@ -26,9 +25,6 @@ describe('groupChains', () => {
   });
 
   it('splits when another tool ran between two searches', () => {
-    // Ordinals 0 and 2 mean a non-search tool use occupied slot 1 — the model
-    // acted on the first result rather than reformulating, so these are not
-    // one chain.
     const chains = groupChains([call(0, 'first', 'A.md'), call(2, 'second', 'B.md')]);
     expect(chains).toHaveLength(2);
   });
@@ -62,13 +58,10 @@ describe('chainsToCases', () => {
   });
 
   it('drops single-search chains', () => {
-    // A lone successful search would label the index with its own output —
-    // measuring the index against itself proves nothing.
     expect(chainsToCases([[call(0, 'lone', 'A.md')]])).toEqual([]);
   });
 
   it('drops chains whose final search found nothing', () => {
-    // The model gave up rather than succeeding, so there is no target to learn.
     expect(chainsToCases([[call(0, 'flyway migration', 'A.md'), call(1, 'flyway baseline')]]))
       .toEqual([]);
   });
@@ -86,19 +79,12 @@ describe('chainsToCases', () => {
   });
 
   it('drops chains whose queries share no term — those are topic switches', () => {
-    // The failure this guards against, straight from the real transcripts:
-    // `node-pty leak` followed by `turbopack cache` is the model asking a
-    // second, unrelated question, not rephrasing the first. Treating it as a
-    // reformulation labels the index with a note the query was never after.
     expect(
       chainsToCases([[call(0, 'node-pty leak', 'A.md'), call(1, 'turbopack cache', 'B.md')]]),
     ).toEqual([]);
   });
 
   it('requires EVERY adjacent pair to share a term, not just some', () => {
-    // `encompass architecture → EEP template → errProof → work order` drifts
-    // one topic at a time; no single hop looks wild but the endpoints are
-    // unrelated, so the first query must not be labelled with the last hit.
     expect(
       chainsToCases([
         [
@@ -118,14 +104,11 @@ describe('chainsToCases', () => {
   });
 
   it('ignores tokens too short to disambiguate', () => {
-    // Two-character tokens match too much to be evidence of a shared subject.
     expect(chainsToCases([[call(0, 'db migrations', 'A.md'), call(1, 'db rollback', 'B.md')]]))
       .toEqual([]);
   });
 
   it('drops chains that end where they started', () => {
-    // An identical repeat returns identical results, so the label would be the
-    // query's own top hit — circular.
     expect(chainsToCases([[call(0, 'node-pty', 'A.md'), call(1, 'node-pty', 'A.md')]])).toEqual(
       [],
     );

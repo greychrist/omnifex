@@ -45,8 +45,6 @@ describe('decideAutoStart', () => {
   });
 
   it('prefers rebind-or-resume over fresh-start when both are present', () => {
-    // Defensive: a resumed-session tab should never carry initialSessionConfig,
-    // but if it ever did, resuming the prior session wins over a fresh one.
     expect(decideAutoStart({
       isActive: true,
       alreadyStarted: false,
@@ -75,9 +73,6 @@ describe('decideRebindTarget', () => {
   });
 
   it('resumes when a DIFFERENT session is still bound to the reused tab', () => {
-    // The bug: tab still holds a live handle for session 9aa126bd, but the
-    // user opened bd9dea3a. Rebinding would reattach the tab (cost/context/id)
-    // to the wrong session — so resume the selected one instead.
     expect(decideRebindTarget({
       healthAlive: true,
       healthSessionId: '9aa126bd',

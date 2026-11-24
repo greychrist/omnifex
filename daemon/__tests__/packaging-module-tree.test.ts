@@ -5,7 +5,6 @@ import { collectModuleTree, type ModuleTreeFs, type PackageManifest } from '../.
 
 const ROOT = '/repo';
 
-/** A fake node_modules: path relative to the repo → package.json. */
 function tree(packages: Record<string, PackageManifest>): ModuleTreeFs {
   const dirs = new Map(Object.entries(packages).map(([rel, m]) => [join(ROOT, rel), m]));
   return {

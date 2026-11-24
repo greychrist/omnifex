@@ -32,13 +32,9 @@ describe('ContextTimelineTick', () => {
       <ContextTimelineTick point={point({ isSample: false, delta: null })} />,
     );
     expect(screen.queryByText('120k')).toBeNull();
-    // The rail line itself still renders so the timeline reads as continuous.
     expect(container.querySelector('[data-timeline-rail]')).toBeInTheDocument();
   });
 
-  // The cell still occupies its width before the series starts. Collapsing it
-  // to nothing left the opening rows un-indented while every later row was
-  // pushed right by the gutter — a visible jog partway down the transcript.
   it('reserves the gutter but draws nothing before the first sample', () => {
     const { container } = render(<ContextTimelineTick point={undefined} />);
     expect(container).not.toBeEmptyDOMElement();
@@ -52,11 +48,6 @@ describe('ContextTimelineTick', () => {
   });
 
   it('labels an ordinary step with its delta', () => {
-    // Reversed deliberately. This used to assert the opposite, because the
-    // rail was one of several places context growth was reported and the
-    // banner carried the ordinary case. The banner is gone; the rail is now
-    // the only inline home for a delta, so every step gets one and Compact
-    // mode does the noise filtering instead.
     render(<ContextTimelineTick point={point()} />);
     expect(screen.getByText('+20k')).toBeInTheDocument();
   });
@@ -78,11 +69,8 @@ describe('ContextTimelineTick', () => {
   });
 });
 
-// jsdom does no layout, so these assert the structural property that caused
-// the overlap rather than measuring it: an absolutely-positioned readout
-// contributes no height, so on a short row it printed straight over the next
-// tick's. The compact marker was the worst case — the shortest row in the
-// transcript, carrying the most label lines.
+// jsdom does no layout: an absolutely-positioned readout contributes no
+// height, so the structure is what can be pinned.
 describe('ContextTimelineTick — readout cannot overrun the next row', () => {
   const readout = (container: HTMLElement) =>
     container.querySelector<HTMLElement>('[data-timeline-readout]');
@@ -101,18 +89,14 @@ describe('ContextTimelineTick — readout cannot overrun the next row', () => {
     expect(readout(container)?.className).not.toMatch(/\babsolute\b/);
   });
 
-  // The rail is the one part that must stay absolute: it spans the full row
-  // height so the series reads as one continuous line.
   it('leaves the rail absolutely positioned', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
     const rail = container.querySelector('[data-timeline-rail]') as HTMLElement;
     expect(rail.className).toMatch(/\babsolute\b/);
   });
 
-  // Every row's body column carries `pb-4` so consecutive rails meet through
-  // the inter-row gap and read as one line. On the LAST row there is no next
-  // segment to meet, so running through that padding overshoots the final
-  // message card by 1rem. `bottom-4` cancels exactly that padding.
+  // The body column's `pb-4` lets rails meet between rows; on the last row
+  // `bottom-4` cancels it.
   it('runs edge to edge on an ordinary row', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
     const rail = container.querySelector('[data-timeline-rail]') as HTMLElement;
@@ -135,14 +119,10 @@ describe('ContextTimelineTick — readout cannot overrun the next row', () => {
   });
 });
 
-// The rail's color is the at-a-glance signal: scrolling a long session, the
-// eye should find where it went red without reading a single number.
 describe('ContextTimelineTick — rail color tracks pressure', () => {
   const rail = (container: HTMLElement) =>
     (container.querySelector('[data-timeline-rail]') as HTMLElement).className;
 
-  // Under the budget is the normal case, so it draws no line: a rail only
-  // appears where context is getting expensive, and the eye goes straight to it.
   it('draws no solid line under the budget', () => {
     const { container } = render(<ContextTimelineTick point={point({ level: 'none' })} />);
     expect(rail(container)).not.toMatch(/\bbg-/);
@@ -158,8 +138,6 @@ describe('ContextTimelineTick — rail color tracks pressure', () => {
     expect(rail(container)).toMatch(/red/);
   });
 
-  // Carried-forward rows draw only the rail, and they hold the previous
-  // reading — so they must hold its color or the line reads as striped.
   it('colors a carried-forward row the same as the sample it carries', () => {
     const { container } = render(
       <ContextTimelineTick point={point({ isSample: false, delta: null, level: 'critical' })} />,
@@ -167,8 +145,6 @@ describe('ContextTimelineTick — rail color tracks pressure', () => {
     expect(rail(container)).toMatch(/red/);
   });
 
-  // The dashes were a second compaction marker beside the "compacted" note,
-  // and spanned the reply row rather than the compaction (Greg, 2026-11-18).
   it('draws a reset row with the same solid line as any other', () => {
     const { container } = render(
       <ContextTimelineTick point={point({ isReset: true, delta: null, level: 'critical' })} />,
@@ -179,8 +155,6 @@ describe('ContextTimelineTick — rail color tracks pressure', () => {
     expect(rail(container)).toMatch(/bg-red-600/);
   });
 
-  // The badge sits on the line; a lighter or translucent line beside a
-  // solid badge read as two different greens. Same color, at every level.
   it.each(['none', 'warn', 'critical'] as const)(
     'paints the %s rail in exactly the badge color',
     (level) => {
@@ -191,7 +165,6 @@ describe('ContextTimelineTick — rail color tracks pressure', () => {
         (solid.querySelector('[data-timeline-badge]') as HTMLElement).className, 'bg',
       );
       expect(badgeBg).toBeDefined();
-      // Under the budget the solid line is not drawn at all (see above).
       if (level !== 'none') expect(color(rail(solid), 'bg')).toBe(badgeBg);
     },
   );
@@ -220,18 +193,12 @@ describe('ContextTimelineTick — rail color tracks pressure', () => {
     expect(badge.className).not.toMatch(/\brounded-md\b/);
   });
 
-  // The badges sit on top of the line, so they must hide it: no translucent
-  // fill the rail would show through.
   it('fills the size badge solidly, so the line does not show through it', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
     const badge = container.querySelector('[data-timeline-badge]') as HTMLElement;
     expect(badge.className).not.toMatch(/bg-[a-z]+-\d+\/\d+/);
   });
 
-  // A line struck through every badge read as too much (2026-11-18), and a
-  // line in the gutter's edge with centred badges left a gap that changed
-  // with each badge's width. So the badges start where the line ends: the
-  // 1px line at 7px, the readout padded to 8px, its badges left-aligned.
   it('draws the line beside the badges, touching their left edge', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
     const rail = container.querySelector('[data-timeline-rail]') as HTMLElement;
@@ -244,8 +211,6 @@ describe('ContextTimelineTick — rail color tracks pressure', () => {
     expect(readout.className).toMatch(/\brelative\b/);
   });
 
-  // Level and jump are orthogonal: level is where you are, the delta label is
-  // what the last step did. A jump under budget must not fake a red rail.
   it('does not let a jump override the level color', () => {
     const { container } = render(
       <ContextTimelineTick point={point({ isJump: true, delta: 325_000, level: 'critical' })} />,
@@ -257,9 +222,8 @@ describe('ContextTimelineTick — rail color tracks pressure', () => {
 });
 
 describe('ContextTimelineTick — the rail reads as one line', () => {
-  // 4px read as clumsy (Greg, 2026-10-28), and 2px still read as too much
-  // (2026-11-18). 1px used to antialias away, but only because centring with
-  // -translate-x-1/2 put it on half pixels; at a whole-pixel left it is crisp.
+  // At a whole-pixel left a 1px rail stays crisp; -translate-x-1/2 put it on
+  // half pixels.
   it('draws a hairline rail', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
     const rail = container.querySelector('[data-timeline-rail]') as HTMLElement;
@@ -268,10 +232,6 @@ describe('ContextTimelineTick — the rail reads as one line', () => {
     expect(rail.className).not.toMatch(/\bw-1\b/);
   });
 
-  // Continuity depends on the rail spanning the row edge to edge; the gap
-  // between rows is closed in ClaudeTranscript by moving the row spacing
-  // inside the row. jsdom does no layout, so the span is what is checkable
-  // here — that the rail has no vertical inset of its own.
   it('spans the full height of its row', () => {
     const { container } = render(<ContextTimelineTick point={point()} />);
     const rail = container.querySelector('[data-timeline-rail]') as HTMLElement;
@@ -279,10 +239,6 @@ describe('ContextTimelineTick — the rail reads as one line', () => {
   });
 });
 
-// The context size is the number you actually read while scrolling; the delta
-// and reset labels are annotations on it. They are sized differently on
-// purpose — the gutter is only 4rem wide, and "compacted" at the larger size
-// does not fit on one line.
 describe('ContextTimelineTick — readout sizing', () => {
   it('sets the context size larger than the annotations', () => {
     render(<ContextTimelineTick point={point({ isJump: true, delta: 325_000 })} />);
@@ -297,11 +253,6 @@ describe('ContextTimelineTick — readout sizing', () => {
 });
 
 describe('ContextTimelineTick — readout order', () => {
-  // What happened sits above, the size it produced below. A delta is the
-  // growth between the previous reading and this one, so stacked under its
-  // own badge it read as the growth AFTER it — "88k, +88k, 88k" made no sense
-  // (Greg, 2026-11-18). Above, it sits between the two readings it spans.
-  // A compaction is the same kind of event, so its label goes above too.
   const orderOf = (container: HTMLElement) => {
     const readout = container.querySelector('[data-timeline-readout]') as HTMLElement;
     return Array.from(readout.children).map((c) =>
@@ -341,8 +292,6 @@ describe('ContextTimelineTick — per-turn delta', () => {
   });
 
   it('prints the drop across a compaction from prevTokens', () => {
-    // `delta` is null on a reset row by design, so the number has to be
-    // reconstructed or the most interesting row in the rail shows nothing.
     render(
       <ContextTimelineTick
         point={point({ tokens: 80_000, prevTokens: 500_000, delta: null, isReset: true })}
@@ -370,12 +319,8 @@ describe('ContextTimelineTick — per-turn delta', () => {
 });
 
 describe('ContextTimelineTick — delta and reset notes stand out', () => {
-  // "+4k" in muted gray on bg-muted all but vanished against the dark
-  // transcript (Greg, 2026-11-18): brighter text, a background lifted off the
-  // page, and a thin edge. The edge is an inset shadow — border-color
-  // utilities lose to the unlayered `* { border-color }` rule and styles.css
-  // sets `.ring-1 { box-shadow: none !important }`. Both colors mix from the
-  // theme's own variables so they follow light and dark at runtime.
+  // Border-color utilities lose to the unlayered `* { border-color }` rule, and
+  // styles.css sets `.ring-1 { box-shadow: none !important }`.
   const note = (text: RegExp) => screen.getByText(text);
 
   it('lifts the delta note off the page with a theme-mixed background and edge', () => {

@@ -200,8 +200,8 @@ describe('GitDiffOverlay', () => {
   });
 
   describe('refreshing', () => {
-    // Nested paths on purpose: a root-level `a.ts` renders BOTH as a tree row
-    // and as the header path, so a bare getByText('a.ts') is ambiguous.
+    // Nested paths on purpose: a root-level `a.ts` renders both as a tree row and
+    // as the header path.
     it('re-reads the file list when refreshToken changes', async () => {
       listGitChangedFiles.mockResolvedValue([f('src/a.ts')]);
       const { rerender, onClose } = renderOverlay({ refreshToken: 1 });

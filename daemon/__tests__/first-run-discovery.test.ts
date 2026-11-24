@@ -12,16 +12,6 @@ import {
   type DiscoveredConfigDir,
 } from '../services/first-run-discovery';
 
-// ---------------------------------------------------------------------------
-// First-time account discovery — runs once on Electron main boot when both
-// `listAccounts()` is empty AND the `discovery_completed` flag is unset.
-// Creates one engine-tagged Account row per `~/.claude*`/`~/.codex*` dir found,
-// with no path rules (resolution still goes override → rule → null).
-//
-// Discovery is one-and-done by design: if the user later deletes all accounts
-// in the UI, we don't silently re-create them on next launch.
-// ---------------------------------------------------------------------------
-
 describe('runFirstTimeDiscovery', () => {
   let db: Database;
   let accounts: AccountsService;
@@ -55,8 +45,6 @@ describe('runFirstTimeDiscovery', () => {
     expect(byName.Work.config_dir).toBe('/home/user/.codex-work');
   });
 
-  // Prefilling expected_email means account email verification works out of
-  // the box, without the user typing anything into Settings first.
   it('prefills expectedEmail for discovered Claude accounts', async () => {
     await runFirstTimeDiscovery({
       accounts,
@@ -182,8 +170,8 @@ describe('discoverConfigDirs', () => {
     fs.mkdirSync(path.join(home, '.claude-work'));
     fs.mkdirSync(path.join(home, '.codex'));
     fs.mkdirSync(path.join(home, '.codex-side_project'));
-    fs.mkdirSync(path.join(home, '.claudette')); // false-positive guard
-    fs.mkdirSync(path.join(home, '.codexample')); // false-positive guard
+    fs.mkdirSync(path.join(home, '.claudette'));
+    fs.mkdirSync(path.join(home, '.codexample'));
     fs.writeFileSync(path.join(home, '.codex-not-a-dir'), 'x'); // file, not dir
 
     const found = await discoverConfigDirs(home);

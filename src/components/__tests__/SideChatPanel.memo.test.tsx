@@ -2,8 +2,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 
-// AgentSession re-renders on every stream event, and every open tab stays
-// mounted. An open side chat must not re-parse its answers each time.
 const markdownRenders = vi.hoisted(() => ({ count: 0 }));
 vi.mock('react-markdown', () => ({
   default: ({ children }: { children: string }) => {

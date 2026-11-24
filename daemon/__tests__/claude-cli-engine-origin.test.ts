@@ -3,8 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 
-// A fake CLI child: stdin captures what the engine writes; stdout/stderr are
-// inert; 'spawn' fires on the next tick so start() resolves.
 const written: string[] = [];
 function fakeChild() {
   const child = new EventEmitter() as EventEmitter & {
@@ -36,11 +34,8 @@ async function startedEngine() {
 
 const lastLine = () => JSON.parse(written.join('').trim().split('\n').at(-1) as string) as Record<string, unknown>;
 
-// The CLI's stream-json user schema documents the field: "A host wrapping
-// keyboard input must stamp {kind:'human'} explicitly — absent origin is
-// treated as unattributed and fails closed at strict isHuman() trust gates."
-// From 2.1.277 an unstamped prompt no longer qualifies for the CLI's own
-// session naming (0 of 36 OmniFex sessions titled; 100% before).
+// The CLI's stream-json schema: a host wrapping keyboard input must stamp
+// {kind:'human'}. From 2.1.277 an unstamped prompt gets no CLI session name.
 describe('ClaudeCliEngine — prompts are stamped as human input', () => {
   it('stamps origin {kind:"human"} on a text prompt', async () => {
     const engine = await startedEngine();

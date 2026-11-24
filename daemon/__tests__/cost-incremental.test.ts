@@ -1,9 +1,3 @@
-// The live cost watcher and the backfill sweep both used to read and parse
-// whole transcripts synchronously on the daemon's one event loop. These tests
-// pin the replacements: an incremental fold that prices exactly what a
-// from-scratch compute does, a watcher that reads only appended bytes and never
-// overlaps itself, and a backfill whose change detection survives a restart.
-
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import path from 'node:path';
 import { createDatabase } from '../services/database';
@@ -36,7 +30,6 @@ function assistant(opts: { req?: string; msg?: string; out: number; model?: stri
   return JSON.stringify(rec);
 }
 
-/** An in-memory filesystem with byte-range reads, counting every byte read. */
 function makeWorld() {
   const files: Record<string, string> = {};
   const mtimes: Record<string, number> = {};
@@ -99,8 +92,6 @@ describe('foldUsage', () => {
     const expected = extractDedupedUsage(content);
 
     for (let cut = 0; cut <= content.length; cut += 13) {
-      // Simulate the tail reader: complete lines are committed, the partial
-      // tail is folded but re-read next time from its start.
       const fold = newUsageFold();
       const first = content.slice(0, cut);
       const nl = first.lastIndexOf('\n');
@@ -136,10 +127,7 @@ describe('live cost watcher (incremental)', () => {
     const steps: (() => void)[] = [
       // A whole line plus half of the next one (the CLI mid-write).
       () => world.touch(SESSION_FILE, world.files[SESSION_FILE] + assistant({ req: 'r2', out: 50 }) + '\n' + '{"type":"assis'),
-      // The half line completes; the same request appears again (multi-block).
       () => world.touch(SESSION_FILE, world.files[SESSION_FILE].replace(/\{"type":"assis$/, assistant({ req: 'r3', out: 9 })) + '\n' + assistant({ req: 'r2', out: 60 }) + '\n'),
-      // A line with no ids keyed by its line number, and a subagent appears
-      // holding a fork copy of a main-loop request plus its own.
       () => {
         world.touch(SESSION_FILE, world.files[SESSION_FILE] + assistant({ out: 4 }) + '\n');
         world.touch(AGENT_FILE, assistant({ req: 'r2', out: 60 }) + '\n' + assistant({ req: 'a1', out: 300, model: 'claude-haiku-4-5' }) + '\n');
@@ -150,7 +138,6 @@ describe('live cost watcher (incremental)', () => {
         world.touch(WF_AGENT_FILE, assistant({ req: 'w1', out: 70, ts: '2026-07-18T02:00:00Z' }));
         world.touch(SESSION_FILE, world.files[SESSION_FILE] + assistant({ req: 'a1', out: 300, model: 'claude-haiku-4-5' }) + '\n');
       },
-      // The nested agent's unterminated line grows into a complete one.
       () => world.touch(WF_AGENT_FILE, world.files[WF_AGENT_FILE] + '\n' + assistant({ out: 2, ts: '2026-07-18T02:01:00Z' }) + '\n'),
     ];
 
@@ -184,15 +171,14 @@ describe('live cost watcher (incremental)', () => {
     world.counters.bytes = 0;
     world.counters.reads = 0;
     await vi.advanceTimersByTimeAsync(3000);
-    expect(world.counters.bytes).toBe(0); // unchanged: nothing read
+    expect(world.counters.bytes).toBe(0);
 
     const extra = assistant({ req: 'new', out: 5 }) + '\n';
     world.touch(SESSION_FILE, big + extra);
     await vi.advanceTimersByTimeAsync(1000);
     expect(world.counters.bytes).toBe(Buffer.byteLength(extra));
-    expect(world.counters.reads).toBe(1); // one ranged read, of the new bytes
+    expect(world.counters.reads).toBe(1);
 
-    // Same size, new mtime: rewritten in place, so read from scratch.
     world.counters.bytes = 0;
     world.touch(SESSION_FILE, (big + extra).replace('"r0"', '"q0"'));
     await vi.advanceTimersByTimeAsync(1000);
@@ -348,10 +334,8 @@ describe('cost-history backfill (async, persisted)', () => {
     db.close();
   });
 
-  // EnterWorktree leaves one session id's transcripts in two project dirs,
-  // and replaceSession keys on the id: the last one scanned wins. That must be
-  // the last in listing order, as when the sweep ran sequentially — not
-  // whichever concurrent read happened to finish last.
+  // EnterWorktree leaves one session id in two project dirs; the last in listing
+  // order must win.
   it('a session id held by two project dirs resolves to the later dir, however the reads interleave', async () => {
     const db = createDatabase(':memory:');
     const world = makeWorld();

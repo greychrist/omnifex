@@ -6,13 +6,8 @@ import { createDatabase, type Database } from '../services/database';
 import { createAccountsService } from '../services/accounts';
 import { createClaudeService, type ClaudeService } from '../services/claude';
 
-/**
- * `getDefaultModel` exists because OmniFex omits `--model` for the "Account
- * Default" pick and lets the CLI resolve it. Claude Code 2.1.236 added
- * `ANTHROPIC_DEFAULT_MODEL`, which outranks the settings.json `model` key —
- * and OmniFex spawns inherit `process.env`, so the variable reaches the CLI
- * whether or not anything in the UI knows about it.
- */
+// CLI 2.1.236's ANTHROPIC_DEFAULT_MODEL outranks the settings.json `model` key,
+// and spawns inherit process.env.
 describe('ClaudeService.getDefaultModel', () => {
   let dir: string;
   let db: Database;

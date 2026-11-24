@@ -1,15 +1,4 @@
 // @vitest-environment jsdom
-//
-// Guards the fix for the typing lag traced 2026-11-17: the transcript rendered
-// every row of every open tab. A 61 MB, 10k-record session drew 1,568 rows
-// (45k DOM nodes) and cost WebKit ~600 MB of its 1.27 GB RSS for that one tab;
-// the live heap made every GC slow and each streamed record re-rendered
-// against all of it, so keystrokes queued behind the work. Rendering a tail
-// window took the same tab to 0.68 GB and streaming CPU from 20–30% to 5–12%.
-//
-// The window is the guard: a long transcript mounts a bounded number of rows,
-// and the features that reach older rows (show earlier, find, jumps, scroll
-// to top) still reach them.
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, cleanup, fireEvent, act, screen } from '@testing-library/react';
@@ -197,7 +186,6 @@ describe('ClaudeTranscript tail window while reading back', () => {
     const { container, rerender } = render(
       <Harness messages={LONG} viewMode="expanded" nearBottom={nearBottom} />,
     );
-    // Scroll up, away from the tail: following turns off.
     const scroller = container.querySelector<HTMLElement>('[data-transcript-scroll]')!;
     Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 50_000 });
     Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 800 });
@@ -237,7 +225,6 @@ describe('ClaudeTranscript tail window while reading back', () => {
       <Harness messages={LONG} viewMode="expanded" nearBottom={nearBottom} />,
     );
     const before = rowUuids(container).length;
-    // A short view: the top is near, but so is the bottom.
     const scroller = container.querySelector<HTMLElement>('[data-transcript-scroll]')!;
     Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 900 });
     Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 800 });
@@ -247,9 +234,6 @@ describe('ClaudeTranscript tail window while reading back', () => {
     expect(rowUuids(container).length).toBe(before);
   });
 
-  // From the bottom, mounting every row grows the content, and a following
-  // transcript pins itself to the new bottom — the press snapped straight
-  // back down, and landing at the tail collapsed the window again.
   it('stops following for "scroll to top", so the growth does not snap back down', () => {
     const nearBottom = { current: true };
     const { container } = render(
@@ -262,9 +246,8 @@ describe('ClaudeTranscript tail window while reading back', () => {
     expect(rowUuids(container)).toContain('u-0');
   });
 
-  // WebKit anchors scrolling: rows mounting above the view move scrollTop to
-  // keep what was on screen still, which cancelled a smooth scroll to the top
-  // and left the reader at the bottom. The top is set, not animated.
+  // WebKit anchors scrolling: rows mounting above the view move scrollTop, which
+  // cancels a smooth scroll to the top.
   it('sets the scroll position to the top once every row has mounted', () => {
     const { container } = render(<Harness messages={LONG} viewMode="expanded" />);
     const scroller = container.querySelector<HTMLElement>('[data-transcript-scroll]')!;
@@ -283,7 +266,6 @@ describe('ClaudeTranscript tail window while reading back', () => {
     fireEvent.click(screen.getByRole('button', { name: /show earlier/i }));
     expect(rowUuids(container).length).toBeGreaterThan(TRANSCRIPT_WINDOW_ROWS);
 
-    // Back at the bottom: distance 0.
     const scroller = container.querySelector<HTMLElement>('[data-transcript-scroll]')!;
     Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 50_000 });
     Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 800 });

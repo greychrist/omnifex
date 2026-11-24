@@ -59,9 +59,6 @@ describe('brain source state', () => {
 
   it('rehashes when mtime moves and reports unchanged if the bytes are identical', async () => {
     await store.record(item(), { status: 'indexed' });
-    // A touch without an edit: mtime moved, content did not. The sha256 check
-    // is what stops this from re-indexing an entire vault after a backup
-    // restore or a checkout that rewrites timestamps.
     expect(await store.hasChanged(item({ mtimeMs: 9_999 }))).toBe(false);
   });
 
@@ -91,8 +88,6 @@ describe('brain source state', () => {
     const rows = store.list(accountId, 'session');
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe('indexed');
-    // A successful record clears a stale error, or the Sources pane keeps
-    // showing a failure that has since been fixed.
     expect(rows[0].error).toBeNull();
   });
 
@@ -100,13 +95,10 @@ describe('brain source state', () => {
     await store.record(item(), { status: 'indexed' });
     const afterRecord = store.bytesHashed();
     expect(afterRecord).toBe(5);
-    // mtime moved, bytes did not: one hash to find that out...
     expect(await store.hasChanged(item({ mtimeMs: 9_999 }))).toBe(false);
     expect(store.bytesHashed()).toBe(10);
-    // ...and none the next time the same file is asked about.
     expect(await store.hasChanged(item({ mtimeMs: 9_999 }))).toBe(false);
     expect(store.bytesHashed()).toBe(10);
-    // A different size is different bytes, whatever the cache says.
     writeFileSync(item().path, 'hello world', 'utf-8');
     expect(await store.hasChanged(item({ mtimeMs: 9_999, size: 11 }))).toBe(true);
     expect(store.bytesHashed()).toBe(21);
@@ -119,8 +111,6 @@ describe('brain source state', () => {
   it('treats a vanished file as changed rather than throwing', async () => {
     await store.record(item(), { status: 'indexed' });
     rmSync(item().path);
-    // Re-examining an item whose backing file disappeared is the correct
-    // outcome; the caller decides what to do about it.
     expect(await store.hasChanged(item({ mtimeMs: 9_999 }))).toBe(true);
   });
 });

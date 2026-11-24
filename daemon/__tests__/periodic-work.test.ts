@@ -4,7 +4,6 @@ import type { PeriodicWorkDeps } from '../periodic-work';
 
 const HOUR = 60 * 60 * 1000;
 
-/** The shape the cost sweep and the Brain sweep each need a slice of. */
 const acct = (id: number) => ({ id, name: `acct-${id}`, config_dir: `/cfg/${id}` });
 const FIVE_MIN = 5 * 60 * 1000;
 
@@ -72,8 +71,7 @@ describe('startPeriodicWork', () => {
     stop();
   });
 
-  // The backfill is async (it reads through the thread pool and yields per
-  // session): its result and its failure both arrive after the timer returns.
+  // The backfill's result and failure both arrive after the timer returns.
   it('logs the async startup backfill result, and a rejected sweep as a warning', async () => {
     const backfill = vi.fn()
       .mockResolvedValueOnce({ sessionsScanned: 7 })
@@ -89,8 +87,6 @@ describe('startPeriodicWork', () => {
     stop();
   });
 
-  // Strays the runner did not settle are priced into the cost table and
-  // deleted on the same schedule as the cost sweep.
   it('settles stranded internal transcripts at startup and hourly, recording through the cost table', async () => {
     const { deps } = harness();
     const stop = startPeriodicWork(deps);
@@ -144,9 +140,7 @@ describe('startPeriodicWork', () => {
     stop();
   });
 
-  // The daemon dies with the app now (2026-11-18), so most runs are shorter
-  // than an hour: an hourly-only reclaim would never fire, and the freelist
-  // growth that took greychrist.db to 2.15 GB would come back.
+  // The daemon dies with the app, so most runs are shorter than an hour.
   it('reclaims free pages 30s after start, then hourly', async () => {
     const { deps } = harness();
     const stop = startPeriodicWork(deps);
@@ -184,7 +178,6 @@ describe('startPeriodicWork', () => {
     const stop = startPeriodicWork(deps);
     await vi.advanceTimersByTimeAsync(FIVE_MIN);
     expect(brain.backfill).not.toHaveBeenCalled();
-    // Work already queued still has to leave the queue.
     expect(brain.drainQueue).toHaveBeenCalledTimes(1);
     stop();
   });
@@ -201,11 +194,8 @@ describe('startPeriodicWork', () => {
     stop();
   });
 
-  // ── The gate ────────────────────────────────────────────────────────────
-  // main.ts and the daemon build the same service graph. Remote mode is the
-  // default, so both processes are normally alive; without this gate both run
-  // every block below against one database, and the Brain's extraction is
-  // billed twice for the item `recoverOrphans` hands back.
+  // Two daemons can share one database; without the gate both sweep it and the
+  // Brain bills twice.
 
   it('does no work at all while the gate is closed', async () => {
     const { deps, brain } = harness({ enabled: () => false });
@@ -219,9 +209,6 @@ describe('startPeriodicWork', () => {
   });
 
   it('reads the gate on every tick, not once at start', async () => {
-    // main.ts only learns whether the daemon answered when the renderer asks
-    // for `remote:url`, which is after the timers are armed. A gate sampled at
-    // construction would always read "no daemon".
     let daemonInUse = false;
     const { deps } = harness({ enabled: () => !daemonInUse });
     const stop = startPeriodicWork(deps);
@@ -241,7 +228,6 @@ describe('startPeriodicWork', () => {
   });
 
   it('runs everything when no gate is supplied', async () => {
-    // The daemon owns this work unconditionally; it passes no gate.
     const { deps, brain } = harness();
     const stop = startPeriodicWork(deps);
     await vi.advanceTimersByTimeAsync(HOUR);
@@ -265,7 +251,6 @@ describe('startPeriodicWork', () => {
     const { deps } = harness();
     vi.mocked(deps.db.reclaimFreePages).mockImplementationOnce(() => { throw new Error('locked'); });
     const stop = startPeriodicWork(deps);
-    // The startup pass throws; the hourly tick still runs, and the next.
     await vi.advanceTimersByTimeAsync(HOUR);
     expect(deps.log.warn).toHaveBeenCalled();
     expect(deps.db.reclaimFreePages).toHaveBeenCalledTimes(2);
@@ -274,8 +259,6 @@ describe('startPeriodicWork', () => {
     stop();
   });
 
-  // The sessions page's metadata cache is filled once, shortly after start, so
-  // even a project's first visit after a restart reads only what changed.
   it('warms the session metadata cache once, ten seconds after start', async () => {
     const warmSessionMetadata = vi.fn(async () => ({ files: 5 }));
     const { deps } = harness({ warmSessionMetadata });

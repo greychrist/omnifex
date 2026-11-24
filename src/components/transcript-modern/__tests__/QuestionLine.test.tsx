@@ -5,8 +5,6 @@ import { QuestionLine } from '../QuestionLine';
 
 afterEach(() => { cleanup(); });
 
-// Mirrors the CLI shape `AskUserQuestionCard.handleSubmit` produces — keep
-// these factories close to that so a wire-format drift breaks here first.
 function input(questions: { question: string; header?: string; options?: { label: string }[]; multiSelect?: boolean }[]) {
   return {
     questions: questions.map((q) => ({
@@ -19,17 +17,12 @@ function input(questions: { question: string; header?: string; options?: { label
 }
 
 /**
- * Build the synthesised wire-format string the CLI actually returns
- * to the renderer. This mirrors the *current* shipping format, verified
- * verbatim against live session `736548cc-2da0-44fb-8951-95624e7c035e`:
+ * The wire-format string the CLI returns:
  *
  *   `Your questions have been answered: "Q"="A" notes: User selected Other: "A". You can now continue with these answers in mind.`
  *
- * Note the bare `notes:` delimiter and the `.` terminating the final clause
- * (pairs or notes) before the trailer. Older CLI builds emitted
- * `User has answered your questions: … user notes: …` instead — that variant
- * still appears in real transcripts, so the parser tolerates both. The
- * `d6ac42ec…` test below freezes the legacy form as a back-compat guard.
+ * Older builds emitted `User has answered your questions: … user notes: …`,
+ * which still appears in real transcripts.
  */
 function resultWire(
   answers: Record<string, string>,
@@ -44,10 +37,7 @@ function resultWire(
   return `Your questions have been answered: ${pairs}${notes}. You can now continue with these answers in mind.`;
 }
 
-/**
- * The legacy JSON shape — retained for the fallback path and any future
- * CLI release that pipes the structured payload through unchanged.
- */
+// The legacy JSON shape, for the fallback path.
 function resultJson(answers: Record<string, string>, annotations?: Record<string, { notes?: string }>) {
   return JSON.stringify({ answers, annotations });
 }
@@ -92,11 +82,8 @@ describe('QuestionLine (wire format — synthesised string)', () => {
   });
 
   it('shows the comma-joined picks for a multi-select answer', () => {
-    // The live submit path joins multi-select picks with ', ' before sending
-    // to the CLI; the synthesised wire string preserves that joined value
-    // verbatim inside the `"q"="A, B"` slot. Our parser anchors on the
-    // question's literal text and captures up to the next boundary, so the
-    // ', ' inside the answer doesn't fool it into stopping early.
+    // The submit path joins multi-select picks with ', '; the parser anchors on the
+    // question text, so the comma does not end the answer early.
     render(
       <QuestionLine
         input={input([{ question: 'Pick toppings', options: [{ label: 'A' }, { label: 'B' }], multiSelect: true }])}
@@ -113,13 +100,8 @@ describe('QuestionLine (wire format — synthesised string)', () => {
         resultContent={resultWire({ Pick: 'Magenta' }, ['Magenta'])}
       />,
     );
-    // The answer cell renders the typed text prefixed with "Other:".
     expect(screen.getByText(/Other:\s*Magenta/)).toBeTruthy();
-    // And the raw text "Magenta" doesn't render a second time outside the
-    // "Other:" line — the answer column shows the typed form exclusively for
-    // Other answers (no duplication). This was the user-reported double-render.
     expect(screen.getAllByText(/Magenta/).length).toBe(1);
-    // The older "You typed:" phrasing is gone.
     expect(screen.queryByText(/You typed/)).toBeNull();
   });
 
@@ -134,10 +116,8 @@ describe('QuestionLine (wire format — synthesised string)', () => {
   });
 
   it('parses the legacy "user notes:" wire format (session d6ac42ec) verbatim', () => {
-    // Frozen against the actual JSONL content from the original bug-report
-    // screenshot — the older CLI form (`User has answered your questions: …
-    // user notes: …`). This variant still appears in real transcripts, so it
-    // stays as a back-compat guard alongside the current-format test above.
+    // The older CLI form (`User has answered your questions: … user notes: …`)
+    // still appears in real transcripts.
     const liveContent =
       'User has answered your questions: ' +
       '"Which color do you prefer?"="Blue", ' +
@@ -157,27 +137,17 @@ describe('QuestionLine (wire format — synthesised string)', () => {
       />,
     );
 
-    // Each answer rendered against its question — no "(no answer recorded)"
-    // anywhere, which was the symptom of the bug.
     expect(screen.queryByText(/no answer recorded/i)).toBeNull();
     expect(screen.getByText('Blue')).toBeTruthy();
     expect(screen.getByText('TypeScript, Python')).toBeTruthy();
-    // Other answers render exclusively as the "Other: …" form in the answer
-    // column — the prior layout duplicated the raw value in a separate column
-    // too, which read as noise (the user-reported double-render).
     expect(screen.getAllByText(/This is a test, custom, answer/).length).toBe(1);
     expect(screen.getByText(/Other:.*This is a test/)).toBeTruthy();
     expect(screen.getAllByText(/Other:/).length).toBe(1);
   });
 
   it('parses the current CLI wire format (" notes:" delimiter, "Your questions have been answered" prefix)', () => {
-    // Verbatim tool_result from live session
-    // 736548cc-2da0-44fb-8951-95624e7c035e. The CLI drifted from
-    // "User has answered your questions: … user notes: …" to
-    // "Your questions have been answered: … notes: …", which broke both the
-    // answer-boundary lookahead and the annotation extractor — the answer
-    // overshot into the notes section and rendered the typed text twice with
-    // no "Other:" prefix (the user-reported double-render).
+    // The CLI drifted from "… user notes: …" to "Your questions have been
+    // answered: … notes: …".
     const liveContent =
       'Your questions have been answered: ' +
       '"The verify gate\'s a11y stage fails on the home-page YouTube iframe (third-party markup), unrelated to WS-203. How do you want to handle it so the billing work can land?"=' +
@@ -199,8 +169,6 @@ describe('QuestionLine (wire format — synthesised string)', () => {
       />,
     );
 
-    // Rendered exactly once, as the "Other: …" form — not doubled, and with
-    // no leaked "notes:" / "User selected Other:" wire noise.
     expect(screen.getAllByText(/I've already fixed this and ported the fix to develop/).length).toBe(1);
     expect(screen.getByText(/Other:\s*I've already fixed this/)).toBeTruthy();
     expect(screen.queryByText(/User selected Other/)).toBeNull();
@@ -218,14 +186,9 @@ describe('QuestionLine (wire format — synthesised string)', () => {
   });
 
   it('tolerates resultContent that is already a parsed object (some replay paths)', () => {
-    // Tests are coupled to the implementation's "tolerate three shapes" rule
-    // — if a future caller passes the parsed shape directly, the card should
-    // still light up the answer column.
     render(
       <QuestionLine
         input={input([{ question: 'Pick', options: [{ label: 'X' }] }])}
-        // Cast to string-typed prop slot but pass an already-parsed object —
-        // the parser branches on typeof body before JSON.parsing.
         resultContent={({ answers: { Pick: 'X' } } as unknown) as string}
       />,
     );
@@ -249,21 +212,14 @@ describe('QuestionLine (wire format — synthesised string)', () => {
         resultContent="not valid json {{{"
       />,
     );
-    // Card still renders the question; just no answer column.
     expect(screen.getByText('Pick')).toBeTruthy();
     expect(screen.getByText(/no answer recorded/i)).toBeTruthy();
   });
 });
 
 describe('QuestionLine (CLI trailer drift — "Read the answers carefully")', () => {
-  // Verbatim tool_result from live session
-  // cd8cb2a5-e28a-4f8b-867d-78473f61219f. The CLI drifted again: the prefix
-  // is now "The user answered:" and the trailer is "Read the answers
-  // carefully — …" instead of "You can now continue with these answers in
-  // mind.". The prefix never mattered (we anchor on question text), but the
-  // trailer did: it was the terminal boundary for the LAST question's answer,
-  // so only that answer failed to parse and rendered "(no answer recorded)"
-  // while the earlier ones — bounded by the `", "` separator — were fine.
+  // The CLI drifted again: prefix "The user answered:", trailer "Read the
+  // answers carefully — …". The trailer is the terminal boundary.
   const TRAILER =
     '. Read the answers carefully — they may request clarification, changes, ' +
     'or that you not proceed — and follow what they actually say.';
@@ -294,7 +250,6 @@ describe('QuestionLine (CLI trailer drift — "Read the answers carefully")', ()
     expect(screen.getByText('Everything, staged commits (Recommended)')).toBeTruthy();
     expect(screen.getByText('Date range incl. custom start/end, Account, model, project — all multi-select, Main-loop vs subagent toggle, Free-text project search')).toBeTruthy();
     expect(screen.getByText('Port it now, OmniFex-only (Recommended)')).toBeTruthy();
-    // No trailer prose leaks into the answer cell.
     expect(screen.queryByText(/Read the answers carefully/)).toBeNull();
   });
 

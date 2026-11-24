@@ -31,13 +31,8 @@ const field = (nodes: JsonlNode[], subtype: string, key: string): unknown[] =>
 
 const tokensOf = (nodes: JsonlNode[]) => field(nodes, 'thinking_tokens', 'estimated_tokens');
 
-// ── latestInRun ────────────────────────────────────────────────────────────
-// For kinds that re-send a whole snapshot rather than a change. The CLI emits
-// one `thinking_tokens` ping every few hundred tokens and `estimated_tokens`
-// is the burst's RUNNING total, so the last ping of a burst carries the
-// turn's total and every earlier one is a strictly-worse duplicate. A run
-// ends at the first non-system message. A pure filter: nothing synthetic is
-// injected, so the output stays a faithful subset of what the CLI emitted.
+// The CLI pings `thinking_tokens` every few hundred tokens and
+// `estimated_tokens` is the burst's RUNNING total, so the last ping carries it.
 describe('collapseRepeats — latestInRun (thinking_tokens)', () => {
 
   it('collapses a burst to its last ping, which carries the turn total', () => {
@@ -78,9 +73,8 @@ describe('collapseRepeats — latestInRun (thinking_tokens)', () => {
   });
 });
 
-// ── onChange ───────────────────────────────────────────────────────────────
-// For single-value kinds the CLI re-sends unchanged: `session_title_changed`
-// arrives at startup for every resume of a named session.
+// The CLI re-sends `session_title_changed` unchanged on every resume of a
+// named session.
 describe('collapseRepeats — onChange (session_title_changed)', () => {
 
   it('keeps only the rows where the value changes', () => {
@@ -113,11 +107,8 @@ describe('collapse rules in the registry', () => {
 });
 
 
-// ── re-stamped bookkeeping (Compact and Modern only) ───────────────────────
-// The CLI re-writes the current permission mode and custom title each time it
-// saves session metadata: one real rename showed three "Renamed to" rows, one
-// unchanged mode five "Permission mode: Auto" rows. Compact and Modern keep
-// the first and each real change; Verbose and All show every record.
+// The CLI re-writes the permission mode and custom title on every metadata
+// save.
 describe('collapseRepeats — permission-mode and custom-title re-stamps', () => {
   const mode = (permissionMode: string): JsonlNode =>
     ({ kind: 'permission-mode', sessionId: '', raw: { type: 'permission-mode', permissionMode } }) as unknown as JsonlNode;
@@ -136,7 +127,6 @@ describe('collapseRepeats — permission-mode and custom-title re-stamps', () =>
       const out = collapseRepeats(stream, viewMode);
       expect(modes(out)).toEqual(['auto', 'acceptEdits', 'auto']);
       expect(titles(out)).toEqual(['Working on Jira App', 'Jira app v2']);
-      // Conversation is untouched.
       expect(out.filter((n) => n.kind === 'user' || n.kind === 'assistant')).toHaveLength(3);
     }
   });

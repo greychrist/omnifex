@@ -6,22 +6,8 @@ import { Popover } from "../popover";
 
 afterEach(() => { cleanup(); });
 
-// Reproduces the "dialog closes when I pick a model/effort/permission option"
-// bug. The session-default pickers (FormModelPicker / EffortPicker /
-// PermissionPicker) are custom Popovers that portal their content to
-// document.body. The Radix Dialog wrapping them (AccountDialog) is a
-// DismissableLayer: a pointerdown/focus that lands outside the DialogContent
-// DOM subtree dismisses the dialog. Because the popover option is portaled
-// OUTSIDE the DialogContent, pressing it reads as an outside interaction and
-// collapses the whole dialog before the selection registers.
-//
-// The full Radix DismissableLayer dismissal can't be driven under jsdom (its
-// pointer-outside detection no-ops there), so these tests pin the two real
-// contracts of the fix instead of the end-to-end dismissal:
-//   1. The popover marks its portaled content so a dialog can recognise it.
-//   2. isInsidePopover() — wired into DialogContent.onInteractOutside to call
-//      preventDefault() — treats an interaction originating in that content as
-//      "inside the dialog", but a genuine outside target as "outside".
+// The pickers' Popovers portal to body, outside the Dialog's DismissableLayer,
+// so a press on an option reads as outside the dialog.
 describe("popover-aware dialog dismissal", () => {
   it("marks the popover's portaled content with the dialog-recognised attribute", () => {
     render(
@@ -47,11 +33,8 @@ describe("popover-aware dialog dismissal", () => {
   });
 
   it("keeps the popover content interactive when a modal layer disables body pointer events", () => {
-    // A modal Radix Dialog sets `body { pointer-events: none }` and only its
-    // own layer back to `auto`. The popover portals to body and is NOT a Radix
-    // layer, so without an explicit override it inherits `none` — clicks fall
-    // straight through the option (the "dialog stays open but I can't pick
-    // anything" symptom). The portal must re-enable pointer events on itself.
+    // A modal Radix Dialog sets `body { pointer-events: none }`; the popover
+    // portals to body, so it must re-enable pointer events on itself.
     render(
       <Popover
         open

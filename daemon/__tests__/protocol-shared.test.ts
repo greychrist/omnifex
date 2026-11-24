@@ -10,17 +10,8 @@ import {
 
 const PROTOCOL_DIR = join(__dirname, '..', '..', 'src', 'protocol');
 
-/**
- * The protocol is the ONE module the daemon and both clients share, so it has
- * to load under all three runtimes: Electron main, the renderer, and a plain
- * Node test process.
- *
- * This file is that claim under test from the main-process side. The import
- * above is the point of it — `tsconfig.daemon.json` typechecks whatever
- * `daemon/**` reaches into, so a DOM or React dependency added to the
- * protocol fails here and in `npm run check`, rather than in Phase 2 when the
- * daemon first tries to start.
- */
+// The import is the test: tsconfig.daemon.json typechecks whatever daemon/**
+// reaches into.
 describe('protocol is shared, not renderer-only', () => {
   it('imports and runs from the main-process side', () => {
     expect(PROTOCOL_VERSION).toBe(1);
@@ -41,8 +32,8 @@ describe('protocol is shared, not renderer-only', () => {
   });
 
   it('imports nothing that ties it to a browser, React or Electron', () => {
-    // Checked as source text rather than by loading, because a bad import can
-    // resolve fine under vitest's aliases and still break a packaged daemon.
+    // Source text, not loading: a bad import can resolve under vitest's aliases and
+    // still break a packaged daemon.
     const offenders = [
       /from ['"]react/,
       /from ['"]electron['"]/,

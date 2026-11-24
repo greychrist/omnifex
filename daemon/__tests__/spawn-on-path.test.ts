@@ -4,9 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ExecFileException } from 'node:child_process';
 
-// A bare command name makes libuv on macOS posix_spawn once per PATH entry
-// until one succeeds; XNU creates a process for every miss and syspolicyd logs
-// each one. `limactl` polled every 5 s cost 18 syspolicyd lines per tick.
+// A bare command makes libuv posix_spawn once per PATH entry; XNU creates a
+// process for every miss.
 
 const execFileCalls = vi.hoisted(() => [] as { file: string; args: string[]; opts: unknown }[]);
 vi.mock('node:child_process', async (importOriginal) => {

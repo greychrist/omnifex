@@ -6,11 +6,6 @@ import os from 'node:os';
 import type { AgentMessage, AgentEngineExit } from '../services/agents/types';
 import type { CliUsageEvent } from '../services/cost/cli-process-usage';
 
-// The sessions service reads the CLI's running totals at the three moments
-// they matter: a baseline when a process starts, every result, and after a
-// side question (which no result may follow). None of it may disturb the
-// session — a failing recorder must not fail the side question.
-
 const messageCbs: ((m: AgentMessage) => void)[] = [];
 const exitCbs: ((info: AgentEngineExit) => void)[] = [];
 const control = vi.fn();

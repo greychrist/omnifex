@@ -3,15 +3,6 @@ import { createLoggingOptions } from '../logging-options';
 import { createAccountIdentityVerdict } from '../services/account-identity';
 import type { LogEntry } from '../services/logging';
 
-/**
- * The small blocks both composition roots need.
- *
- * `daemon/main.ts` and `daemon/remote/daemon.ts` build the same service
- * graph, so every callback handed to a shared service was written twice. These
- * two are the last of the behavioural ones: the log-toast gate and the
- * account-identity verdict. Both were comment-stripped hand copies — the
- * rationale for each rule survived in main.ts only.
- */
 describe('shared composition-root blocks', () => {
   describe('logging options', () => {
     function opts(settings: Record<string, string> = {}) {
@@ -31,14 +22,12 @@ describe('shared composition-root blocks', () => {
       ...over,
     });
 
-    /** Warn and error always pass; only info/debug are ever filtered. */
     it('always accepts warn and error, whatever the toggles say', () => {
       const { o } = opts();
       expect(o.shouldAccept(entry({ level: 'error', source: 'claude-hooks' }))).toBe(true);
       expect(o.shouldAccept(entry({ level: 'warn', source: 'usage-runner' }))).toBe(true);
     });
 
-    /** Defaults are off: these two sources are noisy, and nobody asked. */
     it('drops info and debug from the noisy sources until opted in', () => {
       const { o } = opts();
       expect(o.shouldAccept(entry({ source: 'claude-hooks' }))).toBe(false);
@@ -52,10 +41,6 @@ describe('shared composition-root blocks', () => {
       expect(o.shouldAccept(entry({ source: 'usage-runner' }))).toBe(false);
     });
 
-    /**
-     * The error toast defaults ON, so a fresh install still toasts. Only an
-     * explicit 'false' suppresses it — a missing setting must not read as off.
-     */
     it('toasts an error when the setting is missing', () => {
       const { o, sent } = opts();
       o.onError(entry({ level: 'error', category: 'spawn' }));
@@ -103,22 +88,11 @@ describe('shared composition-root blocks', () => {
       expect(fn('/cfg/personal').status).toBe('mismatch');
     });
 
-    /**
-     * No expectation means nothing to compare, but who is signed in is still
-     * worth knowing: the account popover uses it to offer Sign in vs Sign out.
-     * The status stays 'unverified' — detecting is not verifying.
-     */
     it('reports who is signed in even when there is nothing to check against', () => {
       const { fn } = verdict({ expected_email: null }, 'a@b.com');
       expect(fn('/cfg/personal')).toMatchObject({ status: 'unverified', expected: null, detected: 'a@b.com' });
     });
 
-    /**
-     * The load-bearing one. A config dir no account owns cannot be checked,
-     * and that is indistinguishable from "passed" unless it is said out loud —
-     * a routing or path-normalization bug would otherwise silently disable
-     * verification while looking like a clean bill of health.
-     */
     it('logs a warning when no account owns the config dir', () => {
       const { fn, writeBatch } = verdict(null, null);
 

@@ -112,9 +112,7 @@ function taskNotification(
   } as unknown as JsonlNode;
 }
 
-// Patch shape mirrors the CLI's CliTaskUpdatedMessage at sdk.d.ts:3619.
-// Only the fields a consumer might apply — status, description, end_time,
-// total_paused_ms, error, is_backgrounded — appear here.
+// Patch shape mirrors the CLI's CliTaskUpdatedMessage.
 function taskUpdated(
   taskId: string,
   patch: {
@@ -179,8 +177,8 @@ describe('deriveSubagents — dispatch brief', () => {
 });
 
 describe('agent progress summaries (task_progress.summary)', () => {
-  // The CLI writes a summary on some task_progress frames only (about every
-  // 30 s, with agentProgressSummaries on); the frames between carry none.
+  // The CLI writes a summary on some task_progress frames only, about every 30 s
+  // with agentProgressSummaries on.
   it('keeps the latest summary on the agent, and the summary on its log entry', () => {
     const [sub] = deriveSubagents([
       agentToolUse(TOOL_USE_ID),
@@ -257,14 +255,12 @@ describe('createSubagentColorAllocator', () => {
     const idx0 = allocator.acquire(ids[0]);
     for (let i = 1; i < SUBAGENT_PALETTE_SIZE; i++) allocator.acquire(ids[i]);
     allocator.release(ids[0]);
-    // Newcomer should take the freed slot.
     expect(allocator.acquire('newcomer')).toBe(idx0);
   });
 
   it('falls back to hash-mod when palette is saturated', () => {
     const allocator = createSubagentColorAllocator();
     for (let i = 0; i < SUBAGENT_PALETTE_SIZE; i++) allocator.acquire(`t-${i}`);
-    // Overflow — should not throw, returns a valid index in [0, PALETTE_SIZE).
     const overflowIdx = allocator.acquire('overflow');
     expect(overflowIdx).toBeGreaterThanOrEqual(0);
     expect(overflowIdx).toBeLessThan(SUBAGENT_PALETTE_SIZE);
@@ -295,14 +291,11 @@ describe('applySubagentMeta', () => {
   });
 
   it('fills agentType from meta only when the dispatch did not provide one', () => {
-    // agentToolUse dispatches with subagent_type 'Explore' — meta must not clobber it.
     const subs = deriveSubagents([agentToolUse(TOOL_USE_ID, 'desc', 'Explore'), taskNotification(TOOL_USE_ID)]);
     const merged = applySubagentMeta(subs, { [TOOL_USE_ID]: { agentType: 'code-reviewer' } });
     expect(merged[0].agentType).toBe('Explore');
   });
 
-  // The row's taskId is how the agents popover finds the agent's transcript
-  // cost. A foreground row reloaded from disk never saw task_started.
   it('fills a missing taskId from the meta agentId', () => {
     const subs = deriveSubagents([agentToolUse(TOOL_USE_ID), taskNotification(TOOL_USE_ID)]);
     const merged = applySubagentMeta([{ ...subs[0], taskId: undefined }], { [TOOL_USE_ID]: { agentId: 'a42' } });
@@ -341,10 +334,8 @@ describe('applySubagentMeta', () => {
   });
 });
 
-// A nested subagent's dispatching tool_use is issued inside its PARENT's
-// transcript, so deriveSubagents (which reads the main stream) never produces
-// a row for it. The sidecars are the only record, and without this the whole
-// branch is silently missing from the agents readout.
+// A nested subagent's dispatch is in its parent's transcript, never the main
+// stream; the sidecars are the only record.
 describe('applySubagentMeta — nested subagents', () => {
   const CHILD_ID = 'toolu_CHILD';
   const parentOnly = () =>
@@ -370,8 +361,8 @@ describe('applySubagentMeta — nested subagents', () => {
   });
 
   it('links the nested row to its parent ROW, not just the parent agentId', () => {
-    // subagent rows are keyed by toolUseId, so the agentId from the
-    // sidecar has to be resolved through the meta map to be useful.
+    // Rows are keyed by toolUseId, so the sidecar's agentId resolves through the
+    // meta map.
     const merged = applySubagentMeta(parentOnly(), nestedMeta());
     const child = merged.find((s) => s.toolUseId === CHILD_ID);
     expect(child?.parentToolUseId).toBe(TOOL_USE_ID);
@@ -383,12 +374,8 @@ describe('applySubagentMeta — nested subagents', () => {
   });
 
   it('marks a child of a returned parent as inferred, not confirmed, complete', () => {
-    // This used to assert plain 'completed', on the reasoning that a child
-    // cannot outlive the Task that dispatched it. CLI 2.1.232 broke that: an
-    // agent backgrounds its own children and returns without them. Observed
-    // in session f54bcd1a — parent done at 24s, children still working at 74s
-    // and 82s. With no notification of its own, a child's completion is an
-    // inference, and `completed_inferred` is the status that says so.
+    // CLI 2.1.232: an agent can background its own children and return without
+    // them.
     const merged = applySubagentMeta(parentOnly(), nestedMeta());
     const parent = merged.find((s) => s.toolUseId === TOOL_USE_ID);
     const child = merged.find((s) => s.toolUseId === CHILD_ID);
@@ -413,9 +400,6 @@ describe('applySubagentMeta — nested subagents', () => {
   });
 
   it('does not invent rows for depth-1 meta with no dispatch', () => {
-    // A depth-1 entry with no row means the main stream hasn't been read yet
-    // (or the dispatch was dropped) — not a nested branch. Synthesising it
-    // would duplicate the row once the dispatch does arrive.
     const merged = applySubagentMeta([], {
       [TOOL_USE_ID]: { agentId: 'a987', spawnDepth: 1 },
     });
@@ -423,8 +407,6 @@ describe('applySubagentMeta — nested subagents', () => {
   });
 
   it('skips a nested entry whose parent cannot be resolved', () => {
-    // An orphan has nothing to attach to; a floating row with no context is
-    // worse than omitting it.
     const merged = applySubagentMeta(parentOnly(), {
       [CHILD_ID]: { agentId: 'a843', parentAgentId: 'MISSING', spawnDepth: 2 },
     });
@@ -533,9 +515,8 @@ describe('deriveSubagents', () => {
   });
 
   it('background dispatch (run_in_background=true) stays running on the synchronous ACK tool_result', () => {
-    // The CLI fires an immediate "Async agent launched" tool_result for
-    // background dispatches; that's a dispatch ACK, not the actual return
-    // value. Status should stay running until task_notification arrives.
+    // The CLI fires an immediate "Async agent launched" tool_result for a
+    // background dispatch: an ACK, not completion.
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Audit', 'general-purpose', true),
       toolResult(TOOL_USE_ID, false, 'Async agent launched successfully. agentId: x'),
@@ -553,16 +534,8 @@ describe('deriveSubagents', () => {
   });
 
   describe('implicit background dispatch (CLI >= 2.1.232)', () => {
-    // 2.1.232 made non-teammate agent spawns in interactive sessions run in
-    // the background BY DEFAULT. `run_in_background` stays optional on the
-    // tool schema, so the model omits it and the dispatch input carries no
-    // background flag at all — the only signals are on the result side:
-    //   - `toolUseResult.status === 'async_launched'` (+ `isAsync: true`),
-    //     the enrichment the CLI writes onto the on-disk JSONL line, which is
-    //     what the JSONL tail reads; and
-    //   - the ACK text itself, which is all the live stream-json path gets.
-    // The CLI's own agent panel reads both. Without them a launched agent
-    // reads as finished for its entire run.
+    // 2.1.232 backgrounds non-teammate agent spawns by default; the dispatch input
+    // carries no flag, so only the result side signals it.
     function asyncLaunchedAck(
       toolUseId: string,
       opts: { enrichment?: boolean } = {},
@@ -603,10 +576,7 @@ describe('deriveSubagents', () => {
     });
 
     it('stays running when the ACK text arrives as a content-block array', () => {
-      // Verified against a real 2.1.232 transcript: the CLI persists the ACK
-      // as `content: [{type:'text', text:'Async agent launched successfully…'}]`,
-      // not as a bare string. The enrichment covers the JSONL path, so this
-      // shape is what the text fallback actually has to handle.
+      // 2.1.232 persists the ACK as `content: [{type:'text', …}]`, not a bare string.
       const node = toolResult(TOOL_USE_ID, false) as unknown as { raw: any };
       node.raw.message.content[0].content = [
         { type: 'text', text: 'Async agent launched successfully. (This tool result is internal metadata …)' },
@@ -629,8 +599,6 @@ describe('deriveSubagents', () => {
     });
 
     it('an errored launch still fails the row', () => {
-      // is_error on the ACK means the dispatch itself failed — that is a real
-      // terminal signal, not a "work continues in the background" ACK.
       const subs = deriveSubagents([
         agentToolUse(TOOL_USE_ID, 'Audit', 'general-purpose'),
         toolResult(TOOL_USE_ID, true, 'Async agent launch failed'),
@@ -724,12 +692,8 @@ describe('deriveSubagents', () => {
     });
 
     it('Bash run_in_background stays running when the parent advances past the result without a notification', () => {
-      // Previously asserted `completed_inferred` here. A backgrounded shell
-      // outlives the turn that launched it exactly as a backgrounded agent
-      // does — `docker build` is still running when the user types the next
-      // prompt — so the parent's `result` was never evidence it finished.
-      // The row closes on its own carrier (`task_notification`, or the
-      // queue-operation XML the JSONL tail forwards) or not at all.
+      // A backgrounded shell outlives the turn that launched it; it closes on its own
+      // carrier.
       const subs = deriveSubagents([
         bashBackground(TOOL_USE_ID, 'Build DMG'),
         toolResult(TOOL_USE_ID, false, 'Async agent launched'),
@@ -767,11 +731,8 @@ describe('deriveSubagents', () => {
   });
 
   it('background dispatch stays running when a result fires and the parent moves on without task_notification', () => {
-    // Previously asserted `completed_inferred`: the parent moving on was
-    // read as proof the agent had finished. It is not — the user typing the
-    // next prompt is unrelated to a background agent's progress, and since
-    // CLI 2.1.232 that is the normal shape of every agent spawn rather than
-    // a rare missing-carrier edge case.
+    // Since 2.1.232 every agent spawn is backgrounded by default, so the parent
+    // moving on proves nothing.
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
       toolResult(TOOL_USE_ID, false, 'Async agent launched successfully'),
@@ -783,12 +744,6 @@ describe('deriveSubagents', () => {
   });
 
   it('a backgrounded agent stays running after its parent turn ends (CLI >=2.1.232 launches async)', () => {
-    // Reproduces the pi-tuitive session: the dispatch input carries no
-    // `run_in_background` (2.1.232 backgrounds agent spawns by default), the
-    // ACK is what marks the row background, and the parent's turn ends
-    // seconds later — twelve minutes before the agent actually returned.
-    // A backgrounded agent's life is no longer bounded by the turn that
-    // launched it, so the parent's `result` is not evidence it finished.
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Adversarial pre-push review', 'general-purpose', false),
       toolResult(TOOL_USE_ID, false, 'Async agent launched successfully. (This tool result is internal metadata.)'),
@@ -800,8 +755,6 @@ describe('deriveSubagents', () => {
   });
 
   it('background dispatch stays running while the result event is the latest message (live awaiting)', () => {
-    // Live session paused at the awaiting state — no messages after the result
-    // yet. We must not mark these as abandoned; the wake-up may still arrive.
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Verify', 'general-purpose', true),
       toolResult(TOOL_USE_ID, false, 'Async agent launched successfully'),
@@ -811,15 +764,8 @@ describe('deriveSubagents', () => {
   });
 
   it('foreground subagents also receive completed_inferred when the parent advances past their dispatch', () => {
-    // Under the generalised inference rule, foreground Agent/Task
-    // dispatches that lose their tool_result also get closed when the
-    // parent emits a result and then continues with more activity. This
-    // is the exact scenario the user hit on the WIN session — a stuck
-    // "general-purpose" row left running because no closure carrier
-    // matched, with the parent already advanced.
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'Verify', 'Explore', false),
-      // No tool_result, no notification, but trailing user message
       { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'huh' } } as any,
       { kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '', raw: { type: 'user', message: { content: [{ type: 'text', text: 'next' }] } } } as any,
     ]);
@@ -883,10 +829,6 @@ describe('deriveSubagents', () => {
 });
 
 describe('applySubagentMeta — nested row labelling', () => {
-  // Real depth-2 run (session 015da44f): both nested rows rendered as the
-  // parent's description, "Compare subagent stream modules", because the
-  // synthesised row copied the parent's label. Each sidecar carries the
-  // child's own description; use it.
   const dispatched = () =>
     deriveSubagents([agentToolUse(TOOL_USE_ID, 'Compare stream modules', 'general-purpose')]);
 
@@ -906,11 +848,8 @@ describe('applySubagentMeta — nested row labelling', () => {
   });
 
   it('gives a synthesised nested row the stats from its own task-notification', () => {
-    // The nested agent's totals exist ONLY here: its dispatch happens inside
-    // the parent's transcript (so no main-stream row), the parent transcript
-    // holds just the async-launch ACK, and the sidecar carries no counts. The
-    // main stream does receive the child's <task-notification>, which the
-    // reducer drops for want of a row — so it is re-applied at merge time.
+    // A nested agent's totals exist only in its <task-notification>, which the main
+    // stream receives with no row to attach to.
     const childXml = {
       kind: 'unknown', sessionId: '', receivedAt: '',
       raw: {
@@ -963,12 +902,8 @@ describe('applySubagentMeta — nested row labelling', () => {
 });
 
 describe('XML task-notification (queue-operation / attachment)', () => {
-  // Background Bash dispatches receive their completion signal as XML wrapped
-  // in a queue-operation enqueue (live stream) or an attachment.queued_command
-  // (replayed through the agent loop), NOT as a structured task_notification
-  // SystemMessage. The reducer must extract the embedded <tool-use-id> /
-  // <status> / <summary> and route through the same close path that
-  // structured task_notification uses.
+  // Background Bash completion arrives as XML in a queue-operation enqueue (live)
+  // or an attachment.queued_command (replay), not a structured task_notification.
 
   function bashBg(id: string, description = 'verify gate'): JsonlNode {
     return {
@@ -1047,19 +982,12 @@ describe('XML task-notification (queue-operation / attachment)', () => {
     expect(subs).toHaveLength(1);
     expect(subs[0].status).toBe('completed');
     expect(subs[0].summary).toBe('verify gate completed (exit 0)');
-    // The summary should become the latest progress event so the subagent row
-    // replaces "Waiting for first progress event…" with the summary line.
     expect(subs[0].events).toHaveLength(1);
     expect(subs[0].latest?.description).toBe('verify gate completed (exit 0)');
   });
 
   it('carries the <usage> run stats onto the closing progress entry', () => {
-    // Verified against a real 2.1.232 transcript. Since backgrounding became
-    // the default, this XML block is the ONLY carrier of a subagent's run
-    // stats: the `toolUseResult` totals `readSubagentMeta` reads are absent
-    // from the async-launch ACK, and no structured task_notification is
-    // written to the JSONL at all. Dropping it blanks the numbers on every
-    // subagent row.
+    // Since 2.1.232 this XML block is the only carrier of a subagent's run stats.
     const withUsage = [
       '<task-notification>',
       `<task-id>bgtask1</task-id>`,
@@ -1084,12 +1012,9 @@ describe('XML task-notification (queue-operation / attachment)', () => {
   });
 
   it('re-attaches a resumed agent notification by task-id when the tool-use-id is new', () => {
-    // Real case (session 015da44f): Claude re-opened a finished agent with
-    // SendMessage, so the second notification is keyed to the SendMessage
-    // tool_use_id — which never dispatched a row. Its <task-id> is still the
-    // original agent's, and its usage supersedes (the CLI reports the agent's
-    // running totals, not per-segment deltas). Without the fallback the
-    // resumed run's 57661 tokens vanish entirely.
+    // A SendMessage resume keys the next notification to the SendMessage's
+    // tool_use_id; its <task-id> is the original agent's, and its usage is a
+    // running total.
     const xml = (toolUseId: string, tokens: number, tools: number, ms: number) =>
       ({
         kind: 'unknown', sessionId: '', receivedAt: '',
@@ -1121,12 +1046,7 @@ describe('XML task-notification (queue-operation / attachment)', () => {
   });
 
   describe('resuming a finished agent (SendMessage)', () => {
-    // Resuming keys the eventual notification to the SendMessage's tool_use_id
-    // (handled above by the task-id fallback), but the row also has to go BACK
-    // to running for the duration of the resumed work — otherwise it reads
-    // "completed" while the agent is demonstrably busy. The signal is the
-    // SendMessage result's `toolUseResult.resumedAgentId`, which carries the
-    // same id the notifications use as <task-id>. Verified in session b1a9cc55.
+    // The signal is the SendMessage result's `toolUseResult.resumedAgentId`.
     const AGENT_ID = 'a65a69b5b316a0611';
 
     function sendMessageResult(agentId: string, opts: { enrichment?: boolean } = {}): JsonlNode {
@@ -1218,10 +1138,6 @@ describe('XML task-notification (queue-operation / attachment)', () => {
     });
 
     it('is not closed by a parent result that predates the resume', () => {
-      // The inferred-closure rule closes a running row once the parent has
-      // advanced past a `result`. After a resume, only results AFTER the
-      // resume say anything about the new run — the earlier one belongs to
-      // the turn that already finished.
       const subs = deriveSubagents([
         bashBg(TOOL_USE_ID, 'map sessions'),
         bgAck(TOOL_USE_ID),
@@ -1234,8 +1150,7 @@ describe('XML task-notification (queue-operation / attachment)', () => {
     });
 
     it('ignores a resume naming an agent we have no row for', () => {
-      // SendMessage also addresses other Claude SESSIONS (CLI 2.1.232's @-mention),
-      // where `to` is a session name and no subagent row should react.
+      // SendMessage also addresses other Claude sessions (CLI 2.1.232's @-mention).
       const subs = deriveSubagents([...finished(), sendMessageResult('some-other-session', { enrichment: true })]);
       expect(subs).toHaveLength(1);
       expect(subs[0].status).toBe('completed');
@@ -1243,9 +1158,7 @@ describe('XML task-notification (queue-operation / attachment)', () => {
   });
 
   it('ignores an XML notification whose tool-use-id AND task-id are both unknown', () => {
-    // The orphan guard still holds: notifications routinely name tool_uses
-    // from earlier turns we do not have in scope, and inventing rows for them
-    // would litter the bar.
+    // Notifications routinely name tool_uses from earlier turns.
     const subs = deriveSubagents([
       bashBg(TOOL_USE_ID, 'compare'),
       bgAck(TOOL_USE_ID),
@@ -1301,9 +1214,6 @@ describe('XML task-notification (queue-operation / attachment)', () => {
   });
 
   it('structured task_notification arriving after XML still wins (structured is most authoritative)', () => {
-    // Existing precedence: structured task_notification carries usage + a
-    // canonical status, so it overwrites whatever the XML branch set. This
-    // matches the structured branch's pre-existing unconditional overwrite.
     const subs = deriveSubagents([
       bashBg(TOOL_USE_ID),
       bgAck(TOOL_USE_ID),
@@ -1329,10 +1239,6 @@ describe('clearCompleted', () => {
 });
 
 describe('hasRunningSubagent', () => {
-  // Single source of truth for "is there an outstanding response we're waiting
-  // on?" — must match the predicate used by session-derived-state to determine
-  // whether background subagents are still running. Drift here was the bug
-  // behind "spinner gone but Awaiting Background card showing".
   it('returns true for any running subagent regardless of isBackground flag', () => {
     expect(hasRunningSubagent([{ status: 'running' } as any])).toBe(true);
     expect(hasRunningSubagent([{ status: 'running', isBackground: true } as any])).toBe(true);
@@ -1353,16 +1259,6 @@ describe('hasRunningSubagent', () => {
 });
 
 describe('task_updated handling (CliTaskUpdatedMessage patch application)', () => {
-  // CliTaskUpdatedMessage carries a `patch` describing wire-safe TaskState
-  // changes (status, description, end_time, error, is_backgrounded, …).
-  // Until this batch the message was filtered from the chat timeline (via
-  // `isTaskLifecycleMarker`'s `task_*` startsWith match) but its payload
-  // was discarded — `messagesToEvents` had no branch for `task_updated`.
-  // The reducer is keyed by `toolUseId`; `task_updated` only carries
-  // `task_id`, so the reducer maps `task_id` back to the dispatched row
-  // via the `taskId` field set on SubagentState during `Started` /
-  // `Progress` / `Notification`.
-
   it('applies is_backgrounded: true to a running subagent', () => {
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID),
@@ -1412,9 +1308,6 @@ describe('task_updated handling (CliTaskUpdatedMessage patch application)', () =
   });
 
   it('does NOT override a TaskNotification terminal status', () => {
-    // TaskNotification is the canonical completion carrier; task_updated
-    // should refine pre-terminal state but never overwrite a TaskNotification
-    // closure with a contradictory status.
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID),
       taskStarted(TOOL_USE_ID, 'task_1'),
@@ -1426,9 +1319,6 @@ describe('task_updated handling (CliTaskUpdatedMessage patch application)', () =
   });
 
   it('still applies is_backgrounded after TaskNotification (mid-flight metadata is non-conflicting)', () => {
-    // is_backgrounded is descriptive metadata, not a status change. Even
-    // after a terminal TaskNotification, an is_backgrounded patch is
-    // information about how the dispatch ran and is safe to record.
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID),
       taskStarted(TOOL_USE_ID, 'task_1'),
@@ -1490,10 +1380,8 @@ describe('forwarded subagent text (--forward-subagent-text)', () => {
     } as unknown as JsonlNode;
   }
 
-  // A forwarded frame in which the SUBAGENT dispatches its own background
-  // shell. Its `parent_tool_use_id` is the only carrier of who owns the
-  // resulting task — the `task_started` that follows names the shell's own
-  // tool_use_id and says `owned_by_subagent: true`, but never the owner.
+  // A forwarded frame's parent_tool_use_id is the only carrier of who owns the
+  // task; task_started says `owned_by_subagent: true` but never the owner.
   function forwardedAssistantToolUse(parentToolUseId: string, toolUseId: string, description: string): JsonlNode {
     return {
       kind: 'assistant', sessionId: '', receivedAt: '',
@@ -1523,12 +1411,8 @@ describe('forwarded subagent text (--forward-subagent-text)', () => {
     } as unknown as JsonlNode;
   }
 
-  // CLI 2.1.295 announces every Bash a subagent runs in the FOREGROUND as a
-  // task too — task_started and task_notification 20 ms apart, as the command
-  // finishes. Those are the agent's own steps, not agents: each drew a nested
-  // "Agent" row that appeared already done, and inflated "7/8 done" for a
-  // session that ran two agents. The steps stay in the owner's expanded log
-  // (its task_progress entries).
+  // CLI 2.1.295 announces every foreground Bash a subagent runs as a task too,
+  // started and notified 20 ms apart.
   it('draws no row for a shell a subagent ran in the foreground', () => {
     const fgShell = (id: string, taskId: string, description: string): JsonlNode[] => [
       { kind: 'unknown', sessionId: '', receivedAt: '', raw: {
@@ -1549,10 +1433,6 @@ describe('forwarded subagent text (--forward-subagent-text)', () => {
   });
 
   it('nests a subagent-owned background task under the agent that started it', () => {
-    // Verified against a live 2.1.235 stream: an agent that backgrounds its
-    // own shell produced a second TOP-LEVEL row in the parent session's bar,
-    // labelled with the shell's description ("Sleep 40 seconds in
-    // background") and indistinguishable from a real agent.
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'probe owner', 'general-purpose', false),
       toolResult(TOOL_USE_ID, false, 'Async agent launched successfully.'),
@@ -1563,21 +1443,14 @@ describe('forwarded subagent text (--forward-subagent-text)', () => {
     const owner = subs.find((s) => s.toolUseId === TOOL_USE_ID);
     const owned = subs.find((s) => s.toolUseId === TOOL_USE_ID_2);
     expect(owned?.parentToolUseId).toBe(TOOL_USE_ID);
-    // Nested rows share the owner's color — the indent is what tells them
-    // apart from a sibling (see BackgroundWorkRows).
     expect(owned?.colorIndex).toBe(owner?.colorIndex);
-    // ...and render directly beneath their owner.
     expect(subs[0].toolUseId).toBe(TOOL_USE_ID);
     expect(subs[1].toolUseId).toBe(TOOL_USE_ID_2);
   });
 
   it('nests an owned task even when task_started arrives before the frame naming its owner', () => {
-    // This is the real arrival order, not a hypothetical: the engine's
-    // assistant resolver buffers each committed frame on its own
-    // parent-chain key and flushes it only when that chain emits again, so
-    // the subagent's `task_started` reaches the renderer first. Harvesting
-    // ownership inline while walking messages nested nothing on a recorded
-    // 2.1.235 stream; the pre-pass is what makes it order-independent.
+    // The engine's resolver buffers frames per parent chain, so the subagent's
+    // task_started reaches the renderer first.
     const subs = deriveSubagents([
       agentToolUse(TOOL_USE_ID, 'probe owner', 'general-purpose', false),
       toolResult(TOOL_USE_ID, false, 'Async agent launched successfully.'),
@@ -1588,8 +1461,6 @@ describe('forwarded subagent text (--forward-subagent-text)', () => {
   });
 
   it('leaves an owned task at top level when its owner was never dispatched', () => {
-    // A visible orphan beats a task that ran invisibly — e.g. the owner's
-    // dispatch fell outside the loaded history.
     const subs = deriveSubagents([
       forwardedAssistantToolUse('toolu_MISSING_OWNER', TOOL_USE_ID_2, 'Sleep 40 seconds in background'),
       ownedTaskStarted(TOOL_USE_ID_2, 'bnncsuaov', 'Sleep 40 seconds in background'),
@@ -1633,8 +1504,6 @@ describe('forwarded subagent text (--forward-subagent-text)', () => {
       forwardedAssistantText(TOOL_USE_ID, 'Found it — patching.'),
     ]);
     expect(subs[0].latest?.description).toBe('Found it — patching.');
-    // The numeric tally must carry forward, not blank out, so the row's
-    // meta bits (tokens/tools/elapsed) don't flicker away on each text.
     expect(subs[0].latest?.totalTokens).toBe(5000);
     expect(subs[0].latest?.toolUses).toBe(3);
   });
@@ -1667,11 +1536,8 @@ describe('forwarded subagent text (--forward-subagent-text)', () => {
   });
 });
 
-// CLI 2.1.265 made forked skills (`context: fork`) stream their kickoff prompt
-// and, under --forward-subagent-text, their text turns. A forked skill runs as
-// a `local_agent` exactly like a Task subagent, but it is dispatched by a
-// `Skill` tool_use — so without a dispatch row its narration was collected as
-// ForwardedText and then dropped for want of a row to attach to.
+// CLI 2.1.265 forked skills run as a `local_agent` but are dispatched by a
+// `Skill` tool_use.
 describe('forked skills (context: fork, CLI >= 2.1.265)', () => {
   const SKILL_ID = 'toolu_SKILL_1';
 
@@ -1722,10 +1588,8 @@ describe('forked skills (context: fork, CLI >= 2.1.265)', () => {
     expect(subs[0].status).toBe('running');
   });
 
-  // A plain (non-forked) skill runs inline in the main context: no kickoff
-  // prompt, no forwarded frames, and critically no tool_result that would
-  // close a row. Creating one would strand it 'running' and hold the
-  // session's in-flight rollup on WORKING forever.
+  // A plain skill runs inline: no kickoff prompt, no forwarded frames, no
+  // closing tool_result.
   it('creates no row for a Skill tool_use that did not fork', () => {
     expect(deriveSubagents([skillToolUse(SKILL_ID)])).toHaveLength(0);
   });
@@ -1752,12 +1616,7 @@ describe('forked skills (context: fork, CLI >= 2.1.265)', () => {
   });
 });
 
-/**
- * `ambient` arrived with CLI 2.1.270. The SDK schema's own words: "True for
- * tasks that are not activity (every skip_transcript task, plus every
- * live-update watcher, requested or auto-started); hosts should exclude them
- * from activity indicators."
- */
+// `ambient` (CLI 2.1.270): tasks hosts should exclude from activity indicators.
 describe('countActiveSubagents', () => {
   it('counts running, non-ambient subagents', () => {
     const subs = deriveSubagents([
@@ -1800,8 +1659,8 @@ describe('countActiveSubagents', () => {
   });
 });
 
-// CLI 2.1.292 stamps every forwarded subagent frame with `agent_id` — the
-// `task_id` of its task events, unchanged across a SendMessage resume.
+// CLI 2.1.292 stamps every forwarded subagent frame with `agent_id`, unchanged
+// across a SendMessage resume.
 describe('forwarded frames carry agent_id (CLI >= 2.1.292)', () => {
   function frame(
     parentToolUseId: string,

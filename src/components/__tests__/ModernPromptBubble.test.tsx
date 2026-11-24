@@ -44,11 +44,9 @@ describe('Modern prompt bubble', () => {
     const bubble = screen.getByText('hello there').closest('.modern-prompt');
     expect(bubble).not.toBeNull();
     expect(bubble).not.toHaveClass('bg-muted');
-    // The card corner radius (All cards › Corner radius), not a pill.
     expect((bubble as HTMLElement).style.borderRadius).toBe('12px');
   });
 
-  // Settings › Chats › Modern › Drop shadow: on unless switched off.
   it('wears the drop shadow by default, and not once it is switched off', () => {
     const { unmount } = render(<ModernTranscriptItem item={prompt('hello there')} live={false} ctx={ctx} />);
     expect(screen.getByText('hello there').closest('.modern-prompt')).toHaveClass('modern-card-shadow');
@@ -63,8 +61,6 @@ describe('Modern prompt bubble', () => {
     expect(screen.getByText('hello there').closest('.modern-prompt')).not.toHaveClass('modern-card-shadow');
   });
 
-  // Settings › Chats › Modern › Prompt bubble color › Enabled: off, the
-  // bubble has no fill or border and the page shows through (`.modern-card-plain`).
   it('drops its fill and border when its color is switched off', () => {
     const config = createDefaultConfig();
     config.modern = { ...config.modern, promptColorEnabled: false };
@@ -81,8 +77,6 @@ describe('Modern prompt bubble', () => {
     expect(screen.getByText('hello there').closest('.modern-prompt')).not.toHaveClass('modern-card-plain');
   });
 
-  // Color off takes the shadow with it: a shadow under an invisible card.
-  // The shadow setting is kept, for when the color comes back.
   it('drops its shadow too when its color is switched off', () => {
     const config = createDefaultConfig();
     config.modern = { ...config.modern, promptColorEnabled: false, promptShadow: true };

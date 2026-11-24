@@ -35,8 +35,6 @@ describe('useAccountUsage', () => {
     expect(result.current.refresh).toBe(refresh);
   });
 
-  // The watcher also feeds the per-agent stats in the `agents` popover, which
-  // every account shows. Only the account widget's dollar figure is gated.
   it('watches cost for every account, but reports it only for a cost-based one', () => {
     const snap = { totalUsd: 1.5, bySubagent: { a1: { usd: 0.2 } } };
     sessionCost.mockReturnValue(snap);

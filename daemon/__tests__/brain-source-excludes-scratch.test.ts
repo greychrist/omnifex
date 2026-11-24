@@ -6,19 +6,6 @@ import { createSessionSource } from '../services/brain/sources/session-transcrip
 import { encodeProjectId } from '../services/project-paths';
 import { SCRATCH_DIR_NAME } from '../services/sessions/internal-spend';
 
-/**
- * The Brain must never index OmniFex's own output.
- *
- * Brain indexing spends money to distil a transcript into a note. If its own
- * extraction transcripts were discoverable, it would distil its own
- * distillations — and pay to do it, every cycle, forever. That is a runaway
- * cost bug, not a correctness nit, which is why it gets a test rather than a
- * comment.
- *
- * OmniFex's runs are priced and deleted as they finish, but a stray the
- * runner failed to settle sits in the scratch projects dir until the hourly
- * sweep does, and the Brain's discovery must skip it in the meantime.
- */
 describe('the Brain never indexes OmniFex internal transcripts', () => {
   let configDir: string;
 

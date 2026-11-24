@@ -2,10 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { extractResultContent } from '../shared';
 
 describe('extractResultContent', () => {
-  // Read on a PNG returns its image as a ~300 KB base64 block. Stringified,
-  // that became one unbreakable line in ReadResultWidget, and WebKit spent
-  // seconds per layout measuring it — a 12-minute freeze on 2026-10-28 with
-  // four screenshots in Verbose. The image itself renders beneath the widget.
+  // Read on a PNG returns a ~300 KB base64 block; as one unbreakable line WebKit
+  // spends seconds per layout measuring it.
   it('leaves image blocks out of the text', () => {
     const data = 'iVBORw0KGgo'.repeat(1000);
     const text = extractResultContent({

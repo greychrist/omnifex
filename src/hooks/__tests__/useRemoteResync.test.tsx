@@ -51,8 +51,6 @@ describe('useRemoteResync', () => {
   });
 
   it('calls the latest reload without resubscribing when it changes', () => {
-    // AgentSession's reload closes over per-render state; a stale one would
-    // load the wrong session's transcript.
     const shim = installShim(true);
     const first = vi.fn();
     const second = vi.fn();

@@ -7,12 +7,6 @@ import {
 import type { SessionHandle } from '../services/sessions/types';
 import type { AgentElicitationRequest } from '../services/agents/types';
 
-/**
- * MCP elicitations: the CLI relays an MCP server's question as a
- * control_request and parks the session until the host answers. One dialog
- * at a time; the rest wait their turn, and a request the CLI withdraws
- * leaves the queue without an answer.
- */
 function harness() {
   const respondElicitation = vi.fn(async () => {});
   const handle = {
@@ -23,7 +17,6 @@ function harness() {
   } as unknown as SessionHandle;
   const sendToRenderer = vi.fn();
   const handlers = createElicitationHandlers(handle, 'tab-1', sendToRenderer);
-  // The banner the client raises for it.
   const banners = () =>
     sendToRenderer.mock.calls.filter(([channel]) => channel === 'claude-notification').map(([, p]) => p);
   const shown = () =>
@@ -42,9 +35,6 @@ const req = (requestId: string, extra: Partial<AgentElicitationRequest> = {}): A
 });
 
 describe('MCP elicitations', () => {
-  // The session is parked until the user answers, so it gets a banner like a
-  // permission prompt does. Before the daemon carried it as a
-  // claude-notification, an MCP server's question arrived silently.
   it('shows the first request and raises a banner for its tab', () => {
     const { handlers, shown, banners } = harness();
     handlers.onRequest(req('e1'));
@@ -81,8 +71,6 @@ describe('MCP elicitations', () => {
     expect(shown()).toEqual([req('e1'), null]);
   });
 
-  // A dialog still on screen for a request the CLI already withdrew must not
-  // answer the one queued behind it.
   it('ignores an answer addressed to a request that is no longer at the head', async () => {
     const { handle, handlers, respondElicitation, sendToRenderer } = harness();
     handlers.onRequest(req('e1'));

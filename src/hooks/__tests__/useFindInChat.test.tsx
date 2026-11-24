@@ -4,10 +4,6 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import React, { useRef, useState } from 'react';
 import { useFindInChat } from '../useFindInChat';
 
-// A small harness that wires the hook to DOM-visible state so we can assert
-// from outside without dealing with React state directly. Each test renders
-// a fresh harness with its own `content` slot — the contents are what the
-// walker searches over.
 function Harness({
   initialQuery = '',
   initialOpen = true,
@@ -46,8 +42,7 @@ function Harness({
 }
 
 function flush() {
-  // Advance past the hook's internal debounce. Two ticks because state
-  // updates from useEffect → setState may schedule another microtask.
+  // Two ticks: a useEffect → setState can schedule another microtask.
   act(() => {
     vi.advanceTimersByTime(250);
   });
@@ -194,8 +189,6 @@ describe('useFindInChat', () => {
   });
 
   it('does not match text inside hidden elements', () => {
-    // The DOM walker should bail on display:none / visibility:hidden ancestors.
-    // Build a fixture where one of two matches is hidden.
     vi.useFakeTimers();
     render(
       <Harness
@@ -218,8 +211,6 @@ describe('useFindInChat', () => {
     flush();
     act(() => { fireEvent.click(screen.getByTestId('next')); });
     expect(screen.getByTestId('active').textContent).toBe('1');
-    // Trigger a content-driven re-walk by bumping the version. Content unchanged,
-    // so match set is identical — active should stay at 1.
     act(() => { fireEvent.click(screen.getByTestId('bump-version')); });
     flush();
     expect(screen.getByTestId('count').textContent).toBe('3');
@@ -227,8 +218,6 @@ describe('useFindInChat', () => {
   });
 
   it('clamps activeIndex to 0 when the new match set is shorter', () => {
-    // Start with a 3-match fixture, advance to index 2, then change the query
-    // to one with only 1 match.
     vi.useFakeTimers();
     render(
       <Harness

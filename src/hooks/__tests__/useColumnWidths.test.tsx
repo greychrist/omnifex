@@ -7,10 +7,6 @@ import { useColumnWidths } from '@/hooks/useColumnWidths';
 const KEY = 'omnifex.columns.test';
 const DEFAULTS = { type: 100, project: 200, updated: 150 };
 
-/**
- * Three sized columns after one flexible one, which is the shape every table
- * that uses this hook has: a name column that fills, then fixed metadata.
- */
 function Harness(): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const { widths, startResize, reset } = useColumnWidths({
@@ -59,10 +55,6 @@ describe('useColumnWidths', () => {
   beforeEach(() => { window.localStorage.clear(); });
   afterEach(() => { cleanup(); });
 
-  /**
-   * The handle beside the flexible column has no partner to grow: the space it
-   * frees is absorbed by the column that has no width of its own.
-   */
   it('gives space to the flexible column when its boundary is dragged right', () => {
     render(<Harness />);
     drag('flex-type', 300, 340);
@@ -76,11 +68,6 @@ describe('useColumnWidths', () => {
     expect(widthOf('type')).toBe('150px');
   });
 
-  /**
-   * A boundary between two sized columns moves exactly as far as the cursor
-   * does: one column gains what the other gives up, so no other boundary on
-   * the row shifts underneath the drag.
-   */
   it('moves width from one column to its neighbour', () => {
     render(<Harness />);
     drag('type-project', 400, 430);
@@ -92,8 +79,6 @@ describe('useColumnWidths', () => {
     render(<Harness />);
     drag('project-updated', 600, 5000);
     expect(widthOf('updated')).toBe('50px');
-    // The partner stops growing at the same instant, or the boundary would
-    // keep travelling after the column it is pushing has run out of room.
     expect(widthOf('project')).toBe('300px');
   });
 
@@ -129,10 +114,6 @@ describe('useColumnWidths', () => {
     expect(window.localStorage.getItem(KEY)).toBeNull();
   });
 
-  /**
-   * Widths saved in a wide window must not squeeze the flexible column out of
-   * existence in a narrow one — that column holds the name you navigate by.
-   */
   it('clamps stored widths that no longer fit the container', () => {
     Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
       configurable: true,
@@ -148,7 +129,6 @@ describe('useColumnWidths', () => {
     expect(widthOf('updated')).toBe('113px');
   });
 
-  /** Below the sum of the minimums there is nothing left to apportion. */
   it('floors every column when the container cannot fit even the minimums', () => {
     Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
       configurable: true,

@@ -2,8 +2,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { measurePrintContent } from '@/lib/costReportPrintMeasure';
 
-/** Build a print root of a given size, optionally containing a chart surface
- *  whose width appears after `appearsAfterMs`. */
 function mountRoot(opts: {
   width: number;
   height: number;
@@ -22,8 +20,7 @@ function mountRoot(opts: {
     if (opts.chart.appearsAfterMs) {
       setTimeout(() => { width = opts.chart!.width; }, opts.chart.appearsAfterMs);
     }
-    // getBoundingClientRect is what jsdom stubs to zero; drive it off the
-    // closure so the width can appear partway through the poll.
+    // jsdom stubs getBoundingClientRect to zero; this drives it off the closure.
     svg.getBoundingClientRect = () => ({ width, height: 224 }) as DOMRect;
     root.appendChild(svg);
   }
@@ -35,8 +32,6 @@ describe('measurePrintContent', () => {
   afterEach(() => { vi.useRealTimers(); });
 
   it('measures the print root, not the window', async () => {
-    // The window is a fixed size; the report is however tall it is. Measuring
-    // the window is exactly the bug this whole path exists to avoid.
     mountRoot({ width: 1152, height: 7321 });
     const m = await measurePrintContent({ chartExpected: false });
     expect(m.widthPx).toBe(1152);
@@ -51,17 +46,14 @@ describe('measurePrintContent', () => {
   });
 
   it('waits for a chart that sizes itself late', async () => {
-    // recharts' ResponsiveContainer measures via ResizeObserver, so the SVG
-    // exists at zero width for a frame or two before it gets its box. Giving
-    // up immediately would report every chart as broken.
+    // ResponsiveContainer measures via ResizeObserver, so the SVG sits at zero
+    // width for a frame or two.
     mountRoot({ width: 1152, height: 4000, chart: { width: 1040, appearsAfterMs: 40 } });
     const m = await measurePrintContent({ chartExpected: true, pollMs: 5, timeoutMs: 500 });
     expect(m.chartRendered).toBe(true);
   });
 
   it('gives up on a chart that never sizes, rather than hanging the export', async () => {
-    // A hung measurement is a hung export and a hidden window that never
-    // closes. Reporting chartRendered:false lets the export finish and log.
     mountRoot({ width: 1152, height: 4000, chart: { width: 0 } });
     const m = await measurePrintContent({ chartExpected: true, pollMs: 5, timeoutMs: 30 });
     expect(m.chartRendered).toBe(false);
@@ -77,8 +69,7 @@ describe('measurePrintContent', () => {
   });
 
   it('falls back to the document when the print root is missing', async () => {
-    // Should not happen, but a measurement of 0 makes printToPDF emit a
-    // zero-size page, which is worse than a slightly-wrong one.
+    // A measurement of 0 would make a zero-size PDF page.
     Object.defineProperty(document.documentElement, 'scrollWidth', { value: 800, configurable: true });
     Object.defineProperty(document.documentElement, 'scrollHeight', { value: 600, configurable: true });
     const m = await measurePrintContent({ chartExpected: false });

@@ -3,11 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, act, waitFor } from '@testing-library/react';
 import type { CodexAuthStatus } from '@/lib/api';
 
-// Hoist the API mock alongside vi.mock() so factory closure references
-// resolve before the module under test imports `@/lib/api`. Without
-// vi.hoisted the bare `const apiMock = ...` would land *after* the
-// hoisted vi.mock() factory and fail with "Cannot access 'apiMock'
-// before initialization".
+// Hoisted: a bare const would land after the hoisted vi.mock factory.
 const { apiMock } = vi.hoisted(() => {
   return {
     apiMock: {
@@ -26,9 +22,7 @@ vi.mock('@/lib/api', () => ({
   api: apiMock,
 }));
 
-// OneShotTerminal pulls in @xterm/* which doesn't play nice in jsdom (it
-// needs a real canvas). Stub it with a placeholder div so the modal can
-// render and the spawn IPC isn't actually invoked.
+// @xterm/* needs a real canvas, which jsdom lacks.
 vi.mock('@/components/shared/OneShotTerminal', () => ({
   OneShotTerminal: (props: { binary: string; args: string[] }) => (
     <div
@@ -39,11 +33,8 @@ vi.mock('@/components/shared/OneShotTerminal', () => ({
   ),
 }));
 
-// Capture the latest auth-status subscriber so tests can drive the
-// "auth flipped to authenticated" event without going through IPC.
 const authSubscribers: ((status: CodexAuthStatus) => void)[] = [];
 
-// Codex account config dir threaded into the modal under test.
 const CONFIG_DIR = '/home/test/.codex';
 
 beforeEach(() => {
@@ -51,7 +42,6 @@ beforeEach(() => {
   apiMock.getCodexBinaryPath.mockReset();
   apiMock.subscribeCodexAuthStatus.mockReset();
 
-  // Default: binary resolves; subscribe captures the per-configDir callback.
   apiMock.getCodexBinaryPath.mockResolvedValue('/opt/homebrew/bin/codex');
   apiMock.subscribeCodexAuthStatus.mockImplementation(
     (_configDir: string, cb: (s: CodexAuthStatus) => void) => {
@@ -68,14 +58,12 @@ afterEach(() => {
   cleanup();
 });
 
-// Import after mocks are set up so the module under test resolves them.
 import { CodexSignInModal } from '../codex/CodexSignInModal';
 
 describe('CodexSignInModal', () => {
   it('does not render the dialog contents when open=false', () => {
     render(<CodexSignInModal open={false} onClose={() => {}} configDir={CONFIG_DIR} />);
     expect(screen.queryByText('Sign in to Codex')).toBeNull();
-    // Subscription is only set up when open=true.
     expect(apiMock.subscribeCodexAuthStatus).not.toHaveBeenCalled();
     expect(apiMock.getCodexBinaryPath).not.toHaveBeenCalled();
   });
@@ -90,8 +78,6 @@ describe('CodexSignInModal', () => {
     );
     expect(apiMock.getCodexBinaryPath).toHaveBeenCalledTimes(1);
 
-    // Once the binary resolver responds, OneShotTerminal is mounted with
-    // the resolved binary + ['login'] args.
     await waitFor(() => {
       expect(screen.getByTestId('one-shot-terminal').getAttribute('data-binary')).toBe(
         '/opt/homebrew/bin/codex',
@@ -108,7 +94,6 @@ describe('CodexSignInModal', () => {
     await waitFor(() => {
       expect(screen.getByText(/Codex CLI not found/i)).toBeTruthy();
     });
-    // No terminal is mounted in the not-found path.
     expect(screen.queryByTestId('one-shot-terminal')).toBeNull();
   });
 
@@ -124,12 +109,10 @@ describe('CodexSignInModal', () => {
       />,
     );
 
-    // Wait for the subscription to be registered.
     await waitFor(() => {
       expect(authSubscribers.length).toBe(1);
     });
 
-    // Fire the "authenticated" event through the captured subscriber.
     act(() => {
       authSubscribers[0]({ authenticated: true, mode: 'oauth', email: 'x@y.com' });
     });
@@ -146,8 +129,6 @@ describe('CodexSignInModal', () => {
       expect(authSubscribers.length).toBe(1);
     });
 
-    // Unauthenticated event: modal stays open so the user can finish the
-    // login flow they're already in.
     act(() => {
       authSubscribers[0]({ authenticated: false });
     });

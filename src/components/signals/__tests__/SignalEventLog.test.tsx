@@ -33,10 +33,6 @@ describe('SignalEventLog', () => {
   });
 
   it('scrolls instead of growing without bound', () => {
-    // The store hands the popover up to POPOVER_EVENT_LIMIT events, and a
-    // long-running session reaches that limit routinely. Without a bounded
-    // container the list simply grew, pushing the model/effort/permission
-    // controls and the session id below the fold.
     const { container } = render(<SignalEventLog events={[event(0), event(1)]} />);
     const list = container.querySelector('ul');
     expect(list).toBeTruthy();

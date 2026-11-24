@@ -1,14 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { dispatchResultNotification, dispatchAgentNotification } from '../services/sessions/notifications';
 
-/**
- * A session's notifications leave as `claude-notification` with the tab id,
- * and that is the only way they leave: the client raises the OS banner (the
- * Mac app through `notify:show`, a browser on its own). Until the Electron
- * shell went (2026-10-23) these also fired a main-process hook, which the
- * daemon never had — so anything that went through the hook alone was silent
- * in the default mode.
- */
 const banner = (sendToRenderer: ReturnType<typeof vi.fn>) =>
   sendToRenderer.mock.calls.filter(([ch]) => ch === 'claude-notification').map(([, p]) => p);
 
@@ -43,8 +35,6 @@ describe('dispatchResultNotification', () => {
 
 describe('dispatchAgentNotification', () => {
   it('tells the user their background agent finished, and how long it took', () => {
-    // A backgrounded agent finishes long after the `result` notification for
-    // the turn that launched it, so nothing else will say so.
     const sendToRenderer = vi.fn();
     dispatchAgentNotification({
       tabId: 'tab-1',

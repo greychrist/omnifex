@@ -97,10 +97,8 @@ describe("Popover (controlled)", () => {
 });
 
 describe("Popover portal rendering", () => {
-  // The popover renders into a portal at document.body so it escapes the
-  // trigger's stacking context. Without the portal, a parent with
-  // `position: relative` + `z-40` (e.g. the session header) caps the popover
-  // at z-40 globally, letting later z-50 siblings paint on top of it.
+  // Portaled to body to escape the trigger's stacking context (a `relative z-40`
+  // parent would cap it).
   it("renders open content as a child of document.body, not the trigger's parent", () => {
     render(
       <div data-testid="trigger-wrapper" style={{ position: "relative", zIndex: 1 }}>
@@ -113,8 +111,6 @@ describe("Popover portal rendering", () => {
     );
     const body = screen.getByTestId("popover-body");
     const wrapper = screen.getByTestId("trigger-wrapper");
-    // Walk up from the popover body — it must reach document.body without
-    // passing through the trigger's wrapper.
     let el: HTMLElement | null = body;
     let passedThroughWrapper = false;
     while (el && el !== document.body) {
@@ -131,19 +127,12 @@ describe("Popover portal rendering", () => {
   it("still renders the trigger inline (only the content is portaled)", () => {
     render(<Popover open trigger={<button>t</button>} content={<div>body</div>} />);
     const trigger = screen.getByText("t");
-    // Trigger walks back to document.body through the rendered tree as
-    // normal (it's not portaled).
     expect(trigger.closest("body")).toBe(document.body);
   });
 });
 
-// Reproduces the nested-portal close bug: an inner Popover lives inside an
-// outer Popover's content. Both portal their content to document.body as
-// SEPARATE subtrees, so a press inside the inner popover is, by raw DOM
-// containment, "outside" the outer popover's content node. Without the
-// nesting registry, the outer popover's mousedown click-outside handler
-// closes the whole stack the moment you press an inner option (the symptom:
-// "I click a model/effort/permission option and the popover just closes").
+// Nested popovers portal as separate subtrees, so by DOM containment a press in
+// the inner one is outside the outer.
 describe("Popover nested-portal click handling", () => {
   function Nested({ onSelect }: { onSelect?: () => void }) {
     const [outerOpen, setOuterOpen] = useState(true);
@@ -175,8 +164,7 @@ describe("Popover nested-portal click handling", () => {
     fireEvent.click(screen.getByText("inner-trigger"));
     expect(screen.getByText("inner-option")).toBeTruthy();
 
-    // mousedown is what the click-outside handler listens on. Pressing the
-    // inner option must not be treated as a click outside the outer popover.
+    // mousedown is what the click-outside handler listens on.
     const option = screen.getByText("inner-option");
     fireEvent.mouseDown(option);
     fireEvent.click(option);
@@ -225,7 +213,6 @@ describe("Popover side and align variants", () => {
       />,
     );
     const body = screen.getByText("body");
-    // Walk up to find the className
     let el: HTMLElement | null = body;
     let foundClass = false;
     while (el) {
@@ -239,9 +226,8 @@ describe("Popover side and align variants", () => {
   });
 });
 
-// The app titlebar is `relative z-[200]` and 60px tall, so a popover dropping
-// from one of its buttons starts inside it. At z 100 the titlebar painted over
-// the popover's top ~7px — the Updates header looked off-centre for it.
+// The titlebar is `relative z-[200]` and 60px tall, so a popover from one of
+// its buttons starts inside it.
 describe("Popover stacking", () => {
   it("paints above the app titlebar (z-[200])", () => {
     render(<Popover trigger={<button>open</button>} content={<div>body</div>} />);

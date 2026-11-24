@@ -24,10 +24,6 @@ describe('toFtsQuery', () => {
     expect(toFtsQuery('permission decider')).toBe('"permission" OR "decider"');
   });
 
-  // Regression: every token was ANDed, so each extra word narrowed the result
-  // set to notes containing all of them. Real sessions measured a 0% hit rate
-  // at four terms while the vault plainly held the content -- "encompass ops"
-  // returned nothing though "encompass" alone matched 13 notes.
   it('does not require every term to be present', () => {
     expect(toFtsQuery('encompass ops')).toBe('"encompass" OR "ops"');
     expect(toFtsQuery('encompass docker compose lima')).toBe(
@@ -81,8 +77,6 @@ describe('toFtsQuery', () => {
 
 describe('queryTerms', () => {
   it('splits on the same token rule the index uses, lowercased and deduplicated', () => {
-    // `node-pty` must stay one term exactly as it is one indexed token, or the
-    // excerpt would hunt for "node" and "pty" the index never matched on.
     expect(queryTerms('node-pty Leak node-pty')).toEqual(['node-pty', 'leak']);
   });
 

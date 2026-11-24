@@ -28,8 +28,6 @@ describe('resolveSessionVerification', () => {
     expect(resolveSessionVerification({ ...BASE, verdict: null, loaded: false })).toBeNull();
   });
 
-  // The session's own identity is the authority: it's what the running CLI
-  // process is actually authenticated as.
   describe('when the session reported its own identity (rich mode)', () => {
     it('is verified with no restart when the session matches the expectation', () => {
       const r = resolveSessionVerification({
@@ -37,8 +35,6 @@ describe('resolveSessionVerification', () => {
         verdict: verdict({ status: 'mismatch', detected: 'stale@example.com' }),
         sessionEmail: 'work@example.com',
       });
-      // Config dir file says mismatch, but the session itself is right —
-      // trust the session. Nothing to restart.
       expect(r).toMatchObject({ status: 'verified', needsRestart: false });
     });
 
@@ -50,8 +46,6 @@ describe('resolveSessionVerification', () => {
       expect(r?.status).toBe('verified');
     });
 
-    // This is the case Greg called out: the user fixed the *expectation*, so
-    // the session was fine all along and must not demand a restart.
     it('goes green with no restart once the expectation is corrected to match the session', () => {
       const r = resolveSessionVerification({
         ...BASE,
@@ -67,8 +61,6 @@ describe('resolveSessionVerification', () => {
         verdict: verdict({ status: 'verified', detected: 'work@example.com' }),
         sessionEmail: 'personal@example.com',
       });
-      // Even though the config dir is now correct, the live process still
-      // holds the old credentials — re-login alone doesn't fix it.
       expect(r).toMatchObject({
         status: 'mismatch',
         needsRestart: true,
@@ -113,8 +105,6 @@ describe('resolveSessionVerification', () => {
         ...BASE,
         verdict: verdict({ status: 'unknown-account', expected: null, detected: null }),
       });
-      // Nothing owns the config dir — restarting wouldn't fix anything, and
-      // the user's login isn't what's wrong.
       expect(r).toMatchObject({ status: 'unknown-account', needsRestart: false });
     });
 

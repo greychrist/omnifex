@@ -65,7 +65,7 @@ describe('session-cost watcher', () => {
     });
     await svc.watch(args);
     await vi.advanceTimersByTimeAsync(1100);
-    expect(emitted).toHaveLength(0); // no change yet
+    expect(emitted).toHaveLength(0);
 
     world.files[SESSION_FILE] += '\n' + assistantLine('r2', 2000);
     await vi.advanceTimersByTimeAsync(1100);
@@ -186,9 +186,6 @@ describe('session-cost watcher', () => {
     await vi.advanceTimersByTimeAsync(1100);
     expect(emitted).toHaveLength(0);
 
-    // A non-agent-* file lands in the subagents dir (e.g. a stray/renamed
-    // file) — compute() ignores it, so signature() must too, or the watcher
-    // spuriously emits an unchanged snapshot.
     const STRAY_FILE = path.join(SUBAGENTS_DIR, 'notes.jsonl');
     world.files[STRAY_FILE] = assistantLine('stray', 9999);
     world.dirs[SUBAGENTS_DIR] = [{ name: 'notes.jsonl', isDirectory: false }];
@@ -199,12 +196,7 @@ describe('session-cost watcher', () => {
   it('captures the baseline signature before compute() so a write racing the initial read is still detected', async () => {
     vi.useFakeTimers();
     const world = makeWorld(assistantLine('r1', 1000));
-    // Simulate a concurrent write landing exactly between signature capture
-    // and the initial compute()'s read: the very first read call
-    // appends new content to the file it just "read" (as if a real writer
-    // hit the disk mid-read). If watch() captured signature() AFTER
-    // compute(), that baseline would already reflect the concurrent write
-    // and the change would never be seen as a diff.
+    // The first read appends to the file: a write landing mid-read.
     let readCount = 0;
     const racingFs: CostFs = {
       readRange: rangeReader((p) => {
@@ -292,7 +284,7 @@ describe('session-cost watcher', () => {
       expect(initial.totalUsd).toBeCloseTo(1000 * (25 / 1_000_000), 10);
 
       await vi.advanceTimersByTimeAsync(1100);
-      expect(emitted).toHaveLength(0); // no change yet
+      expect(emitted).toHaveLength(0);
 
       world.files[ALT_SESSION_FILE] += '\n' + assistantLine('r2', 2000);
       await vi.advanceTimersByTimeAsync(1100);
@@ -329,11 +321,10 @@ describe('session-cost watcher', () => {
       world.files[ALT_SESSION_FILE] += '\n' + assistantLine('r2', 2000);
       await vi.advanceTimersByTimeAsync(1100);
       expect(emitted).toHaveLength(1);
-      expect(projectsDirScans).toBe(1); // still cached, no rescan on the poll tick
+      expect(projectsDirScans).toBe(1);
     });
 
-    // EnterWorktree moves a live session's transcript from the primary dir to
-    // the worktree's. The cached dir then names a file that no longer exists.
+    // EnterWorktree moves a live session's transcript to the worktree's dir.
     it('follows a transcript the CLI moves into the worktree dir mid-session', async () => {
       vi.useFakeTimers();
       const world = makeWorld(assistantLine('r1', 1000));

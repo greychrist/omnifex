@@ -61,8 +61,6 @@ describe('createLoginExpiryService', () => {
     expect((await svc.get('/c'))?.expiresAt).toBeNull();
   });
 
-  // A failed spawn is not evidence the sign-in has no end, so it is not
-  // cached and answers null (unknown), not `{ expiresAt: null }`.
   it('answers null and caches nothing when the probe fails', async () => {
     const { svc, probe } = setup([new Error('spawn failed'), '2026-11-27T00:00:00.000Z']);
     expect(await svc.get('/c')).toBeNull();

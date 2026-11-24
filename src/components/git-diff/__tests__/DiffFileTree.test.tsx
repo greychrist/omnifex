@@ -22,8 +22,6 @@ function renderTree(files: GitChangedFile[], selected: string | null = null) {
 }
 
 describe('DiffFileTree', () => {
-  // The branch widget counts files as "changed" or "untracked"; the tree must
-  // wear the same color for the same bucket, or the two read as opposites.
   describe('status glyphs match the branch widget', () => {
     it('colors an untracked file like the widget\'s untracked count', () => {
       renderTree([f('new.txt', { status: 'untracked' })]);

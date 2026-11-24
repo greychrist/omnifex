@@ -35,10 +35,6 @@ describe("static option lists", () => {
     expect(EFFORT_LEVELS.map((e) => e.id)).toEqual(["auto", "low", "medium", "high", "xhigh", "max"]);
   });
 
-  // Which model supports which level comes from the CLI catalog, and the
-  // default level is decided per model at runtime (Opus 5.5 is medium, most
-  // others high). Copy that names either goes stale on the next model launch
-  // — "Opus 4.7 only" and "(CLI default)" both did.
   it("effort descriptions name no model, version or fixed default", () => {
     for (const level of EFFORT_LEVELS) {
       expect(level.description).not.toMatch(/\b(opus|sonnet|fable|haiku|mythos|claude)\b/i);
@@ -59,8 +55,6 @@ describe("static option lists", () => {
   });
 });
 
-// ─── EffortPicker ────────────────────────────────────────────────────────
-
 describe("EffortPicker (compact)", () => {
   it("renders the current effort short name", () => {
     renderInProvider(
@@ -70,7 +64,6 @@ describe("EffortPicker (compact)", () => {
         onOpenChange={vi.fn()}
       />,
     );
-    // "Hi" is high's shortName
     expect(screen.getAllByText("Hi").length).toBeGreaterThan(0);
   });
 
@@ -207,8 +200,6 @@ describe("EffortPicker (form)", () => {
   });
 });
 
-// ─── PermissionPicker ────────────────────────────────────────────────────
-
 describe("PermissionPicker (compact)", () => {
   it("renders the current permission short name", () => {
     renderInProvider(
@@ -240,7 +231,6 @@ describe("PermissionPicker (compact)", () => {
         onOpenChange={vi.fn()}
       />,
     );
-    // first mode is "default" → "DEF"
     expect(screen.getAllByText("DEF").length).toBeGreaterThan(0);
   });
 

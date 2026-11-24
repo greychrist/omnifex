@@ -26,9 +26,6 @@ describe('modernLineOf — what Modern draws instead of a Compact card', () => {
     expect(line(cc('model', 'claude-opus-5-5'))).toMatchObject({ title: 'Model', detail: 'claude-opus-5-5' });
   });
 
-  // A change line wears the new value's color, as an answered question wears
-  // its purple: the picker's for a permission mode or effort level, the Cost
-  // Report's for a model.
   it('colors a mode, effort or model change by its new value', () => {
     const cc = (control: string, value: string) => ({ kind: 'control-change', control, value, sessionId: '', receivedAt: '' });
     expect(line(cc('permission', 'plan'))?.accent).toEqual({ kind: 'css', color: 'var(--color-teal-600)' });
@@ -40,8 +37,6 @@ describe('modernLineOf — what Modern draws instead of a Compact card', () => {
       .toEqual({ kind: 'css', color: 'var(--color-purple-600)' });
   });
 
-  // Since 2026-11-18 a line with no color of its own wears its kind's, from
-  // Settings › Chats, as the classic card did.
   it('gives an unknown value and every other record its kind color', () => {
     const cc = (control: string, value: string) => ({ kind: 'control-change', control, value, sessionId: '', receivedAt: '' });
     expect(line(cc('permission', 'someNewMode')).accent).toEqual({ kind: 'css', color: resolveKind(cfg, 'control.permission').accentColor });
@@ -72,24 +67,18 @@ describe('modernLineOf — what Modern draws instead of a Compact card', () => {
   it('keeps an unrecognized record visible: named, with its JSON folded', () => {
     const l = line({ kind: 'unknown', sessionId: '', receivedAt: null, raw: { type: 'brand-new', x: 1 } });
     expect(l).toMatchObject({ title: 'Unrecognized record: brand-new', mono: true, fold: true });
-    // Amber, as the context nearing its limit is: worth noticing, not an error.
     expect(l?.tone).toBe('warn');
-    // An unknown system frame names its subtype too.
     expect(line({ kind: 'unknown', sessionId: '', receivedAt: null, raw: { type: 'system', subtype: 'brand_new' } }))
       .toMatchObject({ title: 'Unrecognized record: system.brand_new', tone: 'warn' });
     expect(l?.body).toContain('"brand-new"');
   });
 
-  // Expanded draws every record, but "Unrecognized" is reserved for types
-  // nothing knows: the CLI review leans on that card to spot new ones.
   it('draws known CLI bookkeeping as a muted state line, not as unrecognized', () => {
     const l = line({ kind: 'unknown', sessionId: '', receivedAt: null, raw: { type: 'session-owner', accountUuid: 'a', sessionId: 's' } });
     expect(l).toMatchObject({ title: 'CLI state: session-owner', mono: true, fold: true });
     expect(l?.tone).toBeUndefined();
     expect(l?.body).toContain('"accountUuid"');
-    // Its own kind, pale blue by default (Settings › Chats can change it).
     expect(l?.accent).toEqual({ kind: 'css', color: '#93c5fd' });
-    // An automation glyph, not the unknown kind's question mark.
     expect(l?.icon).toBe('Workflow');
   });
 
@@ -99,8 +88,6 @@ describe('modernLineOf — what Modern draws instead of a Compact card', () => {
     } });
     expect(started).toMatchObject({ title: 'Task started', detail: 'local_bash · Build the link', mono: true, fold: true });
     expect(started?.tone).toBeUndefined();
-    // Its own kind: the CLI state blue and a checklist glyph, not the
-    // unknown kind's orange question mark.
     expect(started?.accent).toEqual({ kind: 'css', color: '#93c5fd' });
     expect(started?.icon).toBe('ListChecks');
     const done = line({ kind: 'unknown', sessionId: '', receivedAt: 't', raw: {
@@ -110,17 +97,12 @@ describe('modernLineOf — what Modern draws instead of a Compact card', () => {
     expect(done?.tone).toBeUndefined();
   });
 
-  // A record with no text to show, such as an assistant image, is still
-  // drawn: its raw JSON, folded.
   it('draws a record with no text as its folded raw JSON', () => {
     expect(line({ kind: 'assistant', sessionId: '', receivedAt: '', raw: { type: 'assistant', message: { content: [{ type: 'image' }] } } }))
       .toMatchObject({ title: 'Assistant text', mono: true, fold: true });
   });
 });
 
-// Standard and Expanded (2026-11-18): the classic card is gone, so every
-// record Modern does not draw as conversation is a line, in its kind's icon
-// and color from Settings › Chats.
 describe('modernLineOf — every record has a line', () => {
   const fixtureCfg = createDefaultConfig();
   const recordOfKind = (kindId: string): JsonlNode => {

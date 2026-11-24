@@ -12,9 +12,6 @@ function open(label = 'Projects') {
 describe('MultiSelectFilter', () => {
   afterEach(cleanup);
 
-  // The convention the whole filter bar depends on: no selection means "show
-  // everything", so the button must say so rather than reading as a
-  // zero-result state.
   it('summarises an empty selection as "All <label>"', () => {
     render(<MultiSelectFilter label="Projects" options={OPTIONS} selected={[]} onChange={vi.fn()} />);
     expect(screen.getByRole('button', { name: /All projects/i })).toBeTruthy();

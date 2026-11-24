@@ -85,8 +85,6 @@ describe('reduceToolProgress', () => {
   });
 
   it('ignores parent_tool_use_id even when it names a different tool', () => {
-    // A Bash running inside a subagent: the parent is the Task id, not the
-    // Bash id, so anchoring on it would file the progress under the wrong row.
     const next = reduceToolProgress(
       EMPTY_TOOL_PROGRESS,
       beat('toolu_BASH-heartbeat-1', 60, 'toolu_TASK'),

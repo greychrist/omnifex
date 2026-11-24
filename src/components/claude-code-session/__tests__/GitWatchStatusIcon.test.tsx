@@ -6,8 +6,6 @@ import { GitWatchStatusIcon } from '@/components/claude-code-session/GitWatchSta
 afterEach(() => { cleanup(); });
 
 describe('GitWatchStatusIcon', () => {
-  // It sits in the bar's button group beside the repos button, which has no
-  // fill; the bar shows through both.
   it('has a clear background, filling only on hover', () => {
     render(<GitWatchStatusIcon errors={[]} onReconnect={async () => {}} />);
     const cls = screen.getByRole('button').className.split(' ');

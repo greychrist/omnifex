@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CliRunResult } from '../services/sessions/summary-query';
-/**
- * A `claude -p` result carrying just the reply. The runner now returns the
- * CLI's cost accounting alongside the text; these tests are about the text.
- */
 function reply(text: string): CliRunResult {
   return {
     result: text,
@@ -87,8 +83,6 @@ describe('parseCuration', () => {
   });
 
   it('accepts a reply carrying only the decisions span', () => {
-    // A note qualifying on Decisions alone is shown one block and has nothing
-    // to say about a Timeline span it was never given.
     expect(parseCuration('{"collapsedDecisions":"Settled the flange."}')).toEqual({
       collapsed: '',
       collapsedDecisions: 'Settled the flange.',
@@ -109,11 +103,6 @@ describe('createCurator', () => {
     expect(runQuery.mock.calls[0][0].configDir).toBe('/cfg');
   });
 
-  /**
-   * Plan 8. The runner used to keep `result` and drop the rest of the envelope,
-   * so the most expensive thing the Brain does was also the only spend nothing
-   * could report.
-   */
   it('carries what the run cost back to the caller', async () => {
     const runQuery = vi.fn().mockResolvedValue({
       ...reply('{"collapsed":"ok","promotedFacts":[]}'),
@@ -136,12 +125,10 @@ describe('createCurator', () => {
       });
     const out = await createCurator({ runQuery })(INPUT, '/cfg');
 
-    // A retry is money spent on top of the first attempt, not instead of it.
     expect(out.run).toMatchObject({ costUsd: 0.4, inputTokens: 40 });
   });
 
   it('is pinned to the Opus family, not to the extraction model', () => {
-    // An alias, so curation tracks the newest Opus rather than one version.
     expect(CURATION_MODEL).toBe('opus');
   });
 

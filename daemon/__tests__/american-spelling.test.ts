@@ -2,10 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
-// The app is written in American English. "colour" crept in across UI copy,
-// comments and docs and was swept out in one go (2026-11-15); this keeps it
-// out. The one file allowed the word is the test that asserts the UI never
-// shows it.
+// The one exempt file asserts the UI never shows the word.
 const ALLOWED = new Set(['src/components/settings-panels/__tests__/AppearanceSettings.modern.test.tsx', 'daemon/__tests__/american-spelling.test.ts']);
 
 describe('American spelling', () => {

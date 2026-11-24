@@ -15,7 +15,6 @@ const SEARCH = 'mcp__omnifex-brain__brain_search';
 const READ = 'mcp__omnifex-brain__brain_read';
 const REMEMBER = 'mcp__omnifex-brain__brain_remember';
 
-/** Terse transcript record builders, so the tests read as a conversation. */
 function prompt(text: string, ts = '2026-10-10T12:00:00.000Z', cwd = '/r/omnifex') {
   return { type: 'user', timestamp: ts, cwd, message: { role: 'user', content: text } };
 }
@@ -89,7 +88,6 @@ describe('parseSearchResultPaths', () => {
   });
 
   it('does not mistake a heading inside a note body for a hit', () => {
-    // Note bodies carry their own `## Summary` headings; only `## <path>.md (<Type>)` is a hit.
     expect(parseSearchResultPaths(TWO_HITS)).not.toContain('Summary');
   });
 });
@@ -157,8 +155,7 @@ describe('summarizeTranscript', () => {
   });
 
   it('counts a tool use the CLI wrote twice only once', () => {
-    // The CLI re-appends records (same ids) around compaction; a duplicated
-    // search would be judged twice and inflate every per-search figure.
+    // The CLI re-appends records (same ids) around compaction.
     const dup = [...records.slice(0, 3), ...records.slice(1, 3), ...records.slice(3)];
     const s = summarizeTranscript(dup);
     expect(s.toolUses).toBe(6);
@@ -207,7 +204,6 @@ describe('aggregateAccount', () => {
   });
 
   it('reports invocation among substantive sessions separately', () => {
-    // Trivial sessions rarely warrant a search; the headline rate hides that.
     expect(m.sessions.substantive).toBe(2);
     expect(m.sessions.substantiveInvocationRate).toBeCloseTo(1 / 2);
   });

@@ -2,9 +2,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent, within } from '@testing-library/react';
 
-// Prism highlighting is irrelevant to alignment, numbering and gap behaviour,
-// and tokenising every line makes these tests an order of magnitude slower.
-// The text still goes through the real component tree.
+// Prism tokenising every line makes these tests an order of magnitude slower.
 vi.mock('react-syntax-highlighter', () => ({
   Prism: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
@@ -136,7 +134,6 @@ describe('SplitDiffView', () => {
     });
 
     it('does not offer to expand a gap that hides nothing', () => {
-      // The first hunk of SIMPLE starts at line 1 — there is nothing above it.
       render(<SplitDiffView file={SIMPLE} language="ts" canExpandContext />);
       expect(screen.queryByRole('button', { name: /expand/i })).toBeNull();
     });
@@ -171,9 +168,6 @@ describe('SplitDiffView', () => {
         <SplitDiffView file={fileFrom(lines.join('\n'))} language="ts" />,
       );
 
-      // Two assertions, because "few rows in the DOM" alone would also pass
-      // for a component that rendered nothing at all. The first proves the
-      // windowed branch was taken; the second proves it windowed.
       const table = container.querySelector('[role="table"]');
       expect(table?.getAttribute('data-virtualized')).toBe('true');
       expect(table?.getAttribute('data-total-rows')).toBe('301');

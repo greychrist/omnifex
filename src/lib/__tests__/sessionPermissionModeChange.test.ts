@@ -36,8 +36,6 @@ describe('changeSessionPermissionMode', () => {
     expect(deps.api.sessionSetPermissionMode).not.toHaveBeenCalled();
   });
 
-  // Main has already rolled its copy back. A picker left on the refused mode
-  // is how Bypass used to look applied while the CLI ran on in the old mode.
   it('rolls the picker back and reports the refusal, with no transcript marker', async () => {
     const error = new Error('Bypass is only available in a session started in Bypass.');
     const deps = makeDeps({ error });

@@ -5,15 +5,8 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import { TabManager } from '../TabManager';
 import type { Tab } from '@/contexts/TabContext';
 
-/**
- * The motion/Reorder mock caches one component per tag.
- *
- * A Proxy that builds a fresh arrow function on every property access hands
- * React a NEW component type each render, so the whole subtree unmounts and
- * remounts continuously — any state inside it (a Radix dialog's open flag, a
- * tooltip's) is wiped before it can be observed. The cache is what makes the
- * element type stable.
- */
+// The component per tag is CACHED: a fresh one per `get` is a new component
+// type each render, which remounts the subtree and wipes its state.
 const tagCache = new Map<string, React.FC<any>>();
 const tagComponent = (tag: string): React.FC<any> => {
   let C = tagCache.get(tag);

@@ -5,12 +5,7 @@ import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { listChangedFiles, readFileDiff } from '../services/git-diff';
 
-/**
- * These tests drive real `git` against real throwaway repos rather than
- * mocking execFile. The whole point of this service is that it agrees with
- * git's porcelain contract — a mock would only assert that we agree with our
- * own assumptions about it, which is exactly the bug class worth catching.
- */
+// Real git, not a mocked execFile: the service must agree with git's porcelain.
 
 function git(dir: string, args: string): void {
   execSync(`git ${args}`, { cwd: dir, stdio: 'pipe' });
@@ -119,9 +114,7 @@ describe('listChangedFiles', () => {
   });
 
   it('does not let a rename entry shift the paths of later files', async () => {
-    // The -z rename entry carries a second NUL-delimited field. Consuming
-    // only one field leaves the parser reading the ORIGINAL path as the next
-    // status pair, which silently corrupts every file after a rename.
+    // A -z rename entry carries a second NUL-delimited field.
     initRepo(dir);
     writeFileSync(join(dir, 'a.txt'), 'one\ntwo\nthree\nfour\n');
     writeFileSync(join(dir, 'z.txt'), 'zed\n');
@@ -186,8 +179,6 @@ describe('readFileDiff', () => {
   });
 
   it('includes STAGED changes, which a plain `git diff` would omit', async () => {
-    // This is the whole reason the service diffs against HEAD. A working tree
-    // whose changes are all staged renders as an empty patch under `git diff`.
     initRepo(dir);
     writeFileSync(join(dir, 'a.txt'), 'one\n');
     commitAll(dir, 'initial');
@@ -236,8 +227,6 @@ describe('readFileDiff', () => {
   });
 
   it('refuses a path that escapes the project directory', async () => {
-    // The path arrives from the renderer over IPC. `git diff -- ../../etc/passwd`
-    // would otherwise read outside the project the user opened.
     initRepo(dir);
     writeFileSync(join(dir, 'a.txt'), 'one\n');
     commitAll(dir, 'initial');
@@ -261,9 +250,7 @@ describe('readFileDiff', () => {
     lines[19] = 'CHANGED';
     writeFileSync(join(dir, 'a.txt'), lines.join('\n') + '\n');
 
-    // Assert on BODY lines only. git puts a section heading after the `@@`
-    // marker (`@@ -17,7 +17,7 @@ line16`), so a naive `not.toContain` on the
-    // whole patch fails on a correct 3-line context.
+    // git puts a section heading after the `@@` marker.
     const body = (await readFileDiff(dir, 'a.txt'))
       .split('\n')
       .filter((l) => /^[ +-]/.test(l) && !l.startsWith('--- ') && !l.startsWith('+++ '))

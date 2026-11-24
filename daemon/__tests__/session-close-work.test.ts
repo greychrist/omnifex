@@ -6,16 +6,6 @@ import {
 } from '../services/brain/queue';
 import { AUTO_ON_CLOSE_SETTING_KEY, ENABLED_SETTING_KEY } from '../services/sessions-summary';
 
-/**
- * What happens when a session closes, in one place.
- *
- * This block used to live twice — `daemon/main.ts` and
- * `daemon/remote/daemon.ts` each carried a hand-copied version, with the
- * rationale comments in only one of them. Same "change both or neither" hazard
- * `periodic-work.ts` was extracted to kill, and the same failure mode: the
- * drain at the end of it consults no ownership gate, so a close in one process
- * could race the other's periodic drain over a single SQLite file.
- */
 describe('session close work', () => {
   function harness(settings: Record<string, string>, opts: { drainEnabled?: () => boolean } = {}) {
     const calls: string[] = [];
@@ -51,8 +41,7 @@ describe('session close work', () => {
   const settled = () => new Promise((r) => setTimeout(r, 0));
 
   it('does not start a summary on shutdown, but still does the Brain work', async () => {
-    // process.exit follows within milliseconds and kills the summary's CLI
-    // call; the periodic summary sweep picks the session up instead.
+    // process.exit follows within milliseconds and would kill the summary's CLI call.
     const h = harness(ALL_ON);
     h.onClose('s1', '/repo', '/cfg/personal', 'shutdown');
     await settled();
@@ -76,10 +65,6 @@ describe('session close work', () => {
     ]);
   });
 
-  /**
-   * The summary gate is a branch, never an early return. Returning here once
-   * silently disabled Brain indexing for everyone with summaries turned off.
-   */
   it('still does Brain work when summaries are off', async () => {
     const h = harness({ ...ALL_ON, [ENABLED_SETTING_KEY]: 'false' });
     h.onClose('s1', '/repo', '/cfg/personal');
@@ -97,7 +82,6 @@ describe('session close work', () => {
     expect(h.summary.generateSummary).not.toHaveBeenCalled();
   });
 
-  /** Curation-only users still need something to drain what they queued. */
   it('arms the drain from either Brain switch', async () => {
     const h = harness({ ...ALL_ON, [BRAIN_AUTO_INDEX_SETTING_KEY]: 'false' });
     h.onClose('s1', '/repo', '/cfg/personal');
@@ -117,10 +101,6 @@ describe('session close work', () => {
     expect(h.calls).toEqual(['generateSummary']);
   });
 
-  /**
-   * Ownership comes from the config dir the session ran under, never from
-   * `resolve()` — spec §4. A dir no account owns is not somebody's default.
-   */
   it('does no Brain work for a config dir no account owns', async () => {
     const h = harness(ALL_ON);
     h.onClose('s1', '/repo', '/cfg/nobody');
@@ -130,12 +110,6 @@ describe('session close work', () => {
     expect(h.brain.drainQueue).not.toHaveBeenCalled();
   });
 
-  /**
-   * The gate `periodic-work.ts` already applies to the timed drain, applied to
-   * the close-triggered one. Without it this was the last call site that could
-   * put a second worker on one queue — the enqueues are cheap and idempotent,
-   * so only the drain is withheld; the other process picks the work up.
-   */
   it('enqueues but does not drain when this process does not own the drain', async () => {
     const h = harness(ALL_ON, { drainEnabled: () => false });
     h.onClose('s1', '/repo', '/cfg/personal');
@@ -146,7 +120,6 @@ describe('session close work', () => {
     expect(h.brain.drainQueue).not.toHaveBeenCalled();
   });
 
-  /** Read per close, so a flip in Settings applies without a restart. */
   it('re-reads the switches on every close', async () => {
     const settings: Record<string, string> = { ...ALL_ON };
     const h = harness(settings);
@@ -162,7 +135,6 @@ describe('session close work', () => {
     expect(h.brain.enqueueSource).toHaveBeenCalledTimes(1);
   });
 
-  /** Session teardown must never be taken down by auxiliary work. */
   it('reports a failing summary without touching Brain work', async () => {
     const h = harness(ALL_ON);
     h.summary.generateSummary.mockReturnValueOnce(Promise.reject(new Error('boom')));
@@ -182,7 +154,6 @@ describe('session close work', () => {
     expect(h.warn).toHaveBeenCalledWith('brain work on close failed', expect.anything());
   });
 
-  /** Neither service exists in every composition root, and neither is required. */
   it('survives a composition root with no Brain and no summary service', async () => {
     const onClose = createSessionCloseWork({
       db: { getSetting: (k: string) => (ALL_ON as Record<string, string>)[k] ?? null },

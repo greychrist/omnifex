@@ -10,11 +10,6 @@ import {
   type RecordInternalSpend,
 } from '../services/sessions/internal-spend';
 
-// OmniFex's own `claude -p` runs are never kept. Each transcript is priced
-// into the cost table and deleted; the spend is the only record. A transcript
-// that cannot be priced stays where it is — deleting it would lose the spend —
-// and the next sweep retries.
-
 const SCRATCH = '-private-var-folders-06-x-T-omnifex-summary-scratch';
 const HOUR = 3_600_000;
 
@@ -44,8 +39,6 @@ describe('classifyInternalPrompt', () => {
       .toBe('brain-index');
   });
 
-  // The summary prompt is the one users can edit, so it is the only kind
-  // whose wording cannot be pinned — anything unrecognised is a summary.
   it('treats anything else as a session summary', () => {
     expect(classifyInternalPrompt('You are summarizing a coding-assistant session')).toBe('session-summarization');
     expect(classifyInternalPrompt('My own custom summary prompt')).toBe('session-summarization');
@@ -133,9 +126,7 @@ describe('settling internal transcripts', () => {
       expect(fs.existsSync(scratchDir)).toBe(false);
     });
 
-    // A Brain extraction prompt embeds the whole session it distils, so its
-    // first user record can run to megabytes — far past any head read. It
-    // must still be named by its preamble, not fall through to "summary".
+    // A Brain extraction prompt can run to megabytes, past any head read.
     it('classifies a prompt record far larger than the head it reads', () => {
       transcript('big.jsonl', `You are extracting durable engineering knowledge ${'x'.repeat(500_000)}`, now - 2 * HOUR);
 
@@ -144,8 +135,6 @@ describe('settling internal transcripts', () => {
       expect(record).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'big', kind: 'brain-index' }));
     });
 
-    // A run in flight is still writing its transcript, and its own runner will
-    // settle it within seconds.
     it('leaves a recent transcript, and its dir, for the run still writing it', () => {
       const fresh = transcript('fresh.jsonl', 'summary', now - 60_000);
 

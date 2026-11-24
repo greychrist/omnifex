@@ -23,7 +23,6 @@ const CONFIG_DIR = '/Users/me/.claude-work';
 const FLOW = { flowId: 'f1', manualUrl: 'https://manual', automaticUrl: 'https://automatic' };
 const ACCOUNT = { email: 'me@example.com', organization: 'Work' };
 
-/** A promise the test settles by hand. */
 function deferred<T>() {
   let resolve!: (v: T) => void;
   let reject!: (e: unknown) => void;

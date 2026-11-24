@@ -6,9 +6,6 @@ import { loadInventory } from '../../scripts/cli-review-diff';
 const REPO = path.resolve(__dirname, '../..');
 
 describe('CLI_CONTROL_REQUESTS', () => {
-  // The catalog is only worth keeping if "wired" means wired. Both directions
-  // are read from the daemon's sources, so a request that is added or removed
-  // without updating the catalog fails here.
   it('marks as wired exactly the requests the daemon sends', async () => {
     const sent = (await loadInventory(REPO)).controlSubtypesSent;
     const wired = Object.entries(CLI_CONTROL_REQUESTS)

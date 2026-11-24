@@ -12,10 +12,6 @@ import type { ClientContext } from '../../src/protocol/interfaces';
 import type { ServerMessage, SessionScopedPush } from '../../src/protocol';
 import { classifyJsonlLine } from '../../src/lib/jsonlClassifier';
 
-/**
- * A sessions service double that records what it was asked and lets a test
- * drive `sendToRenderer` as the real service would.
- */
 function fakeSessions(send: { current: (channel: string, ...args: unknown[]) => void }) {
   const active = new Set<string>();
   const calls = {
@@ -139,7 +135,6 @@ describe('remote handlers', () => {
       permissionMode: 'default',
       agent: 'claude',
     });
-    // The start pushes went through the bridge with a seq.
     expect(published.map((p) => [p.seq, p.type])).toEqual([[1, 'session.state'], [2, 'event']]);
     expect(log.meta('sid-1')).toMatchObject({ projectPath: realpathSync(repo), configDir: '/cfg/personal' });
   });
@@ -186,14 +181,12 @@ describe('remote handlers', () => {
       'session.state/stopped',
       'event/complete',
     ]);
-    // Killing an already-dead session says nothing twice.
     published.length = 0;
     void h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
     expect(published).toEqual([]);
   });
 
   it('release stops the session only when no other client still has it open', async () => {
-    // Closing a tab in the browser must not end a session the app is showing.
     const project = await addProject();
     await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
     const browser = fakeCtx('web');
@@ -226,7 +219,6 @@ describe('remote handlers', () => {
     await h['session.create']({ projectId: project.projectId, options: { model: 'claude-opus-5', permissionMode: 'acceptEdits' } }, fakeCtx().ctx);
     void h['session.kill']({ sessionId: 'sid-1' }, fakeCtx().ctx);
 
-    // A fresh handler set over the same state dir is what a daemon restart is.
     const log2 = createSessionLog({ root: join(root, 'sessions') });
     const published2: SessionScopedPush[] = [];
     const bridge2 = createSessionBridge({ log: log2, classify: classifyJsonlLine, publish: (p) => { published2.push(p); }, broadcast: () => {} });
@@ -237,7 +229,6 @@ describe('remote handlers', () => {
     const summary = await h2['session.resume']({ sessionId: 'sid-1' }, fakeCtx().ctx);
     expect(fake2.calls.start[0]).toMatchObject({ tabId: 'sid-1', resumeSessionId: 'sid-1', model: 'claude-opus-5', permissionMode: 'acceptEdits', configDir: '/cfg/personal' });
     expect(summary.sessionStatus).toBe('started');
-    // Events are not persisted: a client holding an older seq gets `resync`.
     expect(published2[0].seq).toBe(1);
   });
 
@@ -275,7 +266,6 @@ describe('remote handlers', () => {
     expect(h.summary('sid-1')).toMatchObject({ inFlight: false });
 
     void h['turn.send']({ sessionId: 'sid-1', content: 'hello' }, fakeCtx().ctx);
-    // The session opened the turn when the prompt went out; the summary reads it from there.
     expect(h.summary('sid-1')).toMatchObject({ inFlight: true, pendingPermissions: 0 });
 
     fake.turns.set('sid-1', { status: 'idle', since: null });
@@ -311,8 +301,6 @@ describe('remote handlers', () => {
   });
 
   it('says which other clients have each session open, leaving out the one asking', async () => {
-    // The Sessions popover tells "open in the app", "open in a browser" and
-    // "no one is looking at it" apart. Its own tabs it already knows.
     const project = await addProject();
     await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
     await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
@@ -331,8 +319,6 @@ describe('remote handlers', () => {
   });
 
   it('subscribe answers resync instead of replaying a seq the log no longer has', async () => {
-    // A seq from before a daemon restart: the ring starts over, so nothing it
-    // holds is "after" that seq. The client reloads from the CLI's JSONL.
     const project = await addProject();
     await h['session.create']({ projectId: project.projectId }, fakeCtx().ctx);
     const { ctx, sent, subs } = fakeCtx();
@@ -340,7 +326,6 @@ describe('remote handlers', () => {
     const res = h['session.subscribe']({ sessionId: 'sid-1', fromSeq: 999 }, ctx);
     expect(res).toEqual({ fromSeq: 2, lastSeq: 2, resync: true });
     expect(sent).toEqual([]);
-    // Still subscribed: live pushes flow from here on.
     expect([...subs]).toEqual(['sid-1']);
   });
 

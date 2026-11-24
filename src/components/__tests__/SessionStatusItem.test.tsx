@@ -36,15 +36,12 @@ describe('SessionStatusItem', () => {
       expect(screen.getByTestId('session-item-context').textContent).toBe('157.1k (16%)');
     });
 
-    // Icon and label wear what the `model` readout's do: no color of their
-    // own, inheriting the bar's, with the label at 70% like every label.
     it.each([
       ['with context', base],
       ['before any context', { ...base, totalTokens: 0 }],
     ] as const)('leaves the icon and label the bar color, like the model readout (%s)', (_, props) => {
       render(<SessionStatusItem {...props} />);
       const label = screen.getByText('session');
-      // Muted like every readout label, and no color of its own.
       expect(label.className.split(' ')).toContain('opacity-70');
       expect(label.className).not.toMatch(/(^|\s)text-/);
       let el: HTMLElement | null = label.parentElement;
@@ -54,18 +51,15 @@ describe('SessionStatusItem', () => {
       }
     });
 
-    // A popover readout's button must be block-level (`flex`), not `inline-flex`:
-    // inside the Popover's block trigger wrapper an inline box opens a line box
-    // sized by the inherited line-height, whose descender space sits under the
-    // button and lifts it ~1px above the bar's plain readouts. jsdom has no
-    // layout, so the display type is what can be pinned.
+    // A popover readout's button must be block-level: an inline-flex one opens a
+    // line box that lifts it ~1px. jsdom has no layout, so the display type is
+    // what can be pinned.
     it('makes its button block-level so it centres with the plain readouts', () => {
       render(<SessionStatusItem {...base} />);
       expect(trigger().className).toMatch(/(^|\s)flex(\s|$)/);
       expect(trigger().className).not.toMatch(/\binline-flex\b/);
     });
 
-    // The same glyph as the titlebar's Sessions button (TabStatusPopover).
     it('leads with the Sessions button\'s Atom icon', () => {
       render(<SessionStatusItem {...base} />);
       expect(trigger().querySelector('svg.lucide-atom')).toBeTruthy();
@@ -81,8 +75,6 @@ describe('SessionStatusItem', () => {
       expect(screen.getByTestId('session-item-context').className).toContain(cls);
     });
 
-    // A red reading pulses, like the thinking readout, so it is noticed.
-    // Amber does not: it is a heads-up, and a pulse there would be constant.
     it.each([
       ['none', false],
       ['warn', false],
@@ -112,7 +104,6 @@ describe('SessionStatusItem', () => {
       expect(screen.getByTestId('session-item-status').textContent).toBe('permission');
     });
 
-    // "ready" over a dead process would be a lie.
     it('says closed when the session has ended', () => {
       render(<SessionStatusItem {...base} sessionStatus="ended" />);
       expect(screen.getByTestId('session-item-status').textContent).toBe('closed');
@@ -147,8 +138,6 @@ describe('SessionStatusItem', () => {
   });
 });
 
-// The Session context panel holds the lists; the popover says how much is
-// loaded and opens it.
 describe('loadout summary row', () => {
   it('says what is loaded and opens the Session context panel', () => {
     const onOpenLoadout = vi.fn();
@@ -173,7 +162,6 @@ describe('loadout summary row', () => {
       meta: { delta: 80_000, before: 100_000, after: 180_000 },
     };
 
-    // The popover covers the transcript it is about to scroll.
     it('closes the popover, marks events read, and hands over the message', () => {
       const onJump = vi.fn();
       const onRead = vi.fn();

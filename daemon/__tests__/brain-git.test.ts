@@ -61,7 +61,6 @@ describe('vault git', () => {
     const git = createVaultGit(dir, slow);
     await Promise.all([git.commitAll('A'), git.commitAll('B')]);
 
-    // No interleaving: each commit's start is immediately followed by its end.
     expect(order).toEqual(['start:A', 'end:A', 'start:B', 'end:B']);
   });
 
@@ -144,7 +143,6 @@ describe('vault git', () => {
     const git = createVaultGit(vaultDir);
     await git.init();
 
-    // The vault must have its OWN repo, not the outer one.
     expect(existsSync(join(vaultDir, '.git'))).toBe(true);
 
     execFileSync('git', ['config', 'user.email', 't@t'], { cwd: vaultDir });
@@ -152,8 +150,6 @@ describe('vault git', () => {
     writeFileSync(join(vaultDir, 'note.md'), 'x');
     expect(await git.commitAll('Index session xyz')).toEqual({ ok: true });
 
-    // The outer repo must be completely untouched: no commits, and the
-    // unrelated file still unstaged.
     const outerCommits = execFileSync('git', ['rev-list', '--count', '--all'], { cwd: outer, encoding: 'utf8' }).trim();
     expect(outerCommits).toBe('0');
     const outerStatus = execFileSync('git', ['status', '--porcelain'], { cwd: outer, encoding: 'utf8' });

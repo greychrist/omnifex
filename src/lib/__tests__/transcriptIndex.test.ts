@@ -53,7 +53,6 @@ const queueOp = (i: number, operation: string, content = 'x'): JsonlNode => ({
   raw: { type: 'queue-operation', operation, content, timestamp: ts(i) } as never,
 });
 
-/** A transcript touching every whole-list lookup a row makes. */
 function fixture(): JsonlNode[] {
   return [
     prompt(0),
@@ -100,7 +99,6 @@ describe('index-backed helpers answer what the whole-list scans answered', () =>
     expect(classifyStandaloneKind(msgs[4], msgs)).toBe('tool.askUserQuestion.answered.result');
     expect(detectSkillInjection(msgs[6], msgs)).toEqual({ skillName: 'commit' });
     expect(isSubagentPrompt(msgs[8], msgs)).toBe(true);
-    // The question is unanswered until its result is in the list.
     expect(classifyStandaloneKind(msgs[3], msgs.slice(0, 4))).not.toBe('tool.askUserQuestion.answered');
   });
 

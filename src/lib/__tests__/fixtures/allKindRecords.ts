@@ -1,18 +1,14 @@
-/** Test access to the sample transcript (src/lib/sampleTranscript.ts),
- *  plus helpers for reading what a view drew. */
 import type { JsonlNode } from '@/types/jsonl';
 import type { ModernItem } from '@/lib/modernGrouping';
 
 export { ALL_KIND_RECORDS, KIND_OF_RECORD, NOT_A_RECORD } from '@/lib/sampleTranscript';
 
-/** A record's identity: its uuid, or kind and time for one without. */
 export function idOf(n: JsonlNode | undefined): string | null {
   if (!n) return null;
   const uuid = (n as { raw?: { uuid?: unknown } }).raw?.uuid;
   return typeof uuid === 'string' ? uuid : `${n.kind}@${(n as { receivedAt?: string }).receivedAt ?? ''}`;
 }
 
-/** Every record an item draws, work entries included, in order. */
 export function drawnUuids(items: ModernItem[]): string[] {
   const out: string[] = [];
   for (const item of items) {

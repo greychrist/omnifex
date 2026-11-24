@@ -15,8 +15,6 @@ import {
   categoryOf,
 } from "../messageRenderingConfig";
 
-// ─── config v5 ──────────────────────────────────────────────────────────────
-
 describe("config v5", () => {
   it("default config is version 6 with an empty kinds map", () => {
     const cfg = createDefaultConfig();
@@ -42,8 +40,6 @@ describe("config v5", () => {
     expect(merged.kinds["user.prompt"]).toEqual({ accentColor: "#14b8a6" });
   });
 });
-
-// ─── resolveKind (three-layer merge) ────────────────────────────────────────
 
 describe("resolveKind (three-layer merge)", () => {
   it("layers category -> registry default -> user patch", () => {
@@ -75,14 +71,11 @@ describe("resolveKind (three-layer merge)", () => {
     expect(s.accentColor).toBe("#22c55e");  // registry default
     expect(s.icon).toBe("CheckCircle2");    // registry default
     expect(s.standard).toBe(true);           // inherited from agent category
-    // now add a user patch
     cfg.kinds["assistant.text.endTurn"] = { accentColor: "#ec4899" };
     expect(resolveKind(cfg, "assistant.text.endTurn").accentColor).toBe("#ec4899"); // user wins
     expect(resolveKind(cfg, "assistant.text.endTurn").icon).toBe("CheckCircle2"); // unpatched still from registry
   });
 });
-
-// ─── createDefaultConfig ─────────────────────────────────────────────────────
 
 describe("createDefaultConfig", () => {
   it("is version 6 with categories and an empty kinds map", () => {
@@ -101,7 +94,6 @@ describe("createDefaultConfig", () => {
 
   it("alwaysShown kinds are set via registry defaults", () => {
     const cfg = createDefaultConfig();
-    // Turn boundaries: always on screen in Standard.
     const locked = Object.keys(KIND_REGISTRY)
       .filter((id) => resolveKind(cfg, id).alwaysShown)
       .sort();
@@ -112,8 +104,6 @@ describe("createDefaultConfig", () => {
     ]);
   });
 });
-
-// ─── mergeConfig ─────────────────────────────────────────────────────────────
 
 describe("mergeConfig", () => {
   it("returns defaults for non-object input", () => {
@@ -131,7 +121,6 @@ describe("mergeConfig", () => {
   it("resets to defaults when saved version is not 5 (v2)", () => {
     const merged = mergeConfig({ version: 2, kinds: { "user.prompt": { accentColor: "pink" } } });
     expect(merged.version).toBe(6);
-    // The v2 kinds are NOT migrated — full reset
     expect(merged.kinds).toEqual({});
   });
 
@@ -141,8 +130,6 @@ describe("mergeConfig", () => {
     expect(merged.kinds).toEqual({});
   });
 
-  // Four chat formats became two views (2026-11-18): Compact and Modern
-  // land on Standard, Verbose and All on Expanded.
   it("migrates the default view", () => {
     for (const [saved, view] of [["compact", "standard"], ["modern", "standard"], ["verbose", "expanded"], ["all", "expanded"],
       ["standard", "standard"], ["expanded", "expanded"]] as const) {
@@ -161,12 +148,9 @@ describe("mergeConfig", () => {
         "user.prompt": { headerLabel: "Me", accentColor: "amber" },
       },
     });
-    // A saved palette name is migrated to its hex on load; the classic
-    // card's header label is dropped.
     expect(cfg.kinds["user.prompt"]).toEqual({ accentColor: "#f59e0b" });
     const s = resolveKind(cfg, "user.prompt");
     expect(s.accentColor).toBe("#f59e0b");
-    // untouched fields keep defaults
     expect(s.icon).toBe("User");
   });
 
@@ -198,10 +182,6 @@ describe("mergeConfig", () => {
     }
   });
 
-  // The palette is retired: every color is a hex. Saved configs (and exported
-  // files) still name palette colors, so they are converted on load — through
-  // the saved palette's own swatch when it had one, so a retinted name keeps
-  // the color the user saw.
   it("migrates saved palette names to hex, through the saved palette's swatch", () => {
     const cfg = mergeConfig({
       version: 5,
@@ -261,8 +241,6 @@ describe("mergeConfig", () => {
     expect(mergeConfig({ version: 5, tabs: { maxWidth: "wide" } }).tabs.maxWidth).toBe(DEFAULT_TAB_STRIP.maxWidth);
   });
 
-  // The four live-overlay toggles were retired: three were read by nothing and
-  // the fourth duplicated the hook kinds' own visibility on Message Kinds.
   it("hides hook rows by default through their kinds", () => {
     const cfg = createDefaultConfig();
     for (const id of ["system.hook_started", "system.hook_progress", "system.hook_response"]) {
@@ -287,7 +265,6 @@ describe("mergeConfig", () => {
         content: { typeface: "jetbrains-mono" },
       },
     });
-    // partial override preserves defaults for other fields
     expect(cfg.typography.content.typeface).toBe("jetbrains-mono");
     expect(cfg.typography.content.size).toBe(DEFAULT_TYPOGRAPHY.content.size);
   });
@@ -326,7 +303,6 @@ describe("mergeConfig", () => {
     expect(cfg.tabIndicators.size).toBe("lg");
     expect(cfg.tabIndicators.bordered).toBe(true);
     expect(cfg.tabIndicators.bgOpacity).toBe(40);
-    // untouched states fall back to defaults
     expect(cfg.tabIndicators.permission).toEqual(DEFAULT_TAB_INDICATORS.permission);
   });
 
@@ -340,11 +316,9 @@ describe("mergeConfig", () => {
         bgOpacity: 999,
       },
     });
-    // bad icon/color fall back to the default style for that state
     expect(cfg.tabIndicators.error).toEqual(DEFAULT_TAB_INDICATORS.error);
     expect(cfg.tabIndicators.size).toBe(DEFAULT_TAB_INDICATORS.size);
     expect(cfg.tabIndicators.bordered).toBe(DEFAULT_TAB_INDICATORS.bordered);
-    // out-of-range opacity clamps into 0–100
     expect(cfg.tabIndicators.bgOpacity).toBe(100);
   });
 
@@ -359,8 +333,6 @@ describe("mergeConfig", () => {
   });
 });
 
-// ─── typeface migration ───────────────────────────────────────────────────────
-
 describe("typeface migration", () => {
   it("migrates legacy family: 'sans' to typeface: 'inter'", () => {
     const legacy = {
@@ -373,7 +345,6 @@ describe("typeface migration", () => {
     };
     const cfg = parseConfig(JSON.stringify(legacy));
     expect(cfg.typography.content.typeface).toBe("inter");
-    // Legacy `family` key is dropped from the result.
   });
 
   it("migrates legacy family: 'serif' to typeface: 'source-serif'", () => {
@@ -412,7 +383,7 @@ describe("typeface migration", () => {
       },
     };
     const cfg = parseConfig(JSON.stringify(bad));
-    expect(cfg.typography.content.typeface).toBe("geist"); // valid one survives
+    expect(cfg.typography.content.typeface).toBe("geist");
   });
 
   it("default config uses typeface: 'inter' for content", () => {
@@ -442,15 +413,11 @@ describe("typeface migration", () => {
       },
     };
     const cfg = parseConfig(JSON.stringify(mixed));
-    // typeface field wins; legacy family is ignored entirely.
     expect(cfg.typography.content.typeface).toBe("geist");
     expect((cfg.typography.content as unknown as Record<string, unknown>).family).toBeUndefined();
   });
 
   it("maps unrecognized legacy family strings (e.g. 'comic-sans', '') to inter", () => {
-    // Cases: empty string, an unknown family name, the literal "monospace"
-    // (close to but not equal to "mono"). All collapse to 'inter' rather
-    // than retaining the user's malformed value or attempting a fuzzy match.
     const cases = ["", "comic-sans", "monospace"];
     for (const garbage of cases) {
       const legacy = {
@@ -466,8 +433,6 @@ describe("typeface migration", () => {
     }
   });
 });
-
-// ─── parse/serialize round-trip ───────────────────────────────────────────────
 
 describe("parse/serialize round-trip", () => {
   it("round-trips a v6 config through JSON", () => {
@@ -488,15 +453,12 @@ describe("parse/serialize round-trip", () => {
   });
 
   it("returns defaults (reset) for a serialized v4 config", () => {
-    // Simulate a v4 blob coming from localStorage
     const v4blob = JSON.stringify({ version: 4, overrides: [], categories: {} });
     const restored = parseConfig(v4blob);
     expect(restored.version).toBe(6);
     expect(restored.kinds).toEqual({});
   });
 });
-
-// ─── catalog coverage — every registered kind resolves to a style ─────────────
 
 describe("kind registry", () => {
   it("has exactly the four real categories", () => {
@@ -526,8 +488,6 @@ describe("kind registry", () => {
   });
 });
 
-// ─── category catalog ─────────────────────────────────────────────────────────
-
 describe("category catalog", () => {
   it("defines exactly the four categories, each a complete style", () => {
     expect([...CATEGORIES].sort()).toEqual(["agent", "live", "system", "user"]);
@@ -548,8 +508,6 @@ describe("category catalog", () => {
     expect(DEFAULT_CATEGORIES.agent.standard).toBe(true);
   });
 });
-
-// ─── terminal ─────────────────────────────────────────────────────────────────
 
 describe("terminal", () => {
   it("createDefaultConfig includes a terminal section with a mono typeface", () => {
@@ -603,10 +561,8 @@ describe("terminal", () => {
   });
 
   it("clamps an out-of-range terminal.fontSize", () => {
-    // Way too small -> clamp up.
     expect(mergeConfig({ version: 5, terminal: { fontSize: 4 } }).terminal.fontSize)
       .toBeGreaterThanOrEqual(8);
-    // Way too large -> clamp down.
     expect(mergeConfig({ version: 5, terminal: { fontSize: 200 } }).terminal.fontSize)
       .toBeLessThanOrEqual(32);
   });
@@ -639,25 +595,17 @@ describe("terminal", () => {
   });
 });
 
-// ─── validateStyleField (via mergeConfig kinds path) ─────────────────────────
-
 describe("validateStyleField (via kinds merge)", () => {
   it("accepts all valid icon names", () => {
     const cfg = mergeConfig({ version: 5, kinds: { "user.prompt": { icon: "Bot" } } });
     expect(resolveKind(cfg, "user.prompt").icon).toBe("Bot");
   });
-
-  // Saved configs from before the three-way setting carry the old boolean.
 });
-
-// ─── tool-result kind id unification ─────────────────────────────────────────
 
 it("registers user.tool-result and not the old duplicate id", () => {
   expect(KIND_REGISTRY["user.tool-result"]).toBeDefined();
   expect(KIND_REGISTRY["tool.result.generic"]).toBeUndefined();
 });
-
-// ─── resolveKind — special cases from the classifier ──────────────────────────
 
 describe("resolveKind — classifier output coverage", () => {
   it("resolves summary.compaction, system.unknown, user.systemContext to styles", () => {
@@ -695,8 +643,6 @@ describe("resolveKind — classifier output coverage", () => {
   });
 });
 
-// ─── bookkeeping kind registry entries (control-change feedback feature) ──────
-
 describe("bookkeeping kind registry entries", () => {
   const ids = ["permission-mode", "last-prompt", "ai-title", "queue-operation", "file-history-snapshot"] as const;
 
@@ -716,8 +662,6 @@ describe("bookkeeping kind registry entries", () => {
   });
 });
 
-// ─── synthetic control-change kinds ───────────────────────────────────────────
-
 describe("control-change kinds", () => {
   it("registers control.effort and control.model under live, shown in Standard", () => {
     const cfg = createDefaultConfig();
@@ -728,6 +672,4 @@ describe("control-change kinds", () => {
     }
   });
 });
-
-// ─── "All" chat format ──────────────────────────────────────────────────────
 

@@ -131,9 +131,7 @@ describe('computeUnloggedRows', () => {
     ]);
   });
 
-  // CLI >= 2.1.311 reports how many of its cache writes had a 1-hour TTL.
-  // The hidden 1-hour part is what the CLI counted at 1h minus what the
-  // transcript rows already priced at 1h; the rest keeps the 5-minute rule.
+  // Hidden 1h = the CLI's 1h count minus what transcript rows priced at 1h.
   it('prices hidden cache writes at the 1-hour rate when the CLI splits them', () => {
     const { rows } = computeUnloggedRows({
       ...base,

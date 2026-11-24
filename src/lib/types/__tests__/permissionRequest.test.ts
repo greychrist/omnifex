@@ -8,9 +8,8 @@ const card = (requestId: string): PermissionRequestPayload => ({
   suggestions: [],
 });
 
-// The CLI withdraws a request when the turn is interrupted. Main sends
-// `permission_withdrawn` only when nothing is queued behind it, so the card
-// on screen is either the withdrawn one (drop it) or already a newer one.
+// The daemon sends `permission_withdrawn` only when nothing is queued behind
+// it.
 describe('withoutWithdrawnPermission', () => {
   it('drops the card showing the withdrawn request', () => {
     expect(withoutWithdrawnPermission(card('a'), 'a')).toBeNull();

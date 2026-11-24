@@ -24,12 +24,9 @@ describe('Modern recap', () => {
     expect(screen.getByText('Recap')).toBeInTheDocument();
     expect(screen.getByText('We fixed the card; tests pass.')).toBeInTheDocument();
     expect(container.querySelector('[data-slot="trace"]')).not.toBeNull();
-    // No Compact chrome: neither the card frame nor its italic prose.
     expect(container.querySelector('.italic')).toBeNull();
   });
 
-  // Spaced exactly as an answer is: the same Message column, with the same
-  // hover row under it (which is where an answer's room below comes from).
   it('sits in the answer\'s Message column with its hover row, so the room below matches', () => {
     const item = { kind: 'recap', key: 'r', node, text: 'Done.' } as ModernItem;
     const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
@@ -38,12 +35,9 @@ describe('Modern recap', () => {
     const actions = column?.lastElementChild;
     expect(actions).toHaveClass('h-6');
     expect(actions?.querySelector('button')).not.toBeNull();
-    // No spacing of its own on top of that.
     expect(container.querySelector('[data-recap-body]')).not.toHaveClass('mb-3');
   });
 
-  // Its date and time lead the hover row, as an answer's do; the title is
-  // "Recap" alone.
   it('stamps the date and time in its hover row, not beside its title', () => {
     const d = new Date(2026, 2, 4, 15, 4, 5);
     const timed = { ...node, receivedAt: d.toISOString() } as unknown as JsonlNode;

@@ -134,8 +134,6 @@ describe('BrainVaultSetup', () => {
     render(<BrainVaultSetup vault={vault} accountName="personal" />);
 
     expect(screen.getByText(/overlaps/)).toBeTruthy();
-    // A conflict is fixed by choosing a DIFFERENT path, so a retry button
-    // would only invite the user to hammer something that fails by design.
     expect(screen.queryByRole('button', { name: /rebuild/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /recreate/i })).toBeNull();
   });

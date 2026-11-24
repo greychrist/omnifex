@@ -3,14 +3,7 @@ import type { JsonlNode } from "@/types/jsonl";
 import { isSubagentDispatch, isSubagentPrompt } from "../subagentDispatch";
 
 describe("isSubagentDispatch", () => {
-  // The Claude Code CLI emits subagent dispatches under
-  // PascalCase 'Task' / 'Agent' on the wire. Earlier defense-in-depth
-  // accepted lowercase / uppercase variants too, but no production code
-  // path actually emits those — verified via session reducer + JSONL replay
-  // — and the case-insensitive contract diverged from the case-sensitive
-  // narrowing in `asToolInputOneOf`, forcing a normalization shim at every
-  // call site. Tightening to PascalCase-only aligns both layers and lets
-  // the CLI contract be the single source of truth.
+  // The CLI emits subagent dispatches as PascalCase 'Task' / 'Agent'.
   it("matches PascalCase 'Task' only", () => {
     expect(isSubagentDispatch("Task")).toBe(true);
     expect(isSubagentDispatch("TASK")).toBe(false);
@@ -129,10 +122,8 @@ describe("isSubagentPrompt", () => {
   });
 });
 
-// CLI 2.1.265 made forked skills (`context: fork`) stream their kickoff
-// prompt. It arrives as a `user` envelope whose `parent_tool_use_id` names a
-// *Skill* tool_use, not Task/Agent — so the old Task/Agent-only predicate let
-// it through and it rendered as a prompt the human never typed.
+// CLI 2.1.265 forked skills stream their kickoff prompt as a `user` envelope
+// whose `parent_tool_use_id` names a Skill tool_use.
 describe("isSubagentPrompt — forked skill kickoff (CLI >= 2.1.265)", () => {
   const skillToolUse = (id: string): JsonlNode =>
     ({

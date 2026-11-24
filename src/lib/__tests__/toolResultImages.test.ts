@@ -25,9 +25,8 @@ describe('extractToolResultImages', () => {
     expect(images.map((i) => i.mediaType)).toEqual(['image/png', 'image/jpeg']);
   });
 
-  // MCP servers speak `{data, mimeType}`; whether the CLI normalizes that into
-  // Anthropic's `source` shape isn't guaranteed across versions, so accept both
-  // rather than silently dropping the image on a CLI change.
+  // MCP servers speak `{data, mimeType}`; the CLI is not guaranteed to normalize
+  // it to `source`.
   it('also accepts the raw MCP {data, mimeType} shape', () => {
     expect(
       extractToolResultImages({

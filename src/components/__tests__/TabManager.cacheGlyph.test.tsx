@@ -75,8 +75,6 @@ describe('resolveTabStatusIndicator — precedence', () => {
     ).toEqual({ kind: 'question' });
   });
 
-  // A turn in flight is rewriting the cache, so the countdown is meaningless
-  // until it lands — the spinner correctly wins.
   it('loses to the working spinner', () => {
     expect(
       resolveTabStatusIndicator(cacheTab({ promptStatus: 'working' }), at(270)),

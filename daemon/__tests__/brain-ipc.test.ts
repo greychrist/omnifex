@@ -58,9 +58,7 @@ describe('brain IPC handlers', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'omnifex-brain-ipc-'));
     db = createDatabase(':memory:');
-    // A stub git runner: no child process, so nothing is still writing into
-    // `.git` when afterEach removes the directory. This replaced a
-    // retry-and-swallow rmSync that raced an untracked `git init`.
+    // No child process: nothing may still write `.git` when afterEach removes it.
     brain = createBrainService(db, { execGit: async () => '' });
     handlers = createBrainHandlers(brain);
   });
@@ -116,8 +114,6 @@ describe('brain IPC handlers', () => {
     expect(await handlers.brain_list_note_meta(null, { accountId: 99 })).toEqual([]);
   });
 
-  /** The Notes table sorts and filters on frontmatter, which a path list
-   *  cannot carry. This is the channel that hands it over. */
   it('lists note frontmatter for the table to sort on', async () => {
     await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'personal') });
     brain.writeNote(
@@ -145,16 +141,10 @@ describe('brain IPC handlers', () => {
   });
 
   it('rejects a source listing with no accountId', async () => {
-    // Same rule as every other brain handler: defaulting the account would
-    // read the wrong vault's material, which is a confidentiality failure
-    // rather than a UX annoyance.
     await expect(handlers.brain_list_sources(null, {})).rejects.toThrow(/accountId/);
   });
 
   it('accepts snake_case params and returns null for an unknown item', async () => {
-    // No sources are wired into this file's service, so discovery finds
-    // nothing and the preview is null — which is the point: the handler must
-    // pass both params through and not throw.
     await expect(
       handlers.brain_source_preview(null, { account_id: 1, item_key: 'nope' }),
     ).resolves.toBeNull();
@@ -168,8 +158,6 @@ describe('brain IPC handlers', () => {
 
   it('brain_index_selection rejects anything that is not a list of keys', async () => {
     await expect(handlers.brain_index_selection(null, { accountId: 1 })).rejects.toThrow(/itemKeys/);
-    // A bare string is the tempting mistake, and would index a selection of
-    // one item named by the string's first character if it were spread.
     await expect(
       handlers.brain_index_selection(null, { accountId: 1, itemKeys: 'sess-a' }),
     ).rejects.toThrow(/itemKeys/);
@@ -179,8 +167,6 @@ describe('brain IPC handlers', () => {
   });
 
   it('brain_index_selection accepts the snake_case spelling', async () => {
-    // Handler adapters take both spellings; without this the renderer's
-    // camelCase call is the only one that works, silently.
     await expect(
       handlers.brain_index_selection(null, { account_id: 1, item_keys: [] }),
     ).rejects.toThrow(/no items/);
@@ -192,7 +178,6 @@ describe('brain IPC handlers', () => {
 
   it('run handlers: the read degrades, the spending one throws', async () => {
     const bare = createBrainHandlers(undefined);
-    // A fresh pane must be able to mount and simply learn there is no run.
     await expect(bare.brain_current_run(null, { accountId: 1 })).resolves.toBeNull();
     await expect(
       bare.brain_index_selection(null, { accountId: 1, itemKeys: ['a'] }),
@@ -201,11 +186,9 @@ describe('brain IPC handlers', () => {
 
   it('queue reads degrade and queue writes throw when the service is unavailable', async () => {
     const bare = createBrainHandlers(undefined);
-    // Reads stay inert so the Brain tab can still render something truthful.
     await expect(bare.brain_queue_counts(null, { accountId: 1 }))
       .resolves.toMatchObject({ pending: 0, failed: 0 });
     await expect(bare.brain_queue_list(null, { accountId: 1 })).resolves.toEqual([]);
-    // Writes must not report work that never happened.
     await expect(bare.brain_backfill(null, { accountId: 1 })).rejects.toThrow(/unavailable/);
     await expect(bare.brain_queue_clear(null, { accountId: 1 })).rejects.toThrow(/unavailable/);
   });
@@ -215,10 +198,6 @@ describe('brain IPC handlers', () => {
   });
 
   it('offers no untracked way to index a single item', () => {
-    // `brain_index_source` was removed with the run tracker: it spent tokens
-    // without creating a run record, so any caller reaching for it lost all
-    // progress the moment the Sources pane unmounted. One item is
-    // `brain_index_selection` with a one-key list.
     expect(handlers.brain_index_source).toBeUndefined();
   });
 
@@ -232,9 +211,6 @@ describe('brain IPC handlers', () => {
 
   it('brain_read_note wraps a corrupt note as a readable error, not a raw parse stack', async () => {
     await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'personal') });
-    // Scaffold the vault (creates Topics/ etc.), then drop a frontmatter-less
-    // file straight on disk — the same setup brain-vault.test.ts uses to
-    // trigger NoteParseError from `readNote`.
     await handlers.brain_list_notes(null, { accountId: 1 });
     writeFileSync(join(dir, 'personal', 'Topics', 'Bad.md'), 'no frontmatter here\n');
 
@@ -280,8 +256,6 @@ describe('brain IPC handlers', () => {
   });
 
   it('write handlers throw rather than silently no-op when no brain service is wired', async () => {
-    // Unlike the read handlers above, a write must not report success (via a
-    // `null` return) when nothing was actually written.
     const none = createBrainHandlers(undefined);
     await expect(
       none.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'personal') }),
@@ -291,18 +265,6 @@ describe('brain IPC handlers', () => {
     ).rejects.toThrow(/brain service unavailable/);
   });
 
-  // --- error-shape behaviour beyond the brief -------------------------------
-  //
-  // The registry (Task 7) went through six security-fix rounds and now throws
-  // from more places than a naive handler anticipates. The rule the tests
-  // below enforce: `brain_list_notes` is a read path and must degrade to []
-  // on a detected vault conflict (mirroring registry.ts's own `search()`),
-  // while `brain_read_note` and `brain_set_vault_path` are explicit user
-  // actions and must keep failing loudly.
-
-  /** Configure two accounts, then swap account 2's directory for a symlink
-   *  into account 1's vault — the same on-disk-conflict setup used by
-   *  brain-registry.test.ts's "detects an overlap introduced on disk" case. */
   async function induceConflictForAccount2(): Promise<void> {
     await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'personal') });
     await handlers.brain_set_vault_path(null, { accountId: 2, path: join(dir, 'work') });
@@ -336,9 +298,6 @@ describe('brain IPC handlers', () => {
   });
 
   it('brain_set_vault_path surfaces a plain-Error message too, not just VaultConflictError', async () => {
-    // accountId 0 passes the handler's own finite-number check but fails the
-    // registry's stricter positive-integer check, so this exercises the
-    // registry's plain `Error` branch rather than `VaultConflictError`.
     await expect(
       handlers.brain_set_vault_path(null, { accountId: 0, path: join(dir, 'x') }),
     ).rejects.toThrow(/invalid accountId/);
@@ -509,7 +468,6 @@ describe('brain IPC handlers', () => {
   });
 
   describe('brain_mcp_*', () => {
-    /** A registration double: records calls, answers from its own state. */
     function fakeMcp(overrides: Partial<Record<string, unknown>> = {}) {
       const registered = new Set<string>();
       const calls: { register: string[]; unregister: string[] } = { register: [], unregister: [] };
@@ -566,10 +524,6 @@ describe('brain IPC handlers', () => {
     });
 
     it('re-registers with the new vault root when the vault path changes', async () => {
-      // The persistent registration bakes the vault path into
-      // <configDir>/.claude.json. Moving the vault without rewriting it leaves
-      // every outside-OmniFex session pointed at a directory that no longer
-      // exists — the exact failure that surfaced after the ~/Documents move.
       await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'mcp-old') });
       const mcp = fakeMcp();
       const h = createBrainHandlers(brain, mcp.deps);
@@ -594,8 +548,6 @@ describe('brain IPC handlers', () => {
     });
 
     it('unregisters when the vault path is cleared', async () => {
-      // A registered server with no vault behind it fails on every call; the
-      // toggle would also keep showing "on" for a Brain that no longer exists.
       await handlers.brain_set_vault_path(null, { accountId: 1, path: join(dir, 'mcp-clear') });
       const mcp = fakeMcp();
       const h = createBrainHandlers(brain, mcp.deps);
@@ -620,8 +572,6 @@ describe('brain IPC handlers', () => {
     });
 
     it('throws rather than silently doing nothing when unwired', async () => {
-      // A write that reports success while writing nothing would leave the
-      // toggle showing a state that does not exist.
       const bare = createBrainHandlers(brain);
       await expect(bare.brain_mcp_register(null, { accountId: 1 })).rejects.toThrow(/unavailable/);
       await expect(bare.brain_mcp_unregister(null, { accountId: 1 })).rejects.toThrow(/unavailable/);

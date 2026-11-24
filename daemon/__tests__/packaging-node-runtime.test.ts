@@ -4,9 +4,7 @@ import { BUNDLED_NODE_VERSION, assertSameNodeAbi, expectedSha256, nodeDist } fro
 
 describe('bundled node runtime', () => {
   it('is a patched 26.x', () => {
-    // 26.13.1 carries the 2026-11-11 security release (16 CVEs: HTTP/2, TLS,
-    // https.Agent, proxy-credential leak), on top of 2026-10-21's Brotli RCE.
-    // Anything older than that in the 26 line must not ship.
+    // 26.13.1 is the 2026-11-11 security release; nothing older in 26.x ships.
     const [major, minor, patch] = BUNDLED_NODE_VERSION.split('.').map(Number);
     expect(major).toBe(26);
     expect(minor * 1000 + patch).toBeGreaterThanOrEqual(13 * 1000 + 1);
@@ -30,8 +28,7 @@ describe('bundled node runtime', () => {
     expect(expectedSha256(list, 'node-v26.12.1-darwin-arm64.tar')).toBeNull();
   });
 
-  // The native modules are built by `npm install` for the node running it.
-  // They load in the bundled node only when both share a major (one ABI).
+  // Native modules load in the bundled node only when both share a major.
   it('refuses to package when the build node and the bundled node differ in major', () => {
     expect(() => assertSameNodeAbi('v26.3.0', '26.12.1')).not.toThrow();
     expect(() => assertSameNodeAbi('v22.22.3', '26.12.1')).toThrow(/Node 26/);

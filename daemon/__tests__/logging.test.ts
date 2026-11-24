@@ -22,7 +22,6 @@ describe('logging service', () => {
     it('drops entries for which shouldAccept returns false', () => {
       const filtered = createLoggingService(db, {
         shouldAccept: (e) =>
-          // Drop info-level claude-hooks entries (the noisy ones); keep everything else.
           !(e.level === 'info' && e.source === 'claude-hooks'),
       });
 
@@ -53,7 +52,6 @@ describe('logging service', () => {
     it('fires onError for each error-level entry that survives shouldAccept', () => {
       const seen: string[] = [];
       const filtered = createLoggingService(db, {
-        // Drop every info entry — proves onError isn't called for dropped rows.
         shouldAccept: (e) => e.level !== 'info',
         onError: (e) => seen.push(`${e.source}:${e.message}`),
       });
@@ -65,8 +63,6 @@ describe('logging service', () => {
         { timestamp: '2024-01-01T00:00:03Z', level: 'error', source: 'claude-hooks', message: 'bad thing 2' },
       ]);
 
-      // Only the two error rows should have fired onError; warn and the
-      // dropped info row should not.
       expect(seen).toEqual([
         'claude-sdk:bad thing 1',
         'claude-hooks:bad thing 2',
@@ -77,7 +73,6 @@ describe('logging service', () => {
       const filtered = createLoggingService(db, {
         onError: () => { throw new Error('handler boom'); },
       });
-      // No throw — and the row should still be persisted.
       filtered.writeBatch([
         { timestamp: '2024-01-01T00:00:00Z', level: 'error', source: 'frontend', message: 'x' },
       ]);
@@ -85,8 +80,6 @@ describe('logging service', () => {
     });
 
     it('re-evaluates shouldAccept on every writeBatch (live setting reads)', () => {
-      // The predicate closes over an external flag; flipping it between writes
-      // proves the gate is evaluated per-call, not memoised at construction.
       let allow = false;
       const filtered = createLoggingService(db, {
         shouldAccept: () => allow,
@@ -253,7 +246,7 @@ describe('logging service', () => {
 
     const page1 = logging.query({ limit: 2, offset: 0 });
     expect(page1.entries).toHaveLength(2);
-    expect(page1.total).toBe(3); // total reflects full count, not page
+    expect(page1.total).toBe(3);
 
     const page2 = logging.query({ limit: 2, offset: 2 });
     expect(page2.entries).toHaveLength(1);
@@ -288,12 +281,7 @@ describe('logging service', () => {
     expect(result.entries[0].metadata).toBe(JSON.stringify({ url: 'https://example.com' }));
   });
 
-  // ---------------------------------------------------------------------------
-  // orderBy / orderDir
-  // ---------------------------------------------------------------------------
-
   describe('query() ordering', () => {
-    // Build a small fixture spread across the columns we want sortable.
     function seed() {
       logging.writeBatch([
         { timestamp: '2024-01-01T00:00:01Z', level: 'info',  source: 'frontend',    category: 'b-mid',  message: 'm-2' },
@@ -316,9 +304,6 @@ describe('logging service', () => {
     });
 
     it('orderBy=level uses severity (error > warn > info > debug) — desc lands errors at the top', () => {
-      // Alphabetical sort on the literal level strings would put `debug`
-      // first and `warn` last, which is the opposite of what a user wants
-      // when triaging. Severity ordering matches reading intent.
       seed();
       const result = logging.query({ orderBy: 'level', orderDir: 'desc' });
       expect(result.entries.map((e) => e.level)).toEqual(['error', 'warn', 'info', 'debug']);
@@ -344,9 +329,7 @@ describe('logging service', () => {
     it('orderBy=category sorts alphabetically and pushes NULL/empty to a stable end', () => {
       seed();
       const asc = logging.query({ orderBy: 'category', orderDir: 'asc' });
-      // 'a-low', 'b-mid', 'c-high' sort alpha; the null/undefined row groups
-      // with the empty bucket. Either end is acceptable as long as the
-      // bucket is stable — we choose empty-last in asc.
+      // The null row groups with the empty bucket; empty-last in asc.
       const cats = asc.entries.map((e) => e.category ?? '');
       expect(cats[0]).toBe('a-low');
       expect(cats[1]).toBe('b-mid');
@@ -377,10 +360,6 @@ describe('logging service', () => {
       expect(result.entries.map((e) => e.message)).toEqual(['last-info', 'middle-info', 'first-info']);
     });
   });
-
-  // ---------------------------------------------------------------------------
-  // count()
-  // ---------------------------------------------------------------------------
 
   describe('count()', () => {
     it('returns 0 when no entries exist', () => {
@@ -419,18 +398,8 @@ describe('logging service', () => {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // prune()
-  // ---------------------------------------------------------------------------
-
-  // -------------------------------------------------------------------------
-  // prune() reclaims disk space
-  //
-  // These use a file-backed database rather than ':memory:' on purpose: the
-  // behaviour under test is the size of a file on disk, and the app runs in
-  // WAL mode, where a VACUUM's writes land in the -wal and the main file does
-  // not shrink until a checkpoint. A ':memory:' test cannot observe either.
-  // -------------------------------------------------------------------------
+  // File-backed on purpose: in WAL mode a VACUUM's writes land in the -wal, so
+  // ':memory:' cannot show the file shrinking.
 
   describe('prune() disk reclamation', () => {
     let tmpDir: string;
@@ -476,10 +445,6 @@ describe('logging service', () => {
     });
 
     it('shrinks the database file after pruning everything', () => {
-      // Greg's greychrist.db reached 2.15 GB of which 2.11 GB was free pages:
-      // a prune had deleted the rows months earlier, but auto_vacuum is NONE,
-      // so SQLite kept the space on the freelist and the file never shrank.
-      // Deleting rows is only half the job.
       writeBulk(5000, '2024-01-01T00:00:00Z');
       const before = onDiskBytes();
       expect(before).toBeGreaterThan(8 * 1024 * 1024);
@@ -491,8 +456,6 @@ describe('logging service', () => {
     });
 
     it('shrinks the file after pruning only the old half', () => {
-      // The partial case matters more than the delete-all case: it is what the
-      // "older than 1 week" buttons actually do.
       writeBulk(4000, '2024-01-01T00:00:00Z');
       writeBulk(400, '2099-01-01T00:00:00Z');
       const before = onDiskBytes();
@@ -501,7 +464,6 @@ describe('logging service', () => {
 
       const after = onDiskBytes();
       expect(after).toBeLessThan(before / 2);
-      // The rows we kept are still there and still readable.
       expect(fileLogging.count({})).toBe(400);
       expect(fileLogging.query({}).entries.length).toBeGreaterThan(0);
     });
@@ -517,10 +479,7 @@ describe('logging service', () => {
     });
 
     it('converts a legacy auto_vacuum=NONE database while it is already vacuuming', () => {
-      // Databases created before the INCREMENTAL default cannot be converted by
-      // pragma alone — SQLite only changes auto_vacuum during a full VACUUM.
-      // prune() is already running one, so the conversion rides along for free
-      // rather than costing a blocking VACUUM at app startup.
+      // SQLite changes auto_vacuum only during a full VACUUM.
       fileDb.raw.pragma('auto_vacuum = NONE');
       fileDb.raw.exec('VACUUM');
       expect(fileDb.raw.pragma('auto_vacuum', { simple: true })).toBe(0);
@@ -529,15 +488,12 @@ describe('logging service', () => {
       fileLogging.prune();
 
       expect(fileDb.raw.pragma('auto_vacuum', { simple: true })).toBe(2);
-      // And from here the cheap path works without another full VACUUM.
       writeBulk(2000, '2024-01-01T00:00:00Z');
       fileDb.raw.prepare('DELETE FROM app_logs').run();
       expect(fileDb.reclaimFreePages()).toBeGreaterThan(0);
     });
 
     it('does not vacuum when the cutoff deletes nothing', () => {
-      // An unparseable cutoff is treated as "delete nothing"; rewriting the
-      // whole file for a no-op would be pure cost.
       writeBulk(2000, '2024-01-01T00:00:00Z');
       const before = onDiskBytes();
       expect(fileLogging.prune('not-a-duration')).toBe(0);

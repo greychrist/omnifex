@@ -34,9 +34,7 @@ describe('brain registry', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'omnifex-brain-'));
     db = createDatabase(':memory:');
-    // A stub git runner: no child process, so nothing is still writing into
-    // `.git` when afterEach removes the directory. This replaced a
-    // retry-and-swallow rmSync that raced an untracked `git init`.
+    // No child process: nothing may still write `.git` when afterEach removes it.
     brain = createBrainService(db, { execGit: async () => '' });
   });
 
@@ -165,15 +163,15 @@ describe('brain registry', () => {
 
   it('rejects a symlink alias when the target does not exist at config time', () => {
     const real = join(dir, 'realvault');
-    symlinkSync(real, join(dir, 'linkvault')); // dangling right now
+    symlinkSync(real, join(dir, 'linkvault'));
     brain.setVaultPath(1, real);
     expect(() => brain.setVaultPath(2, join(dir, 'linkvault'))).toThrow(VaultConflictError);
   });
 
   it('rejects a case-variant alias when the directory does not exist at config time', () => {
     mkdirSync(join(dir, 'CaseProbe'), { recursive: true });
-    if (!existsSync(join(dir, 'caseprobe'))) return; // case-sensitive FS: not aliasable
-    brain.setVaultPath(1, join(dir, 'Vault'));       // NOT pre-created
+    if (!existsSync(join(dir, 'caseprobe'))) return;
+    brain.setVaultPath(1, join(dir, 'Vault'));
     expect(() => brain.setVaultPath(2, join(dir, 'vault'))).toThrow(VaultConflictError);
   });
 
@@ -195,7 +193,7 @@ describe('brain registry', () => {
     try {
       expect(() => brain.setVaultPath(1, join(ro, 'Vault'))).toThrow(/cannot create vault directory/);
     } finally {
-      chmodSync(ro, 0o755); // so afterEach can clean up
+      chmodSync(ro, 0o755);
     }
   });
 
@@ -230,16 +228,11 @@ describe('brain registry', () => {
     expect(() => brain.open(2)).toThrow(VaultConflictError);
   });
 
-  // --- round 4 ---------------------------------------------------------------
-
   it('ISOLATION: re-validates a handle already cached when the swap happens', () => {
     brain.setVaultPath(1, join(dir, 'personal'));
     brain.setVaultPath(2, join(dir, 'work'));
     brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
 
-    // Cache account 2's handle, then swap its directory WITHOUT closing it.
-    // A guard that only runs on a cold open is no guard at all: once the
-    // process has a handle it keeps using it for the rest of its life.
     brain.open(2);
     rmSync(join(dir, 'work'), { recursive: true, force: true });
     symlinkSync(join(dir, 'personal'), join(dir, 'work'));
@@ -248,7 +241,6 @@ describe('brain registry', () => {
       brain.writeNote(2, 'Subsystems/Leak.md', note('written under account 2'), 'Manual edit'),
     ).toThrow(VaultConflictError);
     expect(existsSync(join(dir, 'personal', 'Subsystems', 'Leak.md'))).toBe(false);
-    // Nothing is handed out either, so listNotes()/readNote() are unreachable.
     expect(() => brain.open(2)).toThrow(VaultConflictError);
   });
 
@@ -272,11 +264,8 @@ describe('brain registry', () => {
     rmSync(join(dir, 'work'), { recursive: true, force: true });
     symlinkSync(join(dir, 'personal'), join(dir, 'work'));
 
-    // Account 1's configuration and directory never changed; the Brain is
-    // auxiliary, so its search must not start throwing at the caller.
     expect(brain.search(1, 'stdio')).toEqual([]);
     expect(brain.search(2, 'stdio')).toEqual([]);
-    // Anything that hands out access or writes still fails closed.
     expect(() => brain.open(1)).toThrow(VaultConflictError);
     expect(() =>
       brain.writeNote(2, 'Subsystems/Leak.md', note('leaked'), 'Manual edit'),
@@ -307,12 +296,9 @@ describe('brain registry', () => {
     }
   });
 
-  // --- round 5 ---------------------------------------------------------------
-
   const indexDir = (name: string): string => join(dir, name, '.omnifex');
   const indexDb = (name: string): string => join(indexDir(name), 'index.db');
 
-  /** Two configured vaults, each with one note and a built index. */
   function twoVaults(): void {
     brain.setVaultPath(1, join(dir, 'personal'));
     brain.setVaultPath(2, join(dir, 'work'));
@@ -347,8 +333,6 @@ describe('brain registry', () => {
     brain.setVaultPath(2, join(dir, 'work'));
     brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
     brain.closeAll();
-    // Account 2 has never been opened, so its index does not exist yet: the
-    // link has no target until better-sqlite3 creates one inside account 1.
     mkdirSync(indexDir('work'), { recursive: true });
     symlinkSync(join(dir, 'personal', '.omnifex', 'nonexistent.db'), indexDb('work'));
 
@@ -361,8 +345,6 @@ describe('brain registry', () => {
     rmSync(indexDb('work'), { force: true });
     linkSync(indexDb('personal'), indexDb('work'));
 
-    // No path check can see this: both names are legitimately inside their own
-    // vault, and there is no symlink anywhere. Only the inode gives it away.
     expect(() => brain.open(2)).toThrow(VaultConflictError);
     expect(brain.search(2, 'stdio')).toEqual([]);
   });
@@ -371,7 +353,7 @@ describe('brain registry', () => {
     brain.setVaultPath(1, join(dir, 'personal'));
     brain.setVaultPath(2, join(dir, 'work'));
     brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
-    brain.open(2); // warm — deliberately not closed
+    brain.open(2);
     rmSync(indexDir('work'), { recursive: true, force: true });
     symlinkSync(indexDir('personal'), indexDir('work'));
 
@@ -382,8 +364,6 @@ describe('brain registry', () => {
   });
 
   it('accepts a vault reached through a symlinked root', () => {
-    // The guard must not fire on a legitimate arrangement: a vault whose root
-    // is itself a symlink is fine, so long as it overlaps nobody.
     mkdirSync(join(dir, 'elsewhere'), { recursive: true });
     symlinkSync(join(dir, 'elsewhere'), join(dir, 'linked'));
     brain.setVaultPath(1, join(dir, 'linked'));
@@ -397,7 +377,6 @@ describe('brain registry', () => {
     try {
       brain.setVaultPath(1, `  ${join(dir, 'padded')}  `);
       expect(brain.vaultPath(1)).toBe(join(dir, 'padded'));
-      // A leading space would have made the absolute path RELATIVE.
       expect(existsSync(join(dir, '  '))).toBe(false);
     } finally {
       process.chdir(cwd);
@@ -413,10 +392,6 @@ describe('brain registry', () => {
     brain.setVaultPath(2, join(dir, 'work'));
     brain.writeNote(2, 'Subsystems/Work.md', note('work stdio secret'), 'Manual edit');
 
-    // A conflicting row written straight into app_settings: a migration, a
-    // second service instance, a future writer. Nothing on disk moves, so the
-    // handle's identity is unchanged and the cache would happily serve it.
-    // Only running the guard BEFORE the cache catches this.
     db.saveSetting(vaultSettingKey(1), join(dir, 'work'));
 
     expect(() => brain.open(2)).toThrow(VaultConflictError);
@@ -430,7 +405,7 @@ describe('brain registry', () => {
     brain.setVaultPath(1, join(dir, 'personal'));
     brain.setVaultPath(2, join(dir, 'work'));
     brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
-    brain.open(2); // both handles warm — no closeAll before the swap
+    brain.open(2);
     rmSync(join(dir, 'work'), { recursive: true, force: true });
     symlinkSync(join(dir, 'personal'), join(dir, 'work'));
 
@@ -438,19 +413,14 @@ describe('brain registry', () => {
     expect(brain.search(2, 'stdio')).toEqual([]);
   });
 
-  // --- round 6 ---------------------------------------------------------------
-
   it('ISOLATION: refuses a hard-linked WAL sidecar, not just index.db', () => {
     brain.setVaultPath(1, join(dir, 'personal'));
     brain.setVaultPath(2, join(dir, 'work'));
     brain.writeNote(2, 'Subsystems/Work.md', note('work stdio secret'), 'Manual edit');
-    brain.closeAll(); // account 2's own WAL is checkpointed away on close
+    brain.closeAll();
     brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
-    // Account 1 stays warm, so its -wal exists and still holds its note.
     linkSync(join(indexDir('personal'), 'index.db-wal'), join(indexDir('work'), 'index.db-wal'));
 
-    // Reopening account 2 replays account 1's WAL frames over account 2's
-    // database: account 1's bodies appear and account 2's own note vanishes.
     expect(() => brain.open(2)).toThrow(VaultConflictError);
     expect(brain.search(2, 'stdio')).toEqual([]);
   });
@@ -458,8 +428,7 @@ describe('brain registry', () => {
   it('tolerates a subdirectory under the index directory', () => {
     brain.setVaultPath(1, join(dir, 'personal'));
     brain.writeNote(1, 'Subsystems/A.md', note('the stdio bridge'), 'Manual edit');
-    // A directory legitimately has nlink > 1 — '.' plus its parent's entry for
-    // it — so the hard-link test must never be applied to one.
+    // Directories legitimately have nlink > 1.
     mkdirSync(join(indexDir('personal'), 'scratch'), { recursive: true });
 
     expect(brain.search(1, 'stdio').map((h) => h.notePath)).toEqual(['Subsystems/A.md']);
@@ -471,12 +440,9 @@ describe('brain registry', () => {
     brain.writeNote(1, 'Subsystems/Personal.md', note('personal stdio secret'), 'Manual edit');
     brain.closeAll();
     rmSync(indexDir('work'), { recursive: true, force: true });
-    // Not another .omnifex — an ordinary directory in the victim's note tree.
-    // Its entries are innocent, so only the containment check can object.
     symlinkSync(join(dir, 'personal', 'Subsystems'), indexDir('work'));
 
     expect(() => brain.open(2)).toThrow(VaultConflictError);
-    // Account 2's whole FTS database would otherwise be built in account 1's notes.
     expect(existsSync(join(dir, 'personal', 'Subsystems', 'index.db'))).toBe(false);
   });
 
@@ -497,8 +463,6 @@ describe('brain registry', () => {
     brain.setVaultPath(1, join(dir, 'real'));
     const first = brain.open(1);
 
-    // Same directory, different name, written straight into app_settings. Every
-    // inode is unchanged, so only the path half of the cache key notices.
     db.saveSetting(vaultSettingKey(1), join(dir, 'alias'));
 
     const second = brain.open(1);
@@ -511,9 +475,6 @@ describe('brain registry', () => {
     brain.writeNote(1, 'Subsystems/A.md', note('the stdio bridge'), 'Manual edit');
     const first = brain.open(1);
 
-    // A different directory at the same path, carrying the SAME index file, so
-    // only the root half of the identity changes. It has to: the handle's Vault
-    // resolved its real root once and checks every note path against that.
     renameSync(join(dir, 'personal'), join(dir, 'personal-old'));
     mkdirSync(join(dir, 'personal'), { recursive: true });
     renameSync(join(dir, 'personal-old', '.omnifex'), indexDir('personal'));
@@ -528,21 +489,11 @@ describe('brain registry', () => {
     rmSync(indexDb('personal'), { force: true });
 
     brain.writeNote(1, 'Subsystems/B.md', note('another stdio note'), 'Manual edit');
-    // A cached handle still holding the unlinked inode would swallow that write
-    // silently: the file would never come back and the note would be missing
-    // from the index for the life of the process.
     expect(existsSync(indexDb('personal'))).toBe(true);
     expect(brain.search(1, 'stdio').map((h) => h.notePath)).toEqual(['Subsystems/B.md']);
   });
 
   it('treats a whitespace-only stored path as unconfigured rather than scaffolding at cwd', () => {
-    // Bypasses setVaultPath() entirely — the same way a raw app_settings write
-    // (tests, or the dev-only raw-SQL channel) would. `db.saveSetting` is
-    // truthy and survives the `if (!path) return null` guard in open(), so
-    // only a read-side resolveVaultRoot() call catches it. open() returns null
-    // rather than throwing: an unusable stored value is treated the same as
-    // "no configured vault" for every other unconfigured-account case (e.g.
-    // search() already returns [] rather than throwing).
     db.saveSetting(vaultSettingKey(1), '   ');
     const cwd = process.cwd();
 
@@ -557,8 +508,6 @@ describe('brain registry', () => {
     brain.writeNote(1, 'Subsystems/A.md', note('the stdio bridge'), 'Manual edit');
     expect(brain.search(1, 'stdio').map((h) => h.notePath)).toEqual(['Subsystems/A.md']);
 
-    // Same path, different directory — a restore-from-backup, say. The cached
-    // index handle still points at the unlinked index.db.
     rmSync(join(dir, 'personal'), { recursive: true, force: true });
     mkdirSync(join(dir, 'personal'), { recursive: true });
 
@@ -613,7 +562,6 @@ describe('brain registry', () => {
     it('indexes notes that were written into the vault behind the service', () => {
       brain.setVaultPath(1, join(dir, 'preexisting'));
       const handle = brain.open(1)!;
-      // Simulate a vault populated in Obsidian: files on disk, index empty.
       handle.vault.writeNote('Notes/Outside.md', note('written elsewhere'));
       expect(brain.search(1, 'elsewhere')).toEqual([]);
 
@@ -749,7 +697,6 @@ describe('brain registry', () => {
     it('reports a stale index without rebuilding it', async () => {
       brain.setVaultPath(1, join(dir, 'stale-index'));
       const handle = brain.open(1)!;
-      // A vault populated in Obsidian: files on disk, index untouched.
       handle.vault.writeNote('Notes/Outside.md', note('written elsewhere'));
 
       const status = await brain.status(1);
@@ -789,8 +736,6 @@ describe('brain registry', () => {
     it('reports a conflict instead of throwing', async () => {
       const shared = join(dir, 'shared');
       brain.setVaultPath(1, shared);
-      // Write account 2's row directly: setVaultPath would reject the overlap,
-      // and the point of this test is the state where a conflict already exists.
       db.saveSetting(vaultSettingKey(2), shared);
 
       const status = await brain.status(2);
@@ -860,9 +805,6 @@ describe('brain registry', () => {
       const handle = svc.open(1);
       expect(handle).not.toBeNull();
 
-      // The point of the promise: after awaiting it, no git work is still in
-      // flight, so a caller (or a test's afterEach) can delete the directory
-      // without racing an untracked child process.
       await handle!.gitReady;
       expect(calls).toEqual([{ args: ['init', '-q'], cwd: handle!.root }]);
 
@@ -878,9 +820,6 @@ describe('brain registry', () => {
       svc.setVaultPath(1, join(dir, 'no-git-vault'));
 
       const handle = svc.open(1);
-      // Versioning is a safety net, not a dependency: a missing binary must
-      // not turn into an unhandled rejection at every call site that stores a
-      // handle without awaiting it.
       await expect(handle!.gitReady).resolves.toBeUndefined();
 
       svc.closeAll();
@@ -906,7 +845,6 @@ describe('translating sources', () => {
     body: '## Summary\n\ntranslated body\n',
   };
 
-  /** A source that produces finished notes with no model, like auto-memory. */
   function fakeTranslator(accountId: number, notes: TranslatedNote[]): BrainSource {
     return {
       id: 'fake-translate',
@@ -950,8 +888,6 @@ describe('translating sources', () => {
   });
 
   it('writes translated notes without an extractor at all', async () => {
-    // No extractor is configured: a translating source must not need one,
-    // which is the entire point of the seam.
     const brain = createBrainService(db, {
       execGit: stubExec,
       accounts: accountsStub,
@@ -1014,7 +950,6 @@ describe('translating sources', () => {
     const brain = createBrainService(db, {
       execGit: stubExec, accounts: accountsStub,
       sources: [fakeTranslator(1, [
-        // A path vault.writeNote rejects, beside a good one.
         { relPath: '../escape.md', note: NOTE },
         { relPath: 'Notes/good.md', note: NOTE },
       ])],
@@ -1029,7 +964,6 @@ describe('translating sources', () => {
   });
 
   describe('enqueueProjectSources', () => {
-    /** A source whose items use the auto-memory key shape. */
     function memoryLike(keys: string[]): BrainSource {
       return {
         id: 'auto-memory',
@@ -1042,7 +976,6 @@ describe('translating sources', () => {
       };
     }
 
-    /** A source whose items use the repo-artifact key shape. */
     function artifactLike(keys: string[]): BrainSource {
       return {
         id: 'repo',
@@ -1114,8 +1047,6 @@ describe('translating sources', () => {
 
       expect(await brain.enqueueProjectSources(1, '/Users/dev/repo')).toBe(1);
       await brain.indexSource(1, '-Users-dev-repo/a.md');
-      // The whole point of the close-time trigger being cheap: the ordinary
-      // case is a directory walk that queues nothing.
       expect(await brain.enqueueProjectSources(1, '/Users/dev/repo')).toBe(0);
       brain.closeAll();
     });
@@ -1137,10 +1068,6 @@ describe('translating sources', () => {
     });
   });
 
-  /**
-   * A source the admission gate always refuses — the "fewer than 2 prompts"
-   * shape, which is most of what a user sees sitting un-actioned in Sources.
-   */
   function rejectedExtractor(accountId: number, itemKey: string): BrainSource {
     return {
       ...fakeExtractor(accountId, itemKey),
@@ -1149,12 +1076,6 @@ describe('translating sources', () => {
   }
 
   describe('indexing past the admission gate', () => {
-    /**
-     * The gate is a COST policy for unattended indexing, not a verdict on what
-     * the user is allowed to keep. Pressing Index on a short session used to
-     * record a skip and write nothing, so the row stayed exactly as actionable
-     * as before the press — indistinguishable from the button being broken.
-     */
     it('indexes an item the gate refuses when the caller forces it', async () => {
       const brain = createBrainService(db, {
         execGit: stubExec, accounts: accountsStub,
@@ -1168,7 +1089,6 @@ describe('translating sources', () => {
 
       const forced = await brain.indexSource(1, 'short-session', { force: true });
       expect(forced.skipped).toBe(false);
-      // Settled afterwards, which is what takes it out of the actionable set.
       expect((await brain.listSources(1))[0]).toMatchObject({
         status: 'indexed', changed: false,
       });
@@ -1188,11 +1108,6 @@ describe('translating sources', () => {
       brain.closeAll();
     });
 
-    /**
-     * The gate still governs UNATTENDED work. Forcing is a thing a person does
-     * to one row on purpose; a sweep that ignored the gate would index every
-     * abandoned tab in the user's history and bill them for it.
-     */
     it('leaves the gate in force for the periodic sweep', async () => {
       const brain = createBrainService(db, {
         execGit: stubExec, accounts: accountsStub,
@@ -1207,7 +1122,6 @@ describe('translating sources', () => {
   });
 
   it('backfills translating and extracting sources together', async () => {
-    // Both kinds in one queue: the worker must not care which it claims.
     const brain = createBrainService(db, {
       execGit: stubExec,
       accounts: accountsStub,

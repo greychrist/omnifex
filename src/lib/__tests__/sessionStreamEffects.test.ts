@@ -151,11 +151,8 @@ describe('runStreamEffect', () => {
     vi.useRealTimers();
   });
 
-  // The drain is now triggered from more than one place (a `result` row AND a
-  // compact_boundary), so it has to be safe to fire mid-turn. Dequeuing and
-  // letting handleSendPrompt re-enqueue would push the head to the BACK of the
-  // queue — which is exactly what the post-compact directive's front-of-queue
-  // placement exists to prevent.
+  // The drain fires from `result` and from compact_boundary, so it must be safe
+  // mid-turn; re-enqueueing would push the head to the back.
   it('processQueuedPrompt leaves the queue untouched while a turn is in flight', () => {
     vi.useFakeTimers();
     const handleSendPrompt = vi.fn();
@@ -177,10 +174,7 @@ describe('runStreamEffect', () => {
     vi.useRealTimers();
   });
 
-  // Work session 3445e547: the CLI emitted the turn's `result` BEFORE the
-  // compact_boundary, so the directive was queued after the only drain trigger
-  // had already fired and sat there forever. The boundary now drains too, and
-  // by then the turn is over — so the directive must actually go out.
+  // The CLI can emit `result` before compact_boundary.
   it('processQueuedPrompt drains a directive queued after the turn ended', () => {
     vi.useFakeTimers();
     const handleSendPrompt = vi.fn();
@@ -200,8 +194,6 @@ describe('runStreamEffect', () => {
     vi.useRealTimers();
   });
 
-  // A queued prompt open for editing must not go out as its old text. The
-  // whole queue waits behind it, so order is preserved.
   it('processQueuedPrompt holds the queue while its head is being edited', () => {
     vi.useFakeTimers();
     const handleSendPrompt = vi.fn();
@@ -236,8 +228,6 @@ describe('runStreamEffect', () => {
     vi.useRealTimers();
   });
 
-  // The turn can end while the user is editing; the drain it would have
-  // triggered was skipped, so finishing the edit has to send it.
   it('drainQueuedPrompt sends the head once the session is idle and nothing is held', () => {
     const handleSendPrompt = vi.fn();
     const setQueuedPrompts = vi.fn();
@@ -254,8 +244,6 @@ describe('runStreamEffect', () => {
     expect(setQueuedPrompts).toHaveBeenCalledWith([]);
   });
 
-  // Stop holds the queue instead of discarding it: the user decides what
-  // goes next, so the next idle turn must not send it on its own.
   it('processQueuedPrompt sends nothing while the queue is held after a Stop', () => {
     vi.useFakeTimers();
     const handleSendPrompt = vi.fn();
@@ -314,8 +302,6 @@ describe('runStreamEffect', () => {
       ]);
     });
 
-    // The queue panel keys, removes and edits items by id; an id-less
-    // directive could be none of those, and ✕ on it removed every id-less row.
     it('gives the directive an id like any other queued prompt', () => {
       const queuedPromptsRef = { current: [] as { id: string; prompt: string; model: string }[] };
       runStreamEffect({ kind: 'queuePostCompactDirective' }, makeDeps({ queuedPromptsRef }));
@@ -324,9 +310,6 @@ describe('runStreamEffect', () => {
     });
 
     it('lands ahead of prompts the user queued before the compaction', () => {
-      // The directive exists to correct a lossy summary *before* any further
-      // work runs against it. Appending would let the user's next prompt be
-      // answered from exactly the degraded context this is meant to repair.
       const setQueuedPrompts = vi.fn();
       const queuedPromptsRef = { current: [{ id: 'q7', prompt: 'ship it', model: 'opus' }] };
       const deps = makeDeps({ setQueuedPrompts, queuedPromptsRef });

@@ -8,10 +8,6 @@ const MTOK = 1_000_000;
 const perM = (rate: number) => Math.round(rate * MTOK * 100) / 100;
 
 describe('resolveRates — Opus 5', () => {
-  // Opus 5 shipped at Opus 4.8's pricing. Before this was fixed, `claude-opus-5`
-  // matched none of the `opus-4-x` rows and fell through to the bare `opus`
-  // catch-all at 15/75 — inflating every cost figure threefold on what is now
-  // the default Opus model.
   it('prices claude-opus-5 at $5/$25, not the legacy opus catch-all', () => {
     const { rates, estimated } = resolveRates('claude-opus-5');
     expect(perM(rates.input)).toBe(5);
@@ -92,8 +88,6 @@ describe('computeMessageCost', () => {
     expect(cost.outputUsd).toBeCloseTo(0.05, 6);
   });
 
-  // A user-set override is an explicit statement about rates; fast mode must
-  // not silently double it.
   it('lets an explicit override win over the fast-mode rate', () => {
     const cost = computeMessageCost(
       'claude-opus-5',
@@ -130,10 +124,7 @@ describe('totalInputTokens', () => {
 });
 
 describe('resolveRates — Fable 5.1', () => {
-  // Fable 5.1 (2.1.257) ships at Fable 5's $10/$50 but breaks the standard
-  // cache formula: reads are $0.25/MTok, not the 0.1x-input $1.00 that every
-  // other model gets. Cache reads dominate token volume in long sessions, so
-  // pricing it by the multiplier overstates real Fable 5.1 spend 4x.
+  // Fable 5.1 (2.1.257): $10/$50, but cache reads are $0.25/MTok, not 0.1x input.
   it('prices claude-fable-5-1 cache reads at $0.25/MTok, not 0.1x input', () => {
     const { rates, estimated } = resolveRates('claude-fable-5-1');
     expect(perM(rates.input)).toBe(10);
@@ -161,9 +152,8 @@ describe('resolveRates — Fable 5.1', () => {
 });
 
 describe('resolveRates — Fable 5.2', () => {
-  // Fable 5.2 (2.1.321) is cheaper than Fable 5/5.1: $8/$40 with $0.20/MTok
-  // reads. Without its own row `claude-fable-5-2` substring-matches `fable-5`
-  // and prices at $10/$50 with $1.00 reads — 5x on the dominant token class.
+  // Fable 5.2 (2.1.321): $8/$40 with $0.20/MTok reads; without its own row it
+  // substring-matches `fable-5`.
   it('prices claude-fable-5-2 at $8/$40 with $0.20 cache reads, not as Fable 5', () => {
     const { rates, estimated } = resolveRates('claude-fable-5-2');
     expect(perM(rates.input)).toBe(8);
@@ -184,9 +174,8 @@ describe('resolveRates — Fable 5.2', () => {
 });
 
 describe('resolvePricing — Sonnet 5.5', () => {
-  // Sonnet 5.5 (2.1.284) launched at Sonnet 5's $2/$10 with $0.20 reads, so
-  // the `sonnet-5` substring prices it correctly — but also labelled it
-  // "Sonnet 5", folding both into one Cost Report series.
+  // Sonnet 5.5 (2.1.284) launched at Sonnet 5's rates; the `sonnet-5` substring
+  // also labelled it "Sonnet 5".
   it('labels claude-sonnet-5-5 as Sonnet 5.5, in its own color', () => {
     const { row } = resolvePricing('claude-sonnet-5-5', '2026-09-28');
     expect(row.label).toBe('Sonnet 5.5');
@@ -203,10 +192,8 @@ describe('resolvePricing — Sonnet 5.5', () => {
 });
 
 describe('resolveRates — Haiku 5.5', () => {
-  // Haiku 5.5 (2.1.293, CLI cost table `haiku_55`) is $0.10/$0.50 with the
-  // standard cache multipliers and a native 1M window. Without its own row
-  // `claude-haiku-5-5` falls to the legacy `haiku` catch-all: $0.25/$1.25
-  // (2.5x over) and a 200k window.
+  // Haiku 5.5 (2.1.293, CLI cost table `haiku_55`): $0.10/$0.50, standard cache
+  // multipliers, native 1M window.
   it('prices claude-haiku-5-5 at $0.10/$0.50, not as legacy Haiku', () => {
     const { rates, estimated } = resolveRates('claude-haiku-5-5');
     expect(perM(rates.input)).toBeCloseTo(0.1, 9);
@@ -228,9 +215,8 @@ describe('resolveRates — Haiku 5.5', () => {
 });
 
 describe('resolveRates — Sonnet 5.5 cache reads', () => {
-  // CLI 2.1.296 moved Sonnet 5.5 to `tier_2_10_cache_read_0_10`: reads at
-  // $0.10/MTok (0.05x input) instead of $0.20. Applied from 2026-10-09, not
-  // retroactively; Sonnet 5 keeps the 0.1x formula.
+  // CLI 2.1.296 moved Sonnet 5.5's cache reads to $0.10/MTok (0.05x input), from
+  // 2026-10-09, not retroactively.
   it('prices reads at $0.10 from 2026-10-09 with input/output still $2/$10', () => {
     const { rates, estimated } = resolveRates('claude-sonnet-5-5', undefined, { date: '2026-10-09' });
     expect(perM(rates.input)).toBe(2);
@@ -249,9 +235,7 @@ describe('resolveRates — Sonnet 5.5 cache reads', () => {
 });
 
 describe('resolveRates — Opus 5.5', () => {
-  // Opus 5.5 (2.1.280) is CHEAPER than Opus 5 at $4/$20, with cache reads at
-  // $0.20/MTok (0.05x input). Without its own row `claude-opus-5-5` matches
-  // the `opus-5` substring and prices at $5/$25 with $0.50 reads.
+  // Opus 5.5 (2.1.280): $4/$20, cache reads $0.20/MTok (0.05x input).
   it('prices claude-opus-5-5 at $4/$20 with $0.20 cache reads, not as Opus 5', () => {
     const { rates, estimated } = resolveRates('claude-opus-5-5');
     expect(perM(rates.input)).toBe(4);

@@ -4,8 +4,6 @@ import { renderHook, act } from '@testing-library/react';
 import React, { useRef, StrictMode } from 'react';
 import type { JsonlNode } from '@/types/jsonl';
 
-// ── helpers for constructing minimal JsonlNode shapes ────────────────────────
-
 function makeUserPrompt(overrides: Record<string, unknown> = {}): JsonlNode {
   return {
     kind: 'user',
@@ -48,17 +46,12 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-// onEvent listeners get attached on attachStreamListeners. Stash the
-// payload callbacks per channel so individual tests can fire them and
-// assert downstream behavior.
 let eventListeners: Record<string, (payload: unknown) => void>;
 beforeEach(() => {
   eventListeners = {};
   (window as any).electronAPI = {
     onEvent: vi.fn((channel: string, cb: (payload: unknown) => void) => {
       eventListeners[channel] = cb;
-      // unsubscribe — clear the recorded listener so a subsequent
-      // attachStreamListeners can reattach a fresh one.
       return () => {
         // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- bounded by the test's own channel set, not user input.
         delete eventListeners[channel];
@@ -141,9 +134,6 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       undefined, // agent — harness doesn't pass one; lifecycle forwards undefined
     );
     expect(result.current.persistentSessionRef.current).toBe(true);
-    // Listeners attached on the three agent-* tab-scoped channels plus
-    // claude-output-extra (closure carriers), session-status / session-turn
-    // (the two axes main owns) and session-init (sessionId pinned at spawn).
     expect(Object.keys(eventListeners).sort()).toEqual([
       'agent-complete:tab-life',
       'agent-error:tab-life',
@@ -153,8 +143,6 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
       'session-status:tab-life',
       'session-turn:tab-life',
     ]);
-    // No placeholder init is rendered — the chat stays empty until the
-    // CLI iterator yields its real system:init via agent-output.
     expect(result.current.messagesRef.current).toHaveLength(0);
   });
 
@@ -167,7 +155,6 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
   });
 
   it('debounces concurrent calls — two rapid startPersistentSession invocations spawn only one session', async () => {
-    // Pending promise so both calls overlap on the await rather than serializing.
     let resolveStart: (v: string) => void = () => {};
     (api.startSession as any).mockImplementationOnce(
       () => new Promise<string>((r) => { resolveStart = r; }),
@@ -176,8 +163,6 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
     const { result } = renderHook(harness());
 
     await act(async () => {
-      // Fire both before either resolves — simulates StrictMode double-mount
-      // or a rapid re-render firing the auto-start effect twice.
       const a = result.current.lifecycle.startPersistentSession();
       const b = result.current.lifecycle.startPersistentSession();
       resolveStart('uuid-1');
@@ -189,14 +174,11 @@ describe('useSessionLifecycle — startPersistentSession happy path', () => {
 
   it('falls back to api.resolveAccountForProject when accountResolution lacks a config_dir', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
-    // Resolver now returns a per-engine ResolvePair. With no explicit agent on
-    // the hook, the fallback prefers the Claude slot's account.config_dir.
     (api.resolveAccountForProject as any).mockResolvedValueOnce({
       claude: { account: { config_dir: '/fallback-cfg' }, matchType: 'path_rule', matchDetail: '/repo' },
       codex: null,
     });
 
-    // Custom harness with empty accountResolution.
     const useLocalHarness = () => {
       const persistentSessionRef = useRef(false);
       const messagesRef = useRef<JsonlNode[]>([]);
@@ -275,8 +257,6 @@ describe('useSessionLifecycle — session died with the daemon', () => {
   it('clears the stale live-session flag and rebinds when the shim reports the session died', async () => {
     (window as any).__omnifexRemote = { client: {} };
     (api.sessionRebind as any).mockResolvedValueOnce(true);
-    // initialPersistent: the tab still believes it holds a live handle — no
-    // agent-complete ever arrived, the daemon just went away.
     const { result } = renderHook(harness({ initialPersistent: true }));
 
     expect(Object.keys(eventListeners)).toContain('remote-session-died:tab-life');
@@ -318,7 +298,6 @@ describe('useSessionLifecycle — rebindPersistentSession', () => {
     (api.sessionGetHealth as any).mockResolvedValueOnce({
       alive: true, sessionId: 'uuid-warm', sessionStatus: 'started',
     });
-    // Health reports no turn, no tasks/subagents → 'idle'.
     const { result } = renderHook(harness());
     let rebound = false;
     await act(async () => { rebound = await result.current.lifecycle.rebindPersistentSession(); });
@@ -327,9 +306,6 @@ describe('useSessionLifecycle — rebindPersistentSession', () => {
     expect(rebound).toBe(true);
     expect(result.current.persistentSessionRef.current).toBe(true);
     expect(result.current.lifecycle.sessionStatus).toBe('started');
-    // conversationStatus is now derived from messages (empty) → 'idle'.
-    // Note: the payload's `conversationStatus: 'idle'` is coincidentally the same,
-    // but derivation is the source — not the IPC payload.
     expect(result.current.lifecycle.conversationStatus).toBe('idle');
     expect(Object.keys(eventListeners)).toContain('agent-output:tab-life');
     expect(Object.keys(eventListeners)).toContain('session-status:tab-life');
@@ -379,36 +355,25 @@ describe('useSessionLifecycle — event listener behavior', () => {
     act(() => { eventListeners['agent-error:tab-life']('proceeding without it'); });
     expect(errorSpy).not.toHaveBeenCalled();
 
-    // Genuinely unexpected stderr DOES log.
     act(() => { eventListeners['agent-error:tab-life']('SIGSEGV'); });
     expect(errorSpy).toHaveBeenCalledWith('[ClaudeCodeSession] stderr:', 'SIGSEGV');
     errorSpy.mockRestore();
   });
 
   it('agent-complete clears loading + persistent flag AND disposes all session listeners', async () => {
-    // agent-complete is main's authoritative "this session is over" signal.
-    // We use it to dispose the per-session IPC listeners so closed tabs don't
-    // leak preload-world ipcRenderer subscriptions. In production, main emits
-    // session-status:stopped *before* agent-complete (see runtime.ts onExit
-    // ordering), so the renderer has already reflected the stopped state by
-    // the time the disposal runs.
+    // The daemon emits session-status:stopped before agent-complete.
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const { result } = renderHook(harness());
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
     expect(result.current.persistentSessionRef.current).toBe(true);
 
-    // Main emits stopped status first; renderer reflects it.
     act(() => { eventListeners['session-status:tab-life']({ sessionStatus: 'stopped' }); });
     expect(result.current.lifecycle.sessionStatus).toBe('stopped');
     expect(result.current.lifecycle.conversationStatus).toBeNull();
 
-    // Then main emits claude-complete; renderer clears state AND disposes
-    // its listeners.
     act(() => { eventListeners['agent-complete:tab-life'](undefined); });
     expect(result.current.lifecycle.turn.status).toBe('idle');
     expect(result.current.persistentSessionRef.current).toBe(false);
-    // The unsubscribe functions registered with electronAPI.onEvent removed
-    // their channel entries from the test's eventListeners map.
     expect(eventListeners['agent-output:tab-life']).toBeUndefined();
     expect(eventListeners['session-status:tab-life']).toBeUndefined();
     expect(eventListeners['session-init:tab-life']).toBeUndefined();
@@ -417,10 +382,6 @@ describe('useSessionLifecycle — event listener behavior', () => {
 
 describe('useSessionLifecycle — unmount cleanup', () => {
   it('does NOT call api.stopSession on unmount, even when a session was running', async () => {
-    // Tear-down responsibility moved to TabContext.removeTab. React unmount
-    // alone (Cmd+R reload, StrictMode double-invoke, tab-visibility flips)
-    // must not kill a live main-process session — otherwise rebind has
-    // nothing to claim. Only explicit tab close should stop sessions.
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const { result, unmount } = renderHook(harness());
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
@@ -440,10 +401,8 @@ describe('useSessionLifecycle — unmount cleanup', () => {
 
 describe('useSessionLifecycle — session-init event', () => {
   it('invokes onSessionInit with the pinned sessionId when main emits session-init', async () => {
-    // The CLI engine pins a UUID at spawn and main forwards it on
-    // `session-init:<tabId>` before any stream message arrives. This is
-    // how claudeSessionId / extractedSessionInfo get seeded immediately,
-    // unlocking UI gated on them (mode toggle, model picker, persistence).
+    // The CLI engine pins a UUID at spawn, forwarded on `session-init:<tabId>`
+    // before any stream message.
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const onSessionInit = vi.fn();
     const { result } = renderHook(harness({ onSessionInit }));
@@ -472,8 +431,6 @@ describe('useSessionLifecycle — session-init event', () => {
 
 describe('useSessionLifecycle — the turn axis is the session\'s, mirrored', () => {
   function truncatedTranscript(): JsonlNode[] {
-    // What a `--resume` of a session whose process died mid-turn loads: a
-    // prompt, an assistant tool_use, and nothing closing it.
     return [makeUserPrompt(), makeAssistantMsg('tool_use')];
   }
 
@@ -513,9 +470,6 @@ describe('useSessionLifecycle — the turn axis is the session\'s, mirrored', ()
 });
 
 describe('useSessionLifecycle — launch permission mode', () => {
-  // The CLI allows Bypass mid-session only if it was spawned in Bypass, so
-  // the mode a session was LAUNCHED with is a fact of its own, distinct from
-  // the mode it is in now.
   it('remembers the mode the session was started with', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const { result } = renderHook(harness());
@@ -524,8 +478,6 @@ describe('useSessionLifecycle — launch permission mode', () => {
     expect(result.current.lifecycle.launchPermissionMode).toBe('default');
   });
 
-  // "Restart in Bypass" needs the new process spawned in Bypass even though
-  // the picker's state has not re-rendered into this closure yet.
   it('starts under an overriding mode when given one', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const { result } = renderHook(harness());
@@ -536,7 +488,6 @@ describe('useSessionLifecycle — launch permission mode', () => {
     expect(result.current.lifecycle.launchPermissionMode).toBe('bypassPermissions');
   });
 
-  // After a reload the renderer did not start the session; main knows.
   it('learns the launch mode from sessionGetHealth on rebind', async () => {
     (api.sessionRebind as any).mockResolvedValueOnce(true);
     (api.sessionGetHealth as any).mockResolvedValueOnce({
@@ -554,7 +505,6 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
   it('defaults to sessionStatus=stopped, conversationStatus=null before any activity', () => {
     const { result } = renderHook(harness());
     expect(result.current.lifecycle.sessionStatus).toBe('stopped');
-    // null when sessionStatus !== 'started' regardless of messages.
     expect(result.current.lifecycle.conversationStatus).toBeNull();
   });
 
@@ -568,7 +518,6 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     let p: Promise<void>;
     act(() => { p = result.current.lifecycle.startPersistentSession(); });
     expect(result.current.lifecycle.sessionStatus).toBe('starting');
-    // Still null — derivation gates on sessionStatus === 'started'.
     expect(result.current.lifecycle.conversationStatus).toBeNull();
 
     await act(async () => { resolveStart(); await p!; });
@@ -576,12 +525,10 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
 
   it('derives conversationStatus="idle" when session is started and messages are empty', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
-    // No messages, tasks, or subagents → idle.
     const { result } = renderHook(harness({ messages: [], tasks: [], subagents: [] }));
     await act(async () => { await result.current.lifecycle.startPersistentSession(); });
 
     act(() => {
-      // Only sessionStatus in the payload — conversationStatus field is discarded.
       eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
     expect(result.current.lifecycle.sessionStatus).toBe('started');
@@ -589,8 +536,6 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
   });
 
   it('reports conversationStatus="running" only when the session says its turn is running', async () => {
-    // A user prompt with no reply in the transcript is NOT enough — the
-    // transcript never decides the turn. The session does.
     const messages = [makeUserPrompt()];
     const { result } = renderHook(harness({ messages, tasks: [], subagents: [] }));
     (api.startSession as any).mockResolvedValueOnce(undefined);
@@ -602,7 +547,6 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
   });
 
   it('derives conversationStatus="idle" when last assistant message has a terminal stop_reason', async () => {
-    // user prompt + assistant with stop_reason='end_turn' → not waiting → idle.
     const messages = [makeUserPrompt(), makeAssistantMsg('end_turn')];
     const { result } = renderHook(harness({ messages, tasks: [], subagents: [] }));
     (api.startSession as any).mockResolvedValueOnce(undefined);
@@ -622,7 +566,6 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     act(() => {
       eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
-    // hasOpenTasks returns true for status !== 'completed' → running.
     expect(result.current.lifecycle.conversationStatus).toBe('running');
   });
 
@@ -635,14 +578,12 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     act(() => {
       eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
-    // hasOpenSubagents: status !== 'completed' → running.
     expect(result.current.lifecycle.conversationStatus).toBe('running');
   });
 
   it('conversationStatus is null when sessionStatus is not "started", regardless of messages', async () => {
     const messages = [makeUserPrompt()];
     const { result } = renderHook(harness({ messages }));
-    // Still stopped — derivation must gate on sessionStatus.
     expect(result.current.lifecycle.conversationStatus).toBeNull();
   });
 
@@ -658,8 +599,6 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     });
     expect(result.current.lifecycle.conversationStatus).toBe('running');
 
-    // Session transitions to error — the rollup gates to null and the turn
-    // that was running belongs to the process that just died.
     act(() => {
       eventListeners['session-status:tab-life']({ sessionStatus: 'error' });
     });
@@ -677,11 +616,8 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
       eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
     expect(result.current.lifecycle.sessionStatus).toBe('started');
-    // With no messages, derivation yields 'idle'.
     expect(result.current.lifecycle.conversationStatus).toBe('idle');
 
-    // Malformed payloads are ignored — sessionStatus stays 'started' and
-    // derivation continues to read from messages (still empty → idle).
     act(() => { eventListeners['session-status:tab-life'](undefined); });
     act(() => { eventListeners['session-status:tab-life']({}); });
     expect(result.current.lifecycle.sessionStatus).toBe('started');
@@ -700,13 +636,8 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
   });
 
   it('user message with a parent_tool_use_id is forwarded subagent traffic and does not drive the turn axis', async () => {
-    // Contract change with --forward-subagent-text (CLI ≥2.1.211): a
-    // non-empty parent_tool_use_id on a user/assistant envelope marks
-    // live-forwarded subagent traffic. The old guard here assumed resumed
-    // main-chain prompts "may carry" the field for conversation-tree
-    // chaining — that shape does not exist on the wire (0 occurrences
-    // across 110 persisted transcripts, and live main-chain lines carry
-    // null; verified 2026-07-22 on CLI 2.1.217/2.1.218).
+    // CLI >= 2.1.211: a non-empty parent_tool_use_id marks forwarded subagent
+    // traffic.
     (api.startSession as any).mockResolvedValueOnce(undefined);
     const messages = [
       makeUserPrompt({ parent_tool_use_id: 'toolu_abc123', message: { role: 'user', content: 'hello' } }),
@@ -716,21 +647,12 @@ describe('useSessionLifecycle — sessionStatus + conversationStatus', () => {
     act(() => {
       eventListeners['session-status:tab-life']({ sessionStatus: 'started' });
     });
-    // A lone forwarded subagent prompt is not a main-chain prompt awaiting a
-    // reply — the parent turn axis stays idle (the running subagent row is
-    // what keeps the session in-flight, via hasOpenSubagents).
     expect(result.current.lifecycle.conversationStatus).toBe('idle');
   });
 
 });
 
 describe('useSessionLifecycle — StrictMode-safe', () => {
-  // The hook's cleanup no longer calls api.stopSession — tear-down is
-  // explicit via TabContext.removeTab on tab close. This test pins that
-  // contract: even under StrictMode's setup → cleanup → setup double-invoke,
-  // a session that was running stays running. Without that invariant the
-  // CLI query gets torn down between the two setups and the new session
-  // sits stuck at sessionStatus='starting'.
   it('does not stop the session under StrictMode\'s simulated unmount/remount', async () => {
     renderHook(harness({ initialPersistent: true }), {
       wrapper: ({ children }: { children: React.ReactNode }) => (
@@ -743,10 +665,8 @@ describe('useSessionLifecycle — StrictMode-safe', () => {
 });
 
 describe('useSessionLifecycle — live permission mode', () => {
-  // A resume spawns from the daemon's persisted options, not the picker. A
-  // transcript whose only prompt was a slash command carries no
-  // permissionMode, so the picker fell back to its hardcoded acceptEdits
-  // while the CLI ran in auto (session 347d496a, 2026-11-16).
+  // A transcript whose only prompt was a slash command carries no
+  // permissionMode.
   it('adopts the daemon\'s live mode after a start', async () => {
     (api.startSession as any).mockResolvedValueOnce(undefined);
     (api.sessionGetHealth as any).mockResolvedValueOnce({

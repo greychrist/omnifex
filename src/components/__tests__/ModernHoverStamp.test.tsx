@@ -27,7 +27,6 @@ const hoverRow = (container: HTMLElement) => container.querySelector('[data-mess
 const timeText = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 
 describe('Modern hover row', () => {
-  // The date as well as the time, first in the row, before Copy and the rest.
   for (const [name, make] of [['prompt', prompt], ['answer', answer]] as const) {
     it(`leads the ${name}'s hover row with the date and the time`, () => {
       const { container } = render(<ModernTranscriptItem item={make(at)} live={false} ctx={ctx} />);

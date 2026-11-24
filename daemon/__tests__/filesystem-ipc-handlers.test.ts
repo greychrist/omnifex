@@ -1,11 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { getHandlerMap } from '../ipc/handlers';
 
-/**
- * The `create_directory` hop between the renderer and filesystem.ts: param
- * normalisation and the missing-service error. The service's own tests call
- * it directly, so nothing else exercises this layer.
- */
 describe('create_directory handler', () => {
   const filesystem = { createDirectory: vi.fn(async (p: string) => p) };
   const handlers = getHandlerMap({ filesystem } as never);

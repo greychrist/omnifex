@@ -19,7 +19,6 @@ describe('useDebounce', () => {
     );
 
     rerender({ value: 'b' });
-    // Pre-delay: still the old value.
     expect(result.current).toBe('a');
 
     act(() => { vi.advanceTimersByTime(199); });
@@ -55,9 +54,7 @@ describe('useDebounce', () => {
 
     rerender({ value: 'b' });
     unmount();
-    // Advancing past the delay must NOT throw a "setState on unmounted" warning;
-    // the cleanup clears the timeout. We can also assert the captured result
-    // never updated past 'a' (renderHook freezes after unmount).
+    // renderHook freezes the result after unmount.
     act(() => { vi.advanceTimersByTime(500); });
     expect(result.current).toBe('a');
   });
@@ -86,7 +83,6 @@ describe('useDebouncedCallback', () => {
     act(() => { vi.advanceTimersByTime(50); });
     result.current('c');
 
-    // Still no fire — the third call reset the timer.
     expect(fn).not.toHaveBeenCalled();
 
     act(() => { vi.advanceTimersByTime(100); });
@@ -105,11 +101,9 @@ describe('useDebouncedCallback', () => {
       },
     );
 
-    // Schedule a call with the first callback, then swap it before the timer fires.
     result.current();
     rerender({ cb: () => { captured = 'second'; } });
     act(() => { vi.advanceTimersByTime(100); });
-    // The hook reads callbackRef.current at fire time — the swap wins.
     expect(captured).toBe('second');
   });
 

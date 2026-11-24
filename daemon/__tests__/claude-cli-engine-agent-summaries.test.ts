@@ -1,11 +1,4 @@
 // @vitest-environment node
-//
-// Sessions ask the CLI for its own subagent progress summaries: with
-// `agentProgressSummaries` set in `initialize`, each running agent's
-// task_progress frame carries a `summary` ("Reading runAgent.ts") written by
-// the CLI about every 30 s. It replaced OmniFex's bundled progress mod, which
-// asked every agent to report through a tool call (2026-11-24 trial: the tool
-// was skipped by most agents and cost up to 57% of one agent's spend).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
@@ -40,8 +33,6 @@ describe('ClaudeCliEngine — agent progress summaries', () => {
     const sent = lines();
     const i = sent.findIndex((l) => l.type === 'control_request' && l.request?.subtype === 'initialize');
     expect(i).toBeGreaterThanOrEqual(0);
-    // Only the one option: everything else in initialize is one-time session
-    // setup that OmniFex gives on argv instead.
     expect(sent[i].request).toEqual({ subtype: 'initialize', agentProgressSummaries: true });
     expect(i).toBeLessThan(sent.findIndex((l) => l.type === 'user'));
   });

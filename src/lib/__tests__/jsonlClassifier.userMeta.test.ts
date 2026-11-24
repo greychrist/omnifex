@@ -78,9 +78,6 @@ describe('classifyUser — userKind discrimination', () => {
 describe('classifyJsonlLine — local-command envelope', () => {
   const TS = '2026-09-16T15:05:25.269Z';
 
-  // Both halves persist as plain `user` records with no isMeta, so they used
-  // to classify as 'prompt' — a question the model never sees and will never
-  // answer, which held the turn axis open forever (work session 3445e547).
   it('classifies a slash-command echo as local-command', () => {
     const node = classifyJsonlLine({
       type: 'user',
@@ -114,8 +111,7 @@ describe('classifyJsonlLine — local-command envelope', () => {
     if (node?.kind === 'user') expect(node.userKind).toBe('prompt');
   });
 
-  // The live stream hands the same record over as content blocks rather than
-  // a bare string; one shape must not classify differently from the other.
+  // The live stream hands the record over as content blocks, not a bare string.
   it('detects the envelope in block-array content too', () => {
     const node = classifyJsonlLine({
       type: 'user',
@@ -129,7 +125,7 @@ describe('classifyJsonlLine — local-command envelope', () => {
     if (node?.kind === 'user') expect(node.userKind).toBe('local-command');
   });
 
-  // isMeta still wins: the caveat the CLI writes ahead of the echo is meta.
+  // The caveat the CLI writes ahead of the echo is meta.
   it('leaves the local-command caveat as meta-other', () => {
     const node = classifyJsonlLine({
       type: 'user',
@@ -152,11 +148,8 @@ describe('classifyJsonlLine — local-command envelope', () => {
   });
 });
 
-// A skill or custom command is expanded into a prompt the model answers, so its
-// echo starts a turn exactly like typed text. Across 317 real command echoes
-// (2026-09-28) every one the CLI followed with a skill body was message-first,
-// and every built-in was name-first; newer CLIs also stamp `turnOrigin` on the
-// skill echoes and never on the built-ins.
+// Skill and custom command echoes are message-first and start a turn;
+// built-ins are name-first. Newer CLIs stamp `turnOrigin` on skill echoes only.
 describe('classifyJsonlLine — skill and custom command echoes', () => {
   const TS = '2026-09-28T15:31:47.000Z';
 

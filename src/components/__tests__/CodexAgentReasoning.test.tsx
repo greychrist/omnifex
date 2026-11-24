@@ -82,9 +82,6 @@ describe("AgentReasoningItem", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button"));
-    // Summary is now visible in two places: the header preview is hidden
-    // when expanded, but the <pre> body shows it as the fallback content.
-    // getAllByText guards against either rendering choice.
     expect(screen.getAllByText("only-have-summary").length).toBeGreaterThanOrEqual(1);
   });
 

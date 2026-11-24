@@ -6,7 +6,6 @@ describe('proxy service', () => {
   let db: Database;
   let proxy: ProxyService;
 
-  // Save and restore env vars around each test
   let savedEnv: Record<string, string | undefined>;
 
   beforeEach(() => {
@@ -19,14 +18,12 @@ describe('proxy service', () => {
       NO_PROXY: process.env.NO_PROXY,
     };
 
-    // Reset env
     delete process.env.HTTP_PROXY;
     delete process.env.HTTPS_PROXY;
     delete process.env.NO_PROXY;
   });
 
   afterEach(() => {
-    // Restore env
     for (const [key, val] of Object.entries(savedEnv)) {
       if (val === undefined) {
         // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- intentional removal of one property from a copied object; rest-spread alternative is more allocation-heavy.
@@ -75,14 +72,12 @@ describe('proxy service', () => {
   });
 
   it('saveSettings with enabled=false clears process.env variables', () => {
-    // First enable it
     proxy.saveSettings({
       enabled: true,
       http_proxy: 'http://proxy.local:3128',
     });
     expect(process.env.HTTP_PROXY).toBe('http://proxy.local:3128');
 
-    // Now disable
     proxy.saveSettings({
       enabled: false,
       http_proxy: 'http://proxy.local:3128',

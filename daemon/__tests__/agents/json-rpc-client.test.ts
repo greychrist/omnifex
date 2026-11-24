@@ -19,7 +19,6 @@ describe('json-rpc-client', () => {
 
     const pending = client.request<{ ok: boolean }>('foo', { x: 1 });
 
-    // Allow the microtask that performs the write to flush.
     await new Promise((r) => setImmediate(r));
 
     expect(writes.length).toBe(1);
@@ -38,7 +37,6 @@ describe('json-rpc-client', () => {
 
     const p1 = client.request('first');
     const p2 = client.request('second');
-    // Avoid unhandled rejection warning for the first promise.
     p1.catch(() => {});
 
     await new Promise((r) => setImmediate(r));
@@ -64,7 +62,6 @@ describe('json-rpc-client', () => {
 
     await new Promise((r) => setImmediate(r));
 
-    // Push response for B (id 2) first, then A (id 1).
     readable.write(JSON.stringify({ jsonrpc: '2.0', id: 2, result: { tag: 'B' } }) + '\n');
     readable.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tag: 'A' } }) + '\n');
 
@@ -88,13 +85,11 @@ describe('json-rpc-client', () => {
       }) + '\n',
     );
 
-    // Give the data event a tick to be processed.
     await new Promise((r) => setImmediate(r));
 
     expect(onNotification).toHaveBeenCalledTimes(1);
     expect(onNotification).toHaveBeenCalledWith('task_started', { conversationId: 'c1' });
 
-    // Pending request must still be pending — fulfil it and confirm it works.
     readable.write(JSON.stringify({ jsonrpc: '2.0', id: 1, result: 'done' }) + '\n');
     await expect(pending).resolves.toBe('done');
   });
@@ -149,7 +144,6 @@ describe('json-rpc-client', () => {
     await new Promise((r) => setImmediate(r));
 
     readable.write('{"jsonrpc":"2.0","id":1,"result":');
-    // Nothing should have resolved yet; deliver the rest as a second chunk.
     readable.write('{"ok":true}}\n');
 
     await expect(pending).resolves.toEqual({ ok: true });
@@ -160,7 +154,6 @@ describe('json-rpc-client', () => {
     const client = createJsonRpcClient({ readable, writable });
 
     const pending = client.request('foo');
-    // Avoid unhandled rejection while we set up.
     pending.catch(() => {});
 
     await new Promise((r) => setImmediate(r));
@@ -183,7 +176,6 @@ describe('json-rpc-client', () => {
     const { readable, writable, writes } = makeStreams();
     const client = createJsonRpcClient({ readable, writable, onServerRequest: () => {} });
 
-    // First, get a real server request through so we know writes work before close.
     readable.write(
       JSON.stringify({
         jsonrpc: '2.0',
@@ -205,7 +197,6 @@ describe('json-rpc-client', () => {
     client.respondToServer('srv-x', { result: { ok: true } });
     await new Promise((r) => setImmediate(r));
 
-    // No new write should have happened after close().
     expect(writes.length).toBe(writesBeforeClose);
   });
 });

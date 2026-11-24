@@ -32,7 +32,6 @@ describe('parseCliVersion', () => {
 
 describe('compareCliVersions', () => {
   it('orders by numeric segment, not lexicographically', () => {
-    // The trap: '2.1.9' > '2.1.100' under string comparison.
     expect(compareCliVersions('2.1.100', '2.1.9')).toBeGreaterThan(0);
     expect(compareCliVersions('2.1.9', '2.1.100')).toBeLessThan(0);
   });
@@ -46,8 +45,7 @@ describe('compareCliVersions', () => {
     expect(compareCliVersions('2.2.0', '2.1.999')).toBeGreaterThan(0);
   });
 
-  // The `?? 0` guard on BOTH sides: whichever operand is shorter must read as
-  // zero, or a two-segment version compares as NaN against a three-segment one.
+  // `?? 0` on both sides, or a two-segment version compares as NaN.
   it('pads either side, whichever is shorter', () => {
     expect(compareCliVersions('2.1', '2.1.5')).toBeLessThan(0);
     expect(compareCliVersions('2.1.5', '2.1')).toBeGreaterThan(0);
@@ -76,15 +74,12 @@ describe('createClaudeCliReviewService', () => {
   });
 
   it('does not flag when the installed CLI is BEHIND the watermark', async () => {
-    // A user on an older CLI has nothing for us to review — the changelog
-    // for versions they don't run is not actionable here.
     const status = await svc('1.0.0 (Claude Code)').getStatus();
     expect(status.installed_version).toBe('1.0.0');
     expect(status.unreviewed).toBe(false);
   });
 
   it('does not flag when the CLI cannot be located or probed', async () => {
-    // No binary → nothing to compare. Silence beats a false alarm.
     const status = await svc(null).getStatus();
     expect(status.installed_version).toBeNull();
     expect(status.unreviewed).toBe(false);
@@ -97,8 +92,6 @@ describe('createClaudeCliReviewService', () => {
   });
 
   it('re-probes on every call so an in-place CLI upgrade is picked up', async () => {
-    // The user can `npm i -g @anthropic-ai/claude-code` while OmniFex is
-    // running; a version cached at construction would go stale until restart.
     const versions = ['2.0.0 (Claude Code)', '99.0.0 (Claude Code)'];
     let i = 0;
     const service = createClaudeCliReviewService({
@@ -108,8 +101,6 @@ describe('createClaudeCliReviewService', () => {
     expect((await service.getStatus()).unreviewed).toBe(true);
   });
 
-  // The daemon's probe is an async spawn: a sync one on every status check
-  // froze every live session's stream for up to its 5s timeout.
   it('awaits an async probe', async () => {
     const service = createClaudeCliReviewService({
       cliVersionFn: async () => '99.0.0 (Claude Code)',
@@ -138,12 +129,6 @@ describe('createClaudeCliReviewService', () => {
   });
 });
 
-/**
- * Marking a CLI release as checked without shipping a build. The built-in
- * watermark (`reviewed_version`) is what this build's code was reviewed
- * against; `checked_version` is the newest release the user has marked read,
- * stored in app_settings and floored at the built-in value.
- */
 describe('createClaudeCliReviewService — checked_version', () => {
   const svc = (installed: string, stored: string | null) =>
     createClaudeCliReviewService({
@@ -152,7 +137,6 @@ describe('createClaudeCliReviewService — checked_version', () => {
     });
 
   it('falls back to the built-in watermark when nothing is stored', async () => {
-    // A fresh install starts where it was compiled, not at "never checked".
     const status = await svc('99.0.0', null).getStatus();
     expect(status.checked_version).toBe(REVIEWED_CLI_VERSION);
     expect(status.reviewed_version).toBe(REVIEWED_CLI_VERSION);
@@ -170,7 +154,6 @@ describe('createClaudeCliReviewService — checked_version', () => {
     const status = await svc('99.0.0', '99.0.0').getStatus();
     expect(status.checked_version).toBe('99.0.0');
     expect(status.unreviewed).toBe(false);
-    // The build's own watermark is untouched: nothing shipped against 99.0.0.
     expect(status.reviewed_version).toBe(REVIEWED_CLI_VERSION);
   });
 
@@ -180,7 +163,6 @@ describe('createClaudeCliReviewService — checked_version', () => {
   });
 
   it('never lets a stale stored value drop below the built-in watermark', async () => {
-    // A release that bumped the constant past what was marked must win.
     const status = await svc(REVIEWED_CLI_VERSION, '1.0.0').getStatus();
     expect(status.checked_version).toBe(REVIEWED_CLI_VERSION);
     expect(status.unreviewed).toBe(false);
@@ -203,8 +185,6 @@ describe('createClaudeCliReviewService — checked_version', () => {
 
 describe('isOmnifexRepo', () => {
   it('recognises this checkout by its package.json name', () => {
-    // Identity, not a hardcoded path — this is what lets the packaged app
-    // find the source repo among the projects it already knows about.
     expect(isOmnifexRepo(path.resolve(__dirname, '..', '..'))).toBe(true);
   });
 
@@ -218,7 +198,6 @@ describe('isOmnifexRepo', () => {
 });
 
 describe('createClaudeCliReviewService — repo_dir resolution', () => {
-  /** Service under test with every filesystem probe injected. */
   const svc = (opts: {
     override?: string | null;
     candidates?: string[] | (() => string[]);
@@ -245,7 +224,6 @@ describe('createClaudeCliReviewService — repo_dir resolution', () => {
   });
 
   it('falls through to discovery when the override no longer exists', async () => {
-    // A stale setting (folder moved or deleted) must not disable the button.
     const status = await svc({
       override: '/gone',
       exists: ['/repos/omnifex'],
@@ -276,8 +254,6 @@ describe('createClaudeCliReviewService — repo_dir resolution', () => {
   });
 
   it('caches a positive discovery instead of re-scanning every call', async () => {
-    // Candidate enumeration reads the project list and stats a package.json
-    // per entry; the popover calls this on every open.
     const candidates = vi.fn(() => ['/repos/omnifex']);
     const service = svc({ candidates, repos: ['/repos/omnifex'] });
     await service.getStatus();
@@ -300,27 +276,17 @@ describe('createClaudeCliReviewService — repo_dir resolution', () => {
     });
     const status = await service.getStatus();
     expect(status.repo_dir).toBeNull();
-    // The version half of the payload still has to arrive.
     expect(status.unreviewed).toBe(true);
   });
 });
 
 describe('REVIEWED_CLI_VERSION', () => {
   it('is a plain numeric version, not the raw --version output', () => {
-    // Bumping this by pasting `claude --version` verbatim would break every
-    // comparison; parseCliVersion is not applied to the constant.
     expect(REVIEWED_CLI_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });
 
 describe('createClaudeCliReviewService — latest published release', () => {
-  /**
-   * The gap this closes: the popover's Claude Code row reported only what was
-   * installed, and nothing in OmniFex ever asked what the newest release was.
-   * A user sat three unreviewed CLI releases behind with a popover that looked
-   * like a steady state, because the CLI's self-update only runs when the CLI
-   * itself is launched — not when OmniFex spawns it.
-   */
   const svc = (installed: string | null, latest: string | null) =>
     createClaudeCliReviewService({
       cliVersionFn: () => installed,
@@ -339,16 +305,11 @@ describe('createClaudeCliReviewService — latest published release', () => {
   });
 
   it('does not offer a downgrade when the installed CLI leads the registry', async () => {
-    // A native-installer channel can briefly lead npm. Telling the user to
-    // "upgrade" to an older build would be worse than saying nothing.
     const status = await svc('2.1.250 (Claude Code)', '2.1.246').getStatus();
     expect(status.upgrade_available).toBe(false);
   });
 
   it('stays silent when the registry cannot be reached', async () => {
-    // The Brain rule generalises: an auxiliary signal that cannot read its own
-    // state shows nothing. An offline user must not see a false "up to date"
-    // OR a spurious upgrade prompt.
     const status = await svc('2.1.241 (Claude Code)', null).getStatus();
     expect(status.latest_version).toBeNull();
     expect(status.upgrade_available).toBe(false);
@@ -361,16 +322,12 @@ describe('createClaudeCliReviewService — latest published release', () => {
     }).getStatus();
     expect(status.latest_version).toBeNull();
     expect(status.upgrade_available).toBe(false);
-    // The rest of the payload must still be usable — a dead network cannot
-    // take out the watermark signal, which needs no network at all.
     expect(status.installed_version).toBe('2.1.241');
   });
 
   it('cannot offer an upgrade when the installed version is unknown', async () => {
     const status = await svc(null, '2.1.246').getStatus();
     expect(status.upgrade_available).toBe(false);
-    // The latest version is still reported: it is a fact about the world, not
-    // about this machine, and the row can show it.
     expect(status.latest_version).toBe('2.1.246');
   });
 
@@ -382,12 +339,6 @@ describe('createClaudeCliReviewService — latest published release', () => {
     expect(status.upgrade_available).toBe(false);
   });
 
-  /**
-   * Chosen semantics (Row only, dot unchanged): `unreviewed` keeps meaning
-   * "the binary you are RUNNING has drifted past our watermark". A newer
-   * release existing on npm is not drift you can review — the techniques that
-   * matter (rg the binary, capture a live render) need it on disk.
-   */
   it('leaves the review dot keyed on the installed binary, not the registry', async () => {
     const status = await svc('2.1.241 (Claude Code)', '99.0.0').getStatus();
     expect(status.upgrade_available).toBe(true);

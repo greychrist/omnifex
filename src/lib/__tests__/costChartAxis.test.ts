@@ -12,8 +12,6 @@ describe('formatPeriodTick', () => {
     expect(formatPeriodTick('2026-12-31')).toBe('12/31');
   });
 
-  // Week buckets are `%Y-W%W`, which nobody reads as a date. The Monday that
-  // opens the week is the same month/day shape as the daily ticks.
   it('renders a week period as the month/day its Monday falls on', () => {
     expect(formatPeriodTick('2026-W31')).toBe('8/3');
     expect(formatPeriodTick('2026-W01')).toBe('1/5');
@@ -30,8 +28,8 @@ describe('formatPeriodTick', () => {
 });
 
 describe('weekStartDate', () => {
-  // SQLite's `%W` is Monday-based and week 00 is the partial week before the
-  // year's first Monday. These expectations were taken from sqlite itself.
+  // SQLite's `%W` is Monday-based; week 00 is the partial week before the first
+  // Monday.
   it('resolves a %W week to the Monday that opens it', () => {
     expect(weekStartDate('2026-W31')).toBe('2026-08-03');
     expect(weekStartDate('2026-W30')).toBe('2026-07-27');
@@ -60,13 +58,11 @@ describe('weekBoundaries', () => {
     ).toEqual(['2026-08-03', '2026-08-10']);
   });
 
-  // The chart edge is already a boundary; a line on top of the axis is noise.
   it('never marks the first period', () => {
     expect(weekBoundaries(['2026-08-03', '2026-08-04'])).toEqual([]);
   });
 
-  // Days with no spend are absent from the data, so "is it a Monday?" is the
-  // wrong test — a week that starts on Wednesday still starts a week.
+  // Days with no spend are absent from the data.
   it('marks the first present day of a week even when the Monday is missing', () => {
     expect(weekBoundaries(['2026-08-01', '2026-08-05', '2026-08-12'])).toEqual([
       '2026-08-05', '2026-08-12',
@@ -90,7 +86,6 @@ describe('tickInterval', () => {
     expect(tickInterval(31)).toBe(0);
   });
 
-  // A year of days cannot carry 365 legible ticks; thinning beats collision.
   it('thins the ticks once there are more bars than the axis can hold', () => {
     expect(tickInterval(62)).toBe(1);
     expect(tickInterval(365)).toBe(11);

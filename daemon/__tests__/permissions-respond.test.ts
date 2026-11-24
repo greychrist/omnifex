@@ -1,19 +1,4 @@
 // @vitest-environment node
-//
-// `respondPermission` — what runs when the user clicks Allow or Deny.
-//
-// It was the largest untested block in sessions/permissions.ts, and it owns
-// three things that have each been a bug before:
-//
-//   1. The session-destination twin. A persistent rule that isn't mirrored to
-//      `session` lands on disk but never enters the running CLI's rule cache,
-//      so the very next matching tool_use re-prompts — the "permissions never
-//      really stick" symptom.
-//   2. Codex vs Claude response shapes. A Codex approval takes a bare
-//      decision; sending the Claude-shaped body spreads garbage into Codex's
-//      JSON-RPC result envelope.
-//   3. Draining the queue. The next queued request has to be pushed to the
-//      renderer AND re-notified, or a stacked prompt goes invisible.
 import { describe, it, expect, vi } from 'vitest';
 import {
   respondPermission,
@@ -49,7 +34,6 @@ function setup(queue: Queued[], opts: { engine?: boolean } = {}) {
   } as unknown as SessionHandle;
 
   const sent: { channel: string; args: unknown[] }[] = [];
-  // Banners the client would raise: the `claude-notification` payloads.
   const notifications: unknown[] = [];
   const sendToRenderer: SendToRenderer = (channel, ...args) => {
     sent.push({ channel, args });
@@ -80,8 +64,7 @@ describe('respondPermission — engine response body', () => {
     ]);
   });
 
-  // The CLI rejects an allow with no updatedInput, so the captured original
-  // is the fallback — never `{}` when we have the real input.
+  // The CLI rejects an allow with no updatedInput.
   it('prefers caller-supplied updatedInput over the captured original', () => {
     const t = setup([{ requestId: 'req1', toolInput: { file_path: '/a.ts' } }]);
     respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow', { file_path: '/b.ts' });
@@ -113,8 +96,6 @@ describe('respondPermission — engine response body', () => {
     expect(t.handle.permissionQueue).toHaveLength(0);
   });
 
-  // A rejected respondPermission is logged, not thrown: this runs off an IPC
-  // click handler with nowhere to propagate to.
   it('swallows an engine rejection', () => {
     const t = setup([{ requestId: 'req1' }]);
     (t.handle.engine as unknown as { respondPermission: ReturnType<typeof vi.fn> })
@@ -137,8 +118,6 @@ describe('respondPermission — the session-destination twin', () => {
     expect(body.updatedPermissions.map((u) => u.destination)).toEqual(['localSettings', 'session']);
   });
 
-  // Deny is deliberately NOT augmented — a denial applies to this request,
-  // and folding it into the live rule cache would silently ban the tool.
   it('does not augment on deny', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
@@ -188,8 +167,6 @@ describe('respondPermission — persisting rules to disk', () => {
     expect(t.persisted.map((p) => p.scope)).toEqual(['user', 'project', 'local']);
   });
 
-  // The session twin is an apply-now instruction, not a persistence target.
-  // Iterating the augmented array here would double-write every rule.
   it('never writes the session twin to disk', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
@@ -244,8 +221,6 @@ describe('respondPermission — persisting rules to disk', () => {
     expect(t.persisted).toEqual([]);
   });
 
-  // A failed disk write must not abandon the rest of the batch, and must not
-  // take down the click handler.
   it('keeps persisting after one write throws', () => {
     const t = setup([{ requestId: 'req1' }]);
     const persist = vi.fn()
@@ -271,7 +246,6 @@ describe('respondPermission — persisting rules to disk', () => {
     expect(t.persisted).toEqual([]);
   });
 
-  // 'session' and an absent destination both mean "don't write me".
   it('persists nothing for session-only or destination-less suggestions', () => {
     const t = setup([{ requestId: 'req1' }]);
     respondPermission(
@@ -298,11 +272,8 @@ describe('respondPermission — draining a stacked queue', () => {
     expect(t.sent[0]).toEqual({ channel: 'agent-output:tab1', args: [nextTool] });
     const notif = t.sent[1];
     expect(notif.channel).toBe('claude-notification');
-    // Title carries the project basename so a stacked prompt says which repo.
     expect((notif.args[0] as { title: string }).title).toBe('OmniFex — omnifex');
     expect(t.notifications).toHaveLength(1);
-    // The subtitle rides the payload: it is what says this banner wants an
-    // answer, not that a task finished.
     expect(t.notifications[0]).toMatchObject({ subtitle: 'Permission Request:' });
   });
 
@@ -312,7 +283,6 @@ describe('respondPermission — draining a stacked queue', () => {
     expect(t.sent).toEqual([]);
   });
 
-  // Codex approvals carry the engine's own summary rather than a tool name.
   it('uses the engine summary for a queued Codex patch', () => {
     const t = setup([
       { requestId: 'req1' },
@@ -344,8 +314,6 @@ describe('respondPermission — draining a stacked queue', () => {
 });
 
 describe('respondPermission — Codex approvals', () => {
-  // Codex's engine maps the bare decision onto its own JSON-RPC envelope.
-  // A Claude-shaped body would spread garbage into that result.
   it('sends a bare decision for a patch approval', () => {
     const t = setup([{ requestId: 'req1', payload: { kind: 'patch' } }]);
     respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow');
@@ -366,8 +334,6 @@ describe('respondPermission — Codex approvals', () => {
 });
 
 describe('permissionNotificationContent', () => {
-  // AskUserQuestion rides the permission channel but the agent is ASKING,
-  // not requesting a tool — the subtitle is the only thing distinguishing them.
   it('labels AskUserQuestion as an answer request and quotes the question', () => {
     expect(
       permissionNotificationContent('AskUserQuestion', {
@@ -397,10 +363,6 @@ describe('permissionNotificationContent', () => {
     expect(out.body.length).toBeGreaterThan(0);
   });
 });
-
-// ---------------------------------------------------------------------------
-// The Codex approval branch of createPermissionRequestHandler
-// ---------------------------------------------------------------------------
 
 describe('createPermissionRequestHandler — Codex approvals', () => {
   function codexSetup(permissionMode = 'default') {
@@ -435,7 +397,6 @@ describe('createPermissionRequestHandler — Codex approvals', () => {
       agent: 'codex',
       summary: 'Apply 2 edits',
       codex_payload: { files: ['a.ts'] },
-      // Claude fields are stubbed so the renderer's normalizer can't crash.
       tool_name: 'apply_patch',
       tool_input: {},
       permission_suggestions: [],
@@ -462,12 +423,9 @@ describe('createPermissionRequestHandler — Codex approvals', () => {
     t.onRequest(patchReq());
     t.onRequest(patchReq({ requestId: 'req2' }));
     expect(t.handle.permissionQueue).toHaveLength(2);
-    // One agent-output + one claude-notification for the first request only.
     expect(t.sent.filter((s) => s.channel === 'claude-notification')).toHaveLength(1);
   });
 
-  // bypassPermissions and dontAsk are tool-name-agnostic, so they can decide
-  // a Codex approval without a prompt.
   it('auto-allows under bypassPermissions without queuing', () => {
     const t = codexSetup('bypassPermissions');
     t.onRequest(patchReq());
@@ -484,8 +442,8 @@ describe('createPermissionRequestHandler — Codex approvals', () => {
     expect(t.handle.permissionQueue).toHaveLength(0);
   });
 
-  // acceptEdits keys off Claude file-edit tool names, so it cannot match a
-  // `codex.patch` pseudo-tool and must fall through to the prompt.
+  // acceptEdits keys off Claude file-edit tool names, so it cannot match
+  // `codex.patch`.
   it('still prompts under acceptEdits, which cannot match a Codex kind', () => {
     const t = codexSetup('acceptEdits');
     t.onRequest(patchReq());
@@ -529,11 +487,6 @@ describe('createPermissionRequestHandler — Codex approvals', () => {
 
 });
 
-// The Remote daemon answers a permission by id, not by queue position: with two
-// clients subscribed to one session, an unaddressed Allow would resolve
-// whichever request happened to be at the head — possibly one the clicking
-// user never saw. The desktop path (no requestId) must keep its head-of-queue
-// behaviour exactly.
 describe('respondPermission — addressed by requestId', () => {
   const byId = (t: ReturnType<typeof setup>, requestId?: string) =>
     respondPermission(t.handle, 'tab1', t.sendToRenderer, 'allow', undefined, undefined, undefined, requestId);
@@ -552,7 +505,6 @@ describe('respondPermission — addressed by requestId', () => {
     expect(byId(t, 'req2')).toBe(true);
     expect(t.responses.map((r) => r.requestId)).toEqual(['req2']);
     expect(t.handle.permissionQueue.map((q) => q.requestId)).toEqual(['req1']);
-    // The head is still the head; the renderer is already showing it.
     expect(t.sent).toEqual([]);
   });
 
@@ -578,10 +530,8 @@ describe('respondPermission — addressed by requestId', () => {
 });
 
 
-// The CLI withdraws a request it sent (`control_cancel_request`) when the turn
-// is interrupted. Before this handler existed only elicitations listened, so a
-// withdrawn permission stayed at the head of the queue forever: a stale card,
-// and every later request queued behind it and was never shown.
+// The CLI withdraws a request (`control_cancel_request`) when the turn is
+// interrupted.
 describe('createPermissionCancelHandler — CLI-withdrawn requests', () => {
   const payload = (id: string) => ({ type: 'permission_request', request_id: id, tool_name: 'Bash', tool_input: { command: `echo ${id}` } });
 

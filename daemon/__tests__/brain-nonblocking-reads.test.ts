@@ -1,14 +1,3 @@
-/**
- * The Brain runs inside the daemon, on the one event loop that streams every
- * live CLI session. A synchronous read of a transcript on a request path (the
- * Sources pane) or a timer (the five-minute sweep, session-close discovery)
- * freezes every session's streaming for as long as the read takes — and the
- * Sources pane used to read and distil every transcript the account owns,
- * 0.7–1.4 GB, on each open.
- *
- * These tests watch `node:fs` itself: a transcript must never pass through
- * `readFileSync`, and an unchanged one must not be read again at all.
- */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as realFs from 'node:fs';
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
@@ -111,7 +100,6 @@ describe('brain: transcripts are never read on the event loop', () => {
     await brain.listSources(1, { includeExcluded: true });
     expect(reads).toHaveLength(1);
 
-    // A transcript that grew is a different transcript: judged again.
     const file = writeSession('sess-a', `${GOOD}\n${PROMPT('third', 3)}`);
     utimesSync(file, new Date(), new Date(Date.now() + 5_000));
     await brain.listSources(1, { includeExcluded: true });
@@ -152,7 +140,6 @@ describe('brain: transcripts are never read on the event loop', () => {
       idleMs: () => 15 * 60_000,
     });
     brain.setVaultPath(1, join(dir, 'vault'));
-    // Indexed while idle (an hour ago), then written to again just now.
     utimesSync(file, new Date(now - 3_600_000), new Date(now - 3_600_000));
     await brain.indexSource(1, 'sess-a', { force: true });
     writeSession('sess-a', `${GOOD}\n${PROMPT('third', 3)}`);

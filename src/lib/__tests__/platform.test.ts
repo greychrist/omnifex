@@ -9,8 +9,6 @@ const fakeBridge = () => {
 };
 
 describe('createPlatform(bridge).openExternal', () => {
-  // The main handler is `(_event, url: string) => shell.openExternal(url)`:
-  // an object there is rejected by Electron and the browser never opens.
   it('hands the bridge the bare url string', async () => {
     const { bridge, invoke } = fakeBridge();
     await createPlatform(bridge).openExternal('https://x');
@@ -31,7 +29,6 @@ describe('createPlatform(bridge).openExternal', () => {
     open.mockRestore();
   });
 
-  // OAuth URLs come from a server's metadata: refuse anything not http(s).
   it('refuses a non-http(s) url without invoking the bridge', async () => {
     const { bridge, invoke } = fakeBridge();
     await expect(createPlatform(bridge).openExternal('file:///etc/passwd')).rejects.toThrow(/Unsafe protocol/);
@@ -46,7 +43,6 @@ describe('createPlatform(bridge).openPath', () => {
     expect(invoke).toHaveBeenCalledWith('open_path', { path: 'reports/a.md', cwd: '/proj' });
   });
 
-  // Strip undefined before crossing IPC.
   it('omits cwd when there is none', async () => {
     const { bridge, invoke } = fakeBridge();
     await createPlatform(bridge).openPath('/tmp/a.md');

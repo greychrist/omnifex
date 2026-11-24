@@ -44,8 +44,6 @@ describe('merge', () => {
   it('is idempotent: merging the same extraction twice is byte-identical', () => {
     const once = merge(null, entity, prov);
     const twice = merge(once, entity, prov);
-    // The property the spec names as the one to test hardest. If this drifts,
-    // every re-index rewrites the vault and git history becomes noise.
     expect(twice).toEqual(once);
     expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
   });
@@ -53,9 +51,6 @@ describe('merge', () => {
   it('is idempotent even on a later date', () => {
     const once = merge(null, entity, prov);
     const twice = merge(once, entity, { ...prov, date: '2026-09-01' });
-    // `updated` bumps only when content actually changed. Stamping it
-    // unconditionally would make the idempotency property untestable and every
-    // re-index a commit.
     expect(twice.frontmatter.updated).toBe(once.frontmatter.updated);
     expect(twice).toEqual(once);
   });
@@ -63,9 +58,6 @@ describe('merge', () => {
   it('never appends a Timeline entry whose source key is already recorded', () => {
     const once = merge(null, entity, prov);
     const twice = merge(once, { ...entity, timelineEntry: 'A different sentence.' }, prov);
-    // Dedup is by SOURCE KEY, not by text: re-running extraction on one
-    // session legitimately produces different wording, and matching on text
-    // would append a near-duplicate line every time.
     expect(twice.body).not.toContain('A different sentence.');
     expect(twice.body).toContain('Reworked to handle every mode');
   });
@@ -79,7 +71,6 @@ describe('merge', () => {
     );
     expect(second.body).toContain('Later work.');
     expect(second.frontmatter.sources).toEqual(['session:abc123', 'session:def456']);
-    // Chronological, so the note reads as a history.
     expect(second.body.indexOf('2026-05-31')).toBeLessThan(second.body.indexOf('2026-06-02'));
   });
 
@@ -104,8 +95,6 @@ describe('merge', () => {
       ),
     };
     const second = merge(edited, entity, { sourceKey: 'session:def456', date: '2026-06-02' });
-    // The user edits notes in this app. An extraction that silently discarded
-    // their text would make the tab's edit box a trap.
     expect(second.body).toContain('check the decider on Windows');
   });
 
@@ -139,8 +128,6 @@ describe('merge', () => {
   });
 
   it('takes its date from the caller and never reads a clock', () => {
-    // A pure function that reads Date.now() is not pure, and its idempotency
-    // test becomes a race against midnight.
     const note = merge(null, entity, { sourceKey: 's:1', date: '2020-01-01' });
     expect(note.frontmatter.created).toBe('2020-01-01');
     expect(note.frontmatter.updated).toBe('2020-01-01');
@@ -165,10 +152,6 @@ describe('merge', () => {
       { sourceKey: 'session:old', date: '2026-08-11' },
     );
 
-    // Backfill discovers newest-first, so an older session is merged into a
-    // note a newer one created constantly. Taking provenance.date verbatim
-    // made `updated` older than `created` and made every note report the
-    // OLDEST session it saw as its last touch.
     expect(older.frontmatter.created).toBe('2026-08-11');
     expect(older.frontmatter.updated).toBe('2026-08-12');
   });
@@ -191,8 +174,6 @@ describe('merge', () => {
     };
     const note = merge(null, bare, prov);
     expect(note.body).toContain('## Timeline');
-    // No timelineEntry means no bullet, but the section still exists so the
-    // note's shape is the same for every note in the vault.
     expect(note.body).toContain('A thing.');
   });
 });

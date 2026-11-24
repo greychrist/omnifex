@@ -1,17 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, runMigrations, type Database } from '../services/database';
 
-/**
- * v30 undoes v24's ledger backfill.
- *
- * v24 assumed the scratch transcripts of Brain runs had been deleted, dropped
- * the cost rows priced from them, and inserted `brain-spend-*` rows from the
- * Brain's ledger instead. The transcripts had not been deleted — the runner
- * cleaned up the unresolved `/var` path while the CLI wrote under
- * `/private/var` — so the cost watcher priced them all again and Aug 13–26
- * counted every Brain run twice. The transcripts are the finer record (per
- * model, per component), so the ledger rows go.
- */
 describe('v24 ledger backfill removed (v30)', () => {
   let db: Database;
 

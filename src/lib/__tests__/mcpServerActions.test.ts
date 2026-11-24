@@ -45,9 +45,8 @@ describe('mcpServerActions', () => {
   it('pending server -> disable only (it is already connecting)', () => {
     expect(mcpServerActions(mk('pending', 'http'))).toEqual(['disable']);
   });
-  // 2.1.309: an http/sse server reached through the cloud session's MCP proxy
-  // has its sign-in held there; mcp_authenticate would start a local OAuth
-  // flow against the proxy, so offer none.
+  // 2.1.309: a session-proxied http/sse server's sign-in is held by the proxy;
+  // mcp_authenticate would start a local OAuth flow against it.
   it('session-proxied http server -> disable only', () => {
     const proxied = (status: SessionMcpServerStatus['status']) =>
       ({ ...mk(status, 'http'), sessionProxied: true });
@@ -60,10 +59,8 @@ describe('mcpServerActions', () => {
     const s = { ...mk('needs-auth', 'claudeai-proxy'), sessionProxied: true };
     expect(mcpServerActions(s)).toEqual(['authenticate', 'disable']);
   });
-  // A client away from the daemon's machine (the iPad) used to get no auth
-  // items: the OAuth redirect lands on the CLI's localhost listener, which its
-  // browser cannot reach. mcp_oauth_callback_url takes the pasted redirect
-  // instead, so sign-in is offered everywhere.
+  // The OAuth redirect lands on the CLI's localhost listener; mcp_oauth_callback_url
+  // takes the pasted redirect instead.
   it('offers sign-in whatever machine the browser is on', () => {
     expect(mcpServerActions(mk('needs-auth', 'http'))).toEqual(['authenticate', 'disable']);
   });

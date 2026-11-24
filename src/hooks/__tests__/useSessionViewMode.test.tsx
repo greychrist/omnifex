@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-//
-// A session opens in the chat format chosen in Appearance › All cards.
 import React from 'react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
@@ -36,8 +34,6 @@ describe('useSessionViewMode', () => {
     expect(result.current[0]).toBe('expanded');
   });
 
-  // With two views, a later default can only differ from the pick by being
-  // the one picked before load; the pick still wins.
   it('keeps a view picked before the settings finish loading', () => {
     const state = { config: createDefaultConfig(), loaded: false };
     const { result, rerender } = renderHook(() => useSessionViewMode(), { wrapper: ({ children }) => wrapperFor(state)({ children }) });

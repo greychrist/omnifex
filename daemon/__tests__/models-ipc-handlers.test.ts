@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { getHandlerMap } from '../ipc/handlers';
 
-/** The picker's Refresh: `refresh_supported_models` → models.refresh. */
 describe('refresh_supported_models handler', () => {
   const models = {
     listSupported: vi.fn(async () => []),

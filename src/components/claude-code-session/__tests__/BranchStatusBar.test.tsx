@@ -50,8 +50,6 @@ describe('BranchStatusBar', () => {
     expect(screen.queryAllByTestId('repo-bar')).toHaveLength(0);
   });
 
-  // Only as wide as its contents; the repos/refresh pair ends it, set off from
-  // the table by a little space and a rule.
   it('sizes to its contents, the repos/refresh pair ruled off at the end', () => {
     bar(encompass);
     const cls = screen.getByTestId('branch-status-bar').className.split(' ');
@@ -60,7 +58,6 @@ describe('BranchStatusBar', () => {
     expect(cls).toContain('max-w-full');
     const slot = screen.getByRole('group', { name: 'Git' }).parentElement!;
     expect(slot.className.split(' ')).not.toContain('ml-auto');
-    // Full height, like the rule after the label, so it spans every repo row.
     const rule = screen.getByTestId('git-divider');
     expect(rule.parentElement).toBe(screen.getByTestId('branch-status-bar'));
     expect(rule.nextElementSibling).toBe(slot);
@@ -72,7 +69,6 @@ describe('BranchStatusBar', () => {
     const table = screen.getByTestId('repo-rows');
     // backend has the most checkouts (main + 2 worktrees).
     expect(table.style.gridTemplateColumns).toBe('auto repeat(3, auto)');
-    // Every row fills every column; frontend's missing worktree is an empty cell.
     const cells = table.querySelectorAll('[data-cell]');
     expect(cells).toHaveLength(8);
     const fe = screen.getByRole('group', { name: 'encompass-platform-frontend' });
@@ -95,13 +91,10 @@ describe('BranchStatusBar', () => {
     expect(label.querySelector('svg')!.getAttribute('class')).toContain('h-3.5');
     const text = Array.from(label.querySelectorAll('span')).find((el) => el.textContent === 'repos')!;
     expect(text.className).toContain('opacity-70');
-    // A color of its own, as each readout above has.
     expect(label.className.split(' ')).toContain('text-purple-400');
     expect(label.closest('[data-testid="repo-bar"]')).toBeNull();
   });
 
-  // The repos/refresh pair is the tallest thing on a one-line bar; top-aligned,
-  // the label and the lone row sat high beside it.
   it('centers a one-repo bar vertically, and top-aligns a taller one', () => {
     bar({ repos: [repo('', '/p/omnifex', 'main')], foundCount: 0 });
     expect(screen.getByTestId('branch-status-bar').className.split(' ')).toContain('items-center');
@@ -152,8 +145,6 @@ describe('BranchStatusBar', () => {
     expect(chips[1].getAttribute('style')).toContain('rgb(255, 0, 0)');
   });
 
-  // Like the chat bar's readouts (the model one): an icon in the bar's text
-  // color, then the name in the muted label style.
   it('heads each repo with the folder-git icon (worktrees keep folder-git-2) and its name in the model readout\'s style', () => {
     bar(encompass);
     const name = screen.getByRole('button', { name: 'encompass-platform-backend' });
@@ -164,7 +155,6 @@ describe('BranchStatusBar', () => {
     expect(name.className).not.toContain('text-muted-foreground');
   });
 
-  // Like the readouts above: a muted `label:`, then the value at full strength.
   it('labels each cell like a status readout: name, branch, worktree', () => {
     bar(encompass);
     const be = within(screen.getByRole('group', { name: 'encompass-platform-backend' })).getAllByRole('button');
@@ -173,7 +163,6 @@ describe('BranchStatusBar', () => {
     expect(labelOf(be[1]).textContent).toBe('branch');
     expect(labelOf(be[2]).textContent).toBe('worktree');
     expect(labelOf(be[3]).textContent).toBe('worktree');
-    // The repo name is the value now, not a dimmed label.
     const value = Array.from(be[0].querySelectorAll('span')).find((x) => x.textContent === 'encompass-platform-backend')!;
     expect(value.className).not.toContain('opacity-70');
   });
@@ -182,7 +171,6 @@ describe('BranchStatusBar', () => {
     bar(encompass, { aliases: { '/e/encompass-platform-backend': 'api' } });
     const name = screen.getByRole('button', { name: 'api' });
     expect(name.getAttribute('title')).toContain('encompass-platform-backend');
-    // The group keeps the full name for assistive tech.
     expect(screen.getByRole('group', { name: 'encompass-platform-backend' }).contains(name)).toBe(true);
   });
 
@@ -218,7 +206,6 @@ describe('BranchStatusBar', () => {
     bar({ repos: [repo('', '/p', 'main')], foundCount: 0 });
     const btn = screen.getByRole('button', { name: /manage repos/i });
     expect(btn.querySelector('svg')!.getAttribute('class')).toContain('lucide-folder-cog');
-    // Same color as the refresh glyph beside it in the group.
     expect(btn.className.split(' ')).toContain('text-foreground');
   });
 
@@ -269,7 +256,6 @@ describe('BranchStatusBar', () => {
     expect(group.contains(screen.getByTestId('watch'))).toBe(true);
   });
 
-  // Clear, so the bar shows through the repos/refresh pair.
   it('leaves the repos/refresh group unfilled', () => {
     bar({ repos: [repo('', '/p', 'main')], foundCount: 0 });
     expect(screen.getByRole('group', { name: 'Git' }).className).not.toMatch(/(^|\s)bg-/);

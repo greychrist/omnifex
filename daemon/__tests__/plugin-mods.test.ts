@@ -1,12 +1,4 @@
 // @vitest-environment node
-//
-// Mod detection (sessions/mods.ts).
-//
-// A mod is a plugin whose hooks/hooks.json names a hooks module under
-// `modules`. What it can do is read from `claude plugin validate --json`,
-// whose `hooks:` and `calls:` notes are the same list the CLI shows before
-// install. The capability tags are what the Session context panel leads
-// with, so each one is pinned to the event or call that earns it.
 import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -143,8 +135,6 @@ describe('createModInspector', () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 
-  // The mod still lists — the panel shows it as not inspected rather than
-  // hiding it, since a mod we cannot read is the one worth seeing.
   it('reports null when validate fails or prints no report', async () => {
     const failing = createModInspector({ run: async () => { throw new Error('boom'); }, mtimeMs: mtime(1) });
     await expect(failing('/p/m', '/cfg')).resolves.toBeNull();

@@ -63,7 +63,6 @@ describe('SessionCard — context gauge', () => {
     );
     const trigger = screen.getByText('12.0k').closest('button')!;
     expect(trigger.className).toContain('w-full');
-    // The progress track grows with the trigger instead of a fixed width.
     const track = trigger.querySelector('.flex-1');
     expect(track).toBeTruthy();
     expect(trigger.querySelector('.w-11')).toBeNull();
@@ -99,10 +98,6 @@ const openPopover = () => {
 };
 
 describe('SessionCard — compact button', () => {
-  // The refactor that removed the context-pressure banner took the only
-  // always-visible compact affordance with it: the action signal fires at 100%
-  // of budget, so between 80% and 100% there was an amber meter and nothing to
-  // click. The popover now carries a permanent one at any level.
   it('offers Compact now at any context level', () => {
     render(<SessionCard totalTokens={12_000} contextLimit={200_000} contextUsage={USAGE} onCompact={() => {}} />);
     openPopover();
@@ -164,9 +159,6 @@ describe('SessionCard — compact button', () => {
 });
 
 describe('SessionCard — category breakdown', () => {
-  // The breakdown lives behind the `Details` disclosure, which starts open.
-  // Its default state is asserted separately, in "SessionCard — context
-  // popover layout".
   const openBreakdown = () => {
     openPopover();
   };
@@ -180,9 +172,7 @@ describe('SessionCard — category breakdown', () => {
     render(<SessionCard totalTokens={120_000} contextLimit={200_000} contextUsage={WITH_CATEGORIES} />);
     openBreakdown();
 
-    // Queried off document, not the render container: the popover portals its
-    // content to body. The pie was 18rem of popover height for information the
-    // legend below it already carried.
+    // Queried off document: the popover portals its content to body.
     expect(document.querySelector('.recharts-wrapper')).toBeNull();
     expect(document.querySelectorAll('[data-context-band]').length).toBeGreaterThan(0);
   });
@@ -192,12 +182,10 @@ describe('SessionCard — category breakdown', () => {
     openBreakdown();
 
     const bands = document.querySelectorAll<HTMLElement>('[data-context-band]');
-    // Largest first, as the legend has always ordered them: Messages is 60k of
-    // a 200k window.
+    // Messages is 60k of a 200k window.
     expect(bands[0].getAttribute('data-context-band')).toBe('Messages');
     expect(bands[0].style.width).toBe('30%');
     expect(bands[1].style.width).toBe('20%');
-    // Trailing free space is a band too, so the bar always spans the window.
     expect(bands[bands.length - 1].getAttribute('data-context-band')).toBe('Free');
     expect(bands[bands.length - 1].style.width).toBe('40%');
   });
@@ -221,9 +209,6 @@ describe('SessionCard — unread session events', () => {
   ];
 
   it('marks signals read when the popover closes, not the moment it opens', () => {
-    // Opening used to mark everything read immediately, which dropped the
-    // unread tint before the reader had scrolled to the list it applies to.
-    // The evidence destroyed itself on the way to being read.
     let readCalls = 0;
     render(
       <SessionCard
@@ -243,10 +228,6 @@ describe('SessionCard — unread session events', () => {
     expect(readCalls).toBe(1);
   });
 
-  // The unread count used to ride on the token meter as a small number. It
-  // said nothing actionable — the events are one click away and the meter it
-  // sat on is about tokens, not events — so it is gone, along with the
-  // aria-label gymnastics needed to explain what it was counting.
   it('carries no unread count on the trigger', () => {
     render(
       <SessionCard totalTokens={12_000} contextLimit={200_000} contextUsage={USAGE} recentEvents={EVENTS} />,

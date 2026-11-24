@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-//
-// The skeleton a transcript shows while its rows render in a transition.
-// Transitions are held open here, so the skeleton stays up to be measured.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
@@ -89,9 +86,6 @@ function renderModern(outstandingWork = false, rows: JsonlNode[] = messages, onR
 }
 
 describe('ClaudeTranscript — skeleton', () => {
-  // With the rail on, rows bring their own gutter and the transcript has no
-  // left inset of its own; the skeleton must sit in a row like everything
-  // else, or it starts in the gutter, outside the chat frame.
   it('draws the skeleton inside the chat frame when the context rail is on', () => {
     gauges.timelineOn = true;
     const { container } = renderModern();

@@ -11,9 +11,7 @@ describe('layout mode', () => {
   });
 
   it('keeps the three facts independent', () => {
-    // A thin desktop window: narrow, not touch, not web.
     expect(computeLayoutMode({ width: NARROW_MAX_WIDTH - 1, coarsePointer: false, remoteMode: 'desktop' })).toEqual({ narrow: true, touch: false, web: false });
-    // A wide desktop window: none of the three.
     expect(computeLayoutMode({ width: 1440, coarsePointer: false, remoteMode: 'desktop' })).toEqual({ narrow: false, touch: false, web: false });
     expect(computeLayoutMode({ width: 1440, coarsePointer: false, remoteMode: null })).toMatchObject({ web: false });
   });
@@ -57,7 +55,6 @@ describe('pull to refresh', () => {
 describe('keyboard inset', () => {
   it('is the covered height when the visual viewport shrinks', () => {
     expect(keyboardInset(1180, 800, 0)).toBe(380);
-    // Layout viewport scrolled up under the keyboard: offsetTop counts.
     expect(keyboardInset(1180, 800, 100)).toBe(280);
   });
 

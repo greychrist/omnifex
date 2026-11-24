@@ -65,9 +65,6 @@ describe('linkMatchesNote', () => {
 
 describe('separator-insensitive link matching', () => {
   it('binds a hyphenated reference to an underscored filename', () => {
-    // Measured on a real auto-memory corpus: 5 of 29 links were hyphenated
-    // references to underscored filenames, and resolve.ts's fold() already
-    // treats the two as one entity.
     expect(linkMatchesNote('project-native-module-abi', 'Notes/project_native_module_abi.md'))
       .toBe(true);
   });

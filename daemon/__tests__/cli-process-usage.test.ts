@@ -2,11 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, runMigrations, type Database } from '../services/database';
 import { createCliProcessUsageStore } from '../services/cost/cli-process-usage';
 
-// The CLI's own running per-model totals for one process: a baseline taken
-// before the process spends anything, and the latest figure it reported. The
-// difference is what the process spent; the part the transcript never shows
-// is what the Cost Report used to miss (side questions, title generation…).
-
 const usage = (input: number, output: number, cacheRead: number, cacheWrite: number) => ({
   inputTokens: input, outputTokens: output, cacheReadInputTokens: cacheRead, cacheCreationInputTokens: cacheWrite,
 });

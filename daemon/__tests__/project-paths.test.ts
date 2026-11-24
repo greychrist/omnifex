@@ -4,12 +4,6 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { decodeProjectId, recoverProjectPath, recoverProjectPathAsync, encodeProjectId } from '../services/project-paths';
 
-/**
- * The encoding Claude Code applies to a cwd is lossy, so the only honest way
- * to render a project's folder is to read the `cwd` the CLI itself recorded.
- * These pin that recovery, and the fallback for when there is nothing to read.
- */
-
 let root: string;
 
 beforeEach(() => {
@@ -39,7 +33,6 @@ describe('decodeProjectId', () => {
   });
 
   it('is lossy on a folder whose own name contains a dash', () => {
-    // Documented, not desired: this is exactly why recoverProjectPath exists.
     expect(decodeProjectId('-Users-dev-Repos-wombeats-ios'))
       .toBe('/Users/dev/Repos/wombeats/ios');
   });
@@ -75,8 +68,6 @@ describe('recoverProjectPath', () => {
   });
 });
 
-// Same contract, without blocking the daemon: the sessions page runs it over
-// every project folder in the account on each visit.
 describe('recoverProjectPathAsync', () => {
   it('reads the cwd, preferring the newest transcript', async () => {
     const dir = project('-Users-dev-Repos-greychrist');
@@ -93,8 +84,7 @@ describe('recoverProjectPathAsync', () => {
   });
 });
 
-// Only the head of a transcript is read, in chunks — a line longer than one
-// chunk (the CLI's prompt snapshot runs to tens of KB) must not hide the cwd.
+// The CLI's prompt-snapshot line can run to tens of KB, past one chunk.
 describe('recoverProjectPath — head read', () => {
   for (const [name, recover] of [
     ['sync', (d: string, id: string) => Promise.resolve(recoverProjectPath(d, id))],
@@ -121,10 +111,7 @@ describe('recoverProjectPath — head read', () => {
 });
 
 describe('encodeProjectId', () => {
-  // Mirrors the CLI's own sanitizer, verified against 2.1.224 in
-  // sessions-summary-query.test.ts and re-confirmed against 2.1.240 by reading
-  // Greg's on-disk projects/ dirs. Anything short of "every non-alphanumeric
-  // becomes a dash" silently misses directories that exist.
+  // Mirrors the CLI's sanitizer: every non-alphanumeric character becomes a dash.
   it('replaces every non-alphanumeric character, not just slashes', () => {
     expect(encodeProjectId('/home/user/projects/my_app.v2'))
       .toBe('-home-user-projects-my-app-v2');
@@ -142,7 +129,6 @@ describe('encodeProjectId', () => {
     const encoded = encodeProjectId(long);
     expect(encoded.length).toBeLessThan(long.length);
     expect(encoded.startsWith('-home-user-' + 'a'.repeat(50))).toBe(true);
-    // Two paths sharing a 200-char prefix must not collide on one directory.
     expect(encodeProjectId(long + 'x')).not.toBe(encoded);
   });
 });

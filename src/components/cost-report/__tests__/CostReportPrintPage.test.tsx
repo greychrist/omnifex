@@ -3,8 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import { emptyFilterState } from '@/lib/costFilterState';
 
-// The chart needs a layout box jsdom will not give it; its own tests cover the
-// drawing. What matters here is the handshake around it.
+// The chart needs a layout box jsdom will not give it.
 vi.mock('@/components/cost-report/CostChart', () => ({
   CostChart: () => <div data-testid="chart" />,
   CostChartLegend: () => <div data-testid="legend" />,
@@ -64,8 +63,6 @@ describe('CostReportPrintPage', () => {
   const timings = { chartPollMs: 2, chartTimeoutMs: 20 };
 
   it('reports the measured page once the report has drawn', async () => {
-    // This report is the only thing standing between the main process and a
-    // PDF of a half-drawn page.
     const onReady = vi.fn();
     render(
       <CostReportPrintPage filters={emptyFilterState()} onReady={onReady} timings={timings} />,
@@ -79,8 +76,6 @@ describe('CostReportPrintPage', () => {
   });
 
   it('reports exactly once, however many times the report re-renders', async () => {
-    // The export resolves on the first report. A second one would arrive
-    // after its window is gone, and land on whatever export ran next.
     const onReady = vi.fn();
     const { rerender } = render(
       <CostReportPrintPage filters={emptyFilterState()} onReady={onReady} timings={timings} />,
@@ -112,7 +107,6 @@ describe('CostReportPrintPage', () => {
       <CostReportPrintPage filters={emptyFilterState()} onReady={vi.fn()} timings={timings} />,
     );
     expect(await screen.findByTestId('print-caption')).toBeTruthy();
-    // The filter bar and the export button are app chrome, not report content.
     expect(screen.queryByTestId('cost-filters')).toBeNull();
     expect(screen.queryByTestId('export-pdf')).toBeNull();
   });

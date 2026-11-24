@@ -145,18 +145,13 @@ describe('evaluateContextPressure — tokens mode', () => {
   });
 
   it('keeps critical reachable below the window ceiling', () => {
-    // The whole point of the 0.95 clamp: 200k tokens in a 200k window is not
-    // required to trip red, because the CLI auto-compacts before that.
+    // The CLI auto-compacts before the window fills, so critical must trip below it.
     const r = evaluateContextPressure({ tokens: 191_000, limit: 200_000, setting });
     expect(r.level).toBe('critical');
   });
 });
 
 describe('evaluateContextPressure — inert cases', () => {
-  // The banner's only action is "run /compact", which needs a live CLI. A
-  // resumed session whose transcript loads but whose engine never comes up
-  // (e.g. a failed --resume) would otherwise flash an un-actionable banner
-  // between 'starting' and 'stopped'.
   it('is none when the session is not live, however full the context', () => {
     const r = evaluateContextPressure({
       tokens: 586_500,
@@ -214,10 +209,6 @@ describe('selectContextTokens', () => {
   });
 });
 
-// The timeline rail needs the same thresholds the banner uses, but not the
-// banner's gates: the rail has its own toggle, and a session that is not
-// "live" still has a history worth coloring. Sharing this helper is what
-// stops the rail and the banner from disagreeing about where amber starts.
 describe('contextPressureLevel', () => {
   const LIMIT = 1_000_000;
   const budget = DEFAULT_CONTEXT_PRESSURE_TOKENS; // 250k
@@ -237,8 +228,6 @@ describe('contextPressureLevel', () => {
       .toBe('critical');
   });
 
-  // The rail must stay honest when the banner is switched off, otherwise a
-  // user who dismissed the banner sees a uniformly green history.
   it('ignores the banner enabled flag', () => {
     expect(contextPressureLevel({ tokens: budget, limit: LIMIT, setting: ON({ enabled: false }) }))
       .toBe('critical');
@@ -258,8 +247,6 @@ describe('contextPressureLevel', () => {
     expect(contextPressureLevel({ tokens: 100_000, limit: LIMIT, setting })).toBe('none');
   });
 
-  // The banner and the rail resolve levels through the same function, so a
-  // drift between them is not expressible.
   it('agrees with the level evaluateContextPressure reports', () => {
     for (const tokens of [10_000, 200_000, 250_000, 900_000]) {
       expect(contextPressureLevel({ tokens, limit: LIMIT, setting: ON() }))

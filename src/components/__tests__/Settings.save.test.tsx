@@ -1,13 +1,8 @@
 // @vitest-environment jsdom
-/**
- * The Settings shell has no Save button: every tab saves as it changes, and
- * the header's save indicator reports the outcome for all of them.
- */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 
 vi.mock('@/lib/api', () => ({ api: {} }));
-// Proxy used to be the one tab that showed a Save button; open on it.
 vi.mock('@/lib/settingsInitialTab', () => ({
   readInitialSettingsTab: () => 'proxy',
   clearInitialSettingsTab: () => {},
@@ -19,7 +14,6 @@ vi.mock('../LogTab', () => ({ LogTab: () => null }));
 vi.mock('../settings-panels/SystemPromptSettings', () => ({ SystemPromptSettings: () => null }));
 vi.mock('../settings-panels', async () => {
   const { useSaveStatus } = await import('../settings-panels/saveStatus');
-  // A panel that saves, to prove the shell's indicator hears every tab.
   const ProxySettingsPanel = () => {
     const { track } = useSaveStatus();
     return (

@@ -11,8 +11,6 @@ import {
 
 afterEach(() => { cleanup(); });
 
-// Capture the last config persisted via saveSetting so tests can assert on
-// the shape that actually gets written.
 const saved: { config: unknown } = { config: null };
 
 vi.mock('@/hooks', async (orig) => ({
@@ -21,7 +19,7 @@ vi.mock('@/hooks', async (orig) => ({
 }));
 vi.mock('@/lib/api', () => ({
   api: {
-    getSetting: vi.fn(async () => null), // first-load: defaults
+    getSetting: vi.fn(async () => null),
     saveSetting: vi.fn(async (key: string, value: string) => {
       if (key === 'message_rendering_config_v6') {
         try { saved.config = JSON.parse(value); } catch { /* ignore */ }
@@ -31,7 +29,6 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-// AppearanceSettings requires a setToast prop; provide a no-op.
 const noopToast = vi.fn();
 
 function renderWithProvider() {
@@ -42,8 +39,7 @@ function renderWithProvider() {
   );
 }
 
-// Click a row in the tree by its visible label. Rows are <button>s whose
-// label sits in a span with the flex-1 class; target that span's button.
+// Rows are <button>s whose label sits in a flex-1 span.
 function clickRow(label: string) {
   const matches = screen.getAllByText(label);
   const rowSpan = matches.find(
@@ -78,9 +74,7 @@ describe('MessageKindTree — registry-driven', () => {
   it('lists registry kinds under their category once expanded', () => {
     renderTree();
     expandAll();
-    // system category kinds
     expect(screen.getByText("Permission request")).toBeInTheDocument();
-    // agent category kind (still in the tree, just under a different category)
     expect(screen.getByText("Permission mode")).toBeInTheDocument();
   });
 
@@ -118,7 +112,6 @@ describe('AppearanceSettings — category + kind tree', () => {
     for (const label of ['User', 'Agent', 'System']) {
       expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
-    // Registry kinds render under their category
     expandAll();
     expect(screen.getAllByText('Permission mode').length).toBeGreaterThan(0);
   });
@@ -127,15 +120,12 @@ describe('AppearanceSettings — category + kind tree', () => {
   it('opens a kind editor with a reset affordance when a kind is selected', async () => {
     renderWithProvider();
     await screen.findAllByText('User');
-    // "Permission mode" is a kind in the system category.
     expandAll();
     clickRow('Permission mode');
     expect(screen.getByRole('button', { name: /reset kind/i })).toBeInTheDocument();
   });
 });
 
-// The editor is laid out as label | control rows, one concern per row, so the
-// whole kind fits without scrolling. Each row carries one inherit hint.
 describe('AppearanceSettings — edits are debounced before the global commit', () => {
   it('coalesces a rapid burst of color edits into a single persisted commit', async () => {
     const { api } = await import('@/lib/api');
@@ -149,27 +139,20 @@ describe('AppearanceSettings — edits are debounced before the global commit', 
 
     const picker = screen.getByLabelText('User color picker');
 
-    // Simulate an OS color-picker drag: many onChange events in quick
-    // succession, like the native <input type="color"> streams.
     const hexes = ['#111111', '#222222', '#333333', '#444444', '#555555'];
     for (const value of hexes) {
       fireEvent.change(picker, { target: { value } });
     }
 
-    // Synchronously after the burst the global commit hasn't fired yet — the
-    // whole point: dragging doesn't re-render every chat / write to disk per
-    // tick.
+    // Synchronously after the burst the debounced commit has not fired.
     const configWrites = () =>
       saveSetting.mock.calls.filter(([key]) => key === 'message_rendering_config_v6').length;
     expect(configWrites()).toBe(0);
 
-    // After the debounce settles, exactly one commit lands, carrying the LAST
-    // value from the burst.
     await waitFor(() => expect(configWrites()).toBe(1));
     expect(configWrites()).toBe(1);
     expect(saved.config).not.toBeNull();
     const cfg = saved.config as { categories: Record<string, { accentColor?: string }> };
-    // Default selection is the "user" category; its accentColor took the last edit.
     expect(cfg.categories.user.accentColor).toBe('#555555');
   });
 });

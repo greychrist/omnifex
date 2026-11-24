@@ -8,10 +8,8 @@ import type { Tab } from '@/contexts/TabContext';
 import type { JsonlNode } from '@/types/jsonl';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
 
-// framer-motion's animation hooks are async by design and Reorder relies
-// on layout effects that jsdom can't measure. Render every motion.* /
-// Reorder.* element as plain DOM so we can fire events and assert
-// synchronously. Same approach SessionList / ProjectList tests use.
+// Reorder relies on layout effects jsdom cannot measure, so motion.* and
+// Reorder.* render as plain DOM.
 vi.mock('framer-motion', () => ({
   motion: new Proxy(
     {},
@@ -37,8 +35,6 @@ vi.mock('framer-motion', () => ({
   },
 }));
 
-// AccountBadge → AccountsContext → useTheme; stub both so the badge can
-// render without a provider.
 vi.mock('@/contexts/AccountsContext', () => ({
   useAccounts: () => ({
     accounts: [],
@@ -52,8 +48,7 @@ vi.mock('@/hooks', () => ({
   useTheme: () => ({ theme: 'gray', setTheme: async () => {} }),
 }));
 
-// Tab density lives in the rendering config. Hoisted so the mock factory can
-// see it, and reset in afterEach so a compact test can't leak into the next.
+// Hoisted for the mock factory; reset in afterEach.
 const density = vi.hoisted((): { current: 'expanded' | 'compact' } => ({
   current: 'expanded',
 }));
@@ -72,9 +67,6 @@ vi.mock('@/contexts/MessageRenderingContext', async (importOriginal) => {
   };
 });
 
-// useTabState + useTabContext are the two main injection points. Stub
-// them per-test via mockReturnValue so each scenario can pin its own
-// tabs / active-tab / operation spies.
 const useTabStateMock = vi.fn();
 const useTabContextMock = vi.fn();
 vi.mock('@/hooks/useTabState', () => ({
@@ -156,10 +148,6 @@ function installState(overrides: StateOverrides = {}) {
   return { createProjectsTab, closeTab, switchToTab, canAddTab, reorderTabs };
 }
 
-// The tab strip shows the PROJECT name, because that is what you navigate by.
-// The session's own name — the CLI's `ai-title`, or a rename — is the thing
-// that tells two tabs on the same project apart, and hover is where it fits
-// without widening every tab.
 describe('tab hover shows the session name', () => {
   const titleNode = (customTitle: string) =>
     ({ kind: 'custom-title', raw: { type: 'custom-title', customTitle }, sessionId: 's' }) as unknown as JsonlNode;
@@ -176,8 +164,6 @@ describe('tab hover shows the session name', () => {
     expect(hoverTextFor('t1', container)).toBe('Rate-limit spike');
   });
 
-  // Two tabs on one project is exactly the case this exists for, so the name
-  // must come from the hovered tab's transcript and not the active one's.
   it('gives each tab its own name', () => {
     useClaudeSessionStore.getState().setMessages('t1', [titleNode('Rate-limit spike')]);
     useClaudeSessionStore.getState().setMessages('t2', [titleNode('Cache TTL work')]);
@@ -192,8 +178,6 @@ describe('tab hover shows the session name', () => {
     expect(hoverTextFor('t2', container)).toBe('Cache TTL work');
   });
 
-  // The name is ON the tab now, under the project — the hover is what
-  // recovers a long one that the subtitle truncates.
   it('prints the name under the project name', () => {
     useClaudeSessionStore.getState().setMessages('t1', [titleNode('Rate-limit spike')]);
     installState({ tabs: [makeTab({ id: 't1', type: 'chat', title: 'omnifex' })] });
@@ -207,8 +191,6 @@ describe('tab hover shows the session name', () => {
     expect(screen.queryByTestId('tab-session-name')).toBeNull();
   });
 
-  // Untitled is the common case. A tooltip repeating the project name already
-  // printed on the tab is noise, so an unnamed session gets no hover text.
   it('stays silent for a session with no name yet', () => {
     installState({ tabs: [makeTab({ id: 't1', type: 'chat', title: 'omnifex' })] });
     const { container } = render(<TabManager />);
@@ -266,8 +248,6 @@ describe('TabManager — rendering', () => {
     });
 
     const { container } = render(<TabManager />);
-    // Both the merged chat glyph and the compact AccountBadge title their
-    // span with the account name — only the tab that has an account gets one.
     expect(container.querySelectorAll('span[title="work"]').length).toBe(1);
   });
 
@@ -275,7 +255,6 @@ describe('TabManager — rendering', () => {
     installState({
       tabs: [
         makeTab({ id: 'unsaved', type: 'chat', title: 'Dirty', hasUnsavedChanges: true }),
-        // Tabs in `running` state should NOT show the dot — the spinner wins.
         makeTab({ id: 'running', type: 'chat', title: 'Spinning', hasUnsavedChanges: true, status: 'running' }),
       ],
       activeTabId: 'unsaved',
@@ -297,7 +276,6 @@ describe('TabManager — rendering', () => {
     const { container } = render(<TabManager />);
     const check = container.querySelector('[aria-label="Completed"]');
     expect(check).not.toBeNull();
-    // Flashes to draw the eye, like the unread-result dot it replaced.
     expect(check?.classList.contains('animate-pulse')).toBe(true);
   });
 
@@ -328,9 +306,6 @@ describe('TabManager — rendering', () => {
   });
 
   it('prioritizes the permission shield over the working spinner', () => {
-    // A pending permission keeps the conversation "running" (an open task),
-    // so the tab is both working AND waiting on the user. The shield must win
-    // — the user needs to know it's blocked on them, not just busy.
     installState({
       tabs: [
         makeTab({
@@ -377,7 +352,6 @@ describe('TabManager — interactions', () => {
     expect(closeBtn).not.toBeNull();
     await act(async () => { fireEvent.click(closeBtn!); });
     expect(closeTab).toHaveBeenCalledWith('a');
-    // stopPropagation: clicking X must NOT also fire the row's onClick.
     expect(switchToTab).not.toHaveBeenCalled();
   });
 
@@ -408,9 +382,6 @@ describe('TabManager — interactions', () => {
   });
 });
 
-// A crowded strip scrolls, and the tab at either edge is usually half-cut by
-// the scroll container. Activating one must bring it fully into view — with
-// room for the edge fade, which would otherwise sit on top of it.
 describe('TabManager — revealing a clipped tab', () => {
   const rect = (left: number, right: number) =>
     ({ left, right, width: right - left, top: 0, bottom: 30, height: 30, x: left, y: 0, toJSON: () => ({}) }) as DOMRect;
@@ -475,8 +446,7 @@ describe('TabManager — revealing a clipped tab', () => {
   });
 
   // Scrolling off 0 mounts the left scroll button, which narrows the strip
-  // mid-scroll: the target computed at click time falls short by the
-  // button's width and the tab's × stays clipped until a second click.
+  // mid-scroll.
   describe('when the strip resizes after a reveal', () => {
     let resize: () => void = () => {};
     let observed: Element[] = [];
@@ -489,10 +459,8 @@ describe('TabManager — revealing a clipped tab', () => {
       });
     });
 
-    // A tab widens on its own — the CLI's session title lands in a store, not
-    // in `tabs` — so the strip keeps its width, no scroll fires, and only the
-    // tabs' row changes size. The strip sat short of its end with the right
-    // arrow up and the new tab's tail under the fade.
+    // A tab can widen on its own (its title lands in a store, not in `tabs`), so
+    // no scroll fires.
     it('re-reveals the active tab when the tabs themselves grow', () => {
       installState({ tabs, activeTabId: 'c' });
       const { container } = render(<TabManager />);
@@ -518,16 +486,12 @@ describe('TabManager — revealing a clipped tab', () => {
       const { container } = render(<TabManager />);
       const scrollTo = layout(container, { c: [450, 600] });
       fireEvent.click(screen.getByText('C'));
-      // Mid-scroll: the strip lost 30px on the left, the tab is still clipped.
       narrow(container, [400, 550]);
       scrollTo.mockClear();
       resize();
       expect(scrollTo).toHaveBeenCalledWith({ left: 100 + 50 + TAB_REVEAL_MARGIN_PX, behavior: 'smooth' });
     });
 
-    // The scroll arrows narrow and widen the strip as they mount and unmount,
-    // and a width change can land the strip at its end with no scroll event.
-    // The right arrow then sat there pointing at nothing.
     it('re-checks the scroll arrows when the strip resizes without scrolling', () => {
       installState({ tabs, activeTabId: 'c' });
       const { container } = render(<TabManager />);
@@ -546,10 +510,6 @@ describe('TabManager — revealing a clipped tab', () => {
       expect(screen.queryByTitle('Scroll tabs right')).toBeNull();
     });
 
-    // The arrows sit in the same row as the strip, so a mounted arrow narrows
-    // it. Tabs that fit once the arrow is gone still overflowed the strip the
-    // arrow had narrowed, and the arrow kept itself up after the last tab
-    // closed — scrolled to 0, pointing at nothing.
     describe('measuring overflow without the arrows’ own width', () => {
       function strip(container: HTMLElement) {
         const el = container.querySelector<HTMLElement>('[data-testid="tab-strip-scroll"]')!;
@@ -736,10 +696,6 @@ describe('TabManager — keyboard-shortcut window events', () => {
   });
 });
 
-// A chat tab used to carry two marks: a plain MessageSquare saying "this is a
-// chat" on a strip where nearly everything is a chat, plus a colored account
-// square. They are now one glyph — a bubble in the account's color holding
-// the account's icon.
 describe('account glyph merges into the chat tab icon', () => {
   it('renders the merged glyph and drops the separate chip on a chat tab', () => {
     installState({
@@ -749,8 +705,6 @@ describe('account glyph merges into the chat tab icon', () => {
 
     render(<TabManager />);
     expect(screen.getAllByTestId('account-tab-glyph').length).toBe(1);
-    // The compact AccountBadge is an 18px square; the merged glyph is not.
-    // Exactly one element carries the account name, so the chip is gone.
     expect(screen.getAllByTitle('work').length).toBe(1);
   });
 
@@ -761,8 +715,6 @@ describe('account glyph merges into the chat tab icon', () => {
     });
 
     render(<TabManager />);
-    // No bubble — a Folder tab has no chat icon to merge an account into —
-    // but the chip still reports which account the tab belongs to.
     expect(screen.queryByTestId('account-tab-glyph')).toBeNull();
     expect(screen.getAllByTitle('work').length).toBe(1);
   });
@@ -800,7 +752,6 @@ describe('tab strip density', () => {
 
     const { container } = render(<TabManager />);
     expect(screen.queryByTestId('tab-session-name')).toBeNull();
-    // The name is still resolved — it just moves to the tooltip.
     expect(container.querySelector('[data-tab-id="a"]')?.getAttribute('title')).toBe(
       'Refactor the parser',
     );
@@ -813,9 +764,7 @@ describe('tab max width', () => {
 
   afterEach(() => { useClaudeSessionStore.getState().__resetForTests(); });
 
-  // jsdom has no layout, so these pin the two decisions that produce the
-  // ellipsis: the tab is capped at the configured width, and both text lines
-  // truncate inside it rather than pushing the tab wider.
+  // jsdom has no layout, so these pin the width cap and the truncation.
   it('caps the tab at the configured max width', () => {
     maxWidth.current = 300;
     installState({ tabs: [makeTab({ id: 'a', type: 'chat', title: 'omnifex' })] });

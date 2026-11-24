@@ -8,9 +8,7 @@ import {
   type HookEvent,
 } from '@/types/hooks';
 
-// The authoritative list from https://code.claude.com/docs/en/hooks,
-// checked 2026-08-05 against CLI 2.1.222; model-switch events (CLI 2.1.251)
-// added 2026-10-24 against 2.1.310.
+// From https://code.claude.com/docs/en/hooks, checked against CLI 2.1.310.
 const DOCUMENTED_EVENTS = [
   'SessionStart', 'Setup', 'UserPromptSubmit', 'UserPromptExpansion',
   'PreToolUse', 'PermissionRequest', 'PermissionDenied', 'PostToolUse',
@@ -22,8 +20,7 @@ const DOCUMENTED_EVENTS = [
   'ElicitationResult', 'SessionEnd', 'PreModelSwitch', 'PostModelSwitch',
 ];
 
-// Per the docs, these fire on every occurrence and silently ignore a
-// `matcher` field. Everything else filters on something.
+// Per the docs, these fire on every occurrence and ignore `matcher`.
 const NO_MATCHER = [
   'UserPromptSubmit', 'PostToolBatch', 'Stop', 'TeammateIdle', 'TaskCreated',
   'TaskCompleted', 'WorktreeCreate', 'WorktreeRemove', 'MessageDisplay',
@@ -36,7 +33,6 @@ describe('HOOK_EVENTS', () => {
   });
 
   it('still includes the five the editor originally supported', () => {
-    // Regression guard: the rewrite must not drop what already worked.
     for (const e of ['PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SubagentStop']) {
       expect(HOOK_EVENTS).toContain(e);
     }
@@ -60,7 +56,6 @@ describe('HOOK_EVENT_INFO', () => {
 
   it('assigns every event to a group that actually renders', () => {
     const used = new Set(HOOK_EVENTS.map((e) => HOOK_EVENT_INFO[e].group));
-    // No empty group headers in the picker.
     for (const g of HOOK_EVENT_GROUPS) expect(used.has(g)).toBe(true);
   });
 });
@@ -90,8 +85,6 @@ describe('eventSupportsMatcher', () => {
   });
 
   it('gives matcher-bearing events example values to offer as hints', () => {
-    // The matcher vocabulary is per-event and not guessable — SessionStart
-    // takes `startup|resume|clear`, PreToolUse takes tool names.
     expect(HOOK_EVENT_INFO.SessionStart.matcher).toMatchObject({
       examples: expect.arrayContaining(['startup', 'resume']),
     });
@@ -117,8 +110,6 @@ describe('groupedHookEvents', () => {
   });
 
   it('orders groups by HOOK_EVENT_GROUPS, not alphabetically', () => {
-    // The picker should read in lifecycle order — Session before Tools —
-    // rather than shuffling by group name.
     expect(groupedHookEvents().map(([g]) => g)).toEqual([...HOOK_EVENT_GROUPS]);
   });
 });

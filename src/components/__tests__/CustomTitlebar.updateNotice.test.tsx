@@ -171,17 +171,13 @@ describe('CustomTitlebar — background check', () => {
     await settle(BACKGROUND_CHECK_MS);
     expect(icon().getAttribute('data-upgrade')).toBe('true');
     expect(icon().getAttribute('class')).toMatch(/text-emerald-500/);
-    // Pulses until the upgrade is taken, not just until it is seen.
     expect(icon().getAttribute('class')).toMatch(/animate-pulse/);
-    // So does the button's border, as an overlay of its own: pulsing the
-    // button would fade its label too. Inline, never a `ring-*` utility —
-    // styles.css forces `box-shadow: none !important` on those, which jsdom
-    // can't see, so it passed here and showed nothing in the app.
+    // Inline, never a `ring-*` utility: styles.css forces `box-shadow: none
+    // !important` on those, which jsdom cannot see.
     const ring = document.querySelector<HTMLElement>('[data-updates-ring]');
     expect(ring?.getAttribute('class')).toMatch(/animate-pulse/);
     expect(ring?.getAttribute('class') ?? '').not.toMatch(/\bring-/);
     expect(ring?.getAttribute('style') ?? '').toMatch(/emerald/);
-    // Over the group's 1px border, not inside it — inside, the two read as 2px.
     expect(ring?.getAttribute('class')).toMatch(/-inset-px/);
   });
 });
@@ -199,7 +195,6 @@ describe('CustomTitlebar — Updates button border', () => {
     expect(document.querySelector('[data-updates-unreviewed]')?.getAttribute('class')).toMatch(/animate-pulse/);
   });
 
-  // One border, one color: the upgrade is the thing to act on first.
   it('stays green when an upgrade is also waiting', async () => {
     getClaudeCliReviewStatus.mockResolvedValue(
       status({ installed_version: '2.1.323', unreviewed: true, latest_version: '2.1.324', upgrade_available: true }),

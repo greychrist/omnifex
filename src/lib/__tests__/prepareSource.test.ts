@@ -2,9 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { prepareSource, accentFor } from '@/lib/mermaid/prepareSource';
 
 describe('prepareSource — HTML in labels', () => {
-  // We draw SVG text labels (htmlLabels: false, for PNG export), which print
-  // HTML tags literally: `<b> IDEA </b>` on screen. Mermaid's markdown strings
-  // render bold/italic in that mode, so tags become markdown.
+  // Labels are SVG text (htmlLabels: false, for PNG export), which prints HTML
+  // tags literally.
   it('turns b/i/br in a flowchart label into a markdown string', () => {
     const out = prepareSource('flowchart TD\n  A["<b> IDEA </b><br/>(RTR project)<br/><i>Owner: Joel</i>"] --> B', 'gray');
     expect(out).toContain('A["`**IDEA**\n(RTR project)\n*Owner: Joel*`"]');
@@ -25,8 +24,6 @@ describe('prepareSource — HTML in labels', () => {
     expect(prepareSource(src, 'gray')).toBe(src);
   });
 
-  // Markdown strings are a flowchart feature; elsewhere the tags are dropped
-  // so at least they are not printed.
   it('strips formatting tags in other diagram types', () => {
     const out = prepareSource('sequenceDiagram\n  A->>B: <b>hello</b> <i>there</i>', 'gray');
     expect(out).toBe('sequenceDiagram\n  A->>B: hello there');
@@ -34,10 +31,6 @@ describe('prepareSource — HTML in labels', () => {
 });
 
 describe('prepareSource — colors', () => {
-  // Claude's classDef/style colors override any theme: pastel fills with
-  // navy text on a dark card. They are kept as color-coding but redrawn in
-  // OmniFex's own accent grammar — tinted fill, stronger tinted 1px border,
-  // the theme's text color.
   it('maps a classDef color onto the nearest OmniFex accent, tinted', () => {
     const out = prepareSource('flowchart TD\n  classDef epic fill:#cfe0ff,stroke:#5577cc,stroke-width:2px,color:#112244', 'gray');
     const line = out.split('\n')[1];

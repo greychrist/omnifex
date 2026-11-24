@@ -42,10 +42,8 @@ function makeFakeEngine(opts?: {
     applyExtendedPermissionMode: vi.fn(async () => {}),
     start: vi.fn(async () => {
       if (opts?.startReject) throw opts.startReject;
-      // models.ts now reads via sendControlRequest('initialize'), not via
-      // onMessage(system:init). Stash initData defensively for any callers
-      // that still consult getInitData(), but the live path uses the
-      // control_request below.
+      // The live path is the initialize control_request; initData only feeds
+      // getInitData().
       initData = { models: modelsToReport };
     }),
     send: vi.fn(async () => {}),
@@ -237,7 +235,6 @@ describe('modelsService.getCatalog (SQLite-persisted)', () => {
 
     const row = catalogRow()!;
     expect(row.fetched_at).toBe('2026-06-09T18:30:00.123Z');
-    // Pretty-printed (2-space indent) so DB browsers show readable JSON.
     expect(row.catalog_json).toBe(JSON.stringify(SEEDED, null, 2));
   });
 
@@ -277,7 +274,7 @@ describe('modelsService.getCatalog (SQLite-persisted)', () => {
 
     now = past + 120_000; // beyond TTL
     const result = await service.getCatalog(CONFIG);
-    expect(result).toEqual(SEEDED); // stale served synchronously
+    expect(result).toEqual(SEEDED);
 
     await vi.waitFor(() => {
       expect(JSON.parse(catalogRow()!.catalog_json)).toEqual(FRESH);
@@ -370,16 +367,13 @@ describe('modelsService.getCatalog (SQLite-persisted)', () => {
   it('default version probe runs `claude --version` on the resolved binary', async () => {
     const { execFileSync } = await import('node:child_process');
     vi.mocked(execFileSync).mockReset().mockReturnValue('2.1.170 (Claude Code)\n');
-    // No cliVersionFn — real probe path. The binary is pinned so the only
-    // execFileSync is the version probe, not discovery's `which`.
+    // Real probe path; the pinned binary keeps discovery's `which` out of it.
     const service = createModelsService(db, { resolveClaudeBinary: () => '/usr/local/bin/claude' });
 
     service.upsertCatalog(CONFIG, SEEDED);
     service.upsertCatalog('/other/config', SEEDED);
 
     expect(catalogRow()!.cli_version).toBe('2.1.170 (Claude Code)');
-    // Re-probe rules (only when the binary on disk changes) live in
-    // cli-version-probe.test.ts.
     expect(vi.mocked(execFileSync)).toHaveBeenCalledWith('/usr/local/bin/claude', ['--version'], expect.anything());
   });
 
@@ -390,7 +384,7 @@ describe('modelsService.getCatalog (SQLite-persisted)', () => {
     const seeder = createModelsService(db, { cliVersionFn: () => '1.0.0' });
     seeder.upsertCatalog(CONFIG, SEEDED);
 
-    const service = createModelsService(db, { resolveClaudeBinary: () => '/usr/local/bin/claude' }); // probe throws → version null
+    const service = createModelsService(db, { resolveClaudeBinary: () => '/usr/local/bin/claude' });
     const result = await service.getCatalog(CONFIG);
 
     expect(result).toEqual(SEEDED);

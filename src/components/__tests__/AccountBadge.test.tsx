@@ -3,9 +3,6 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, cleanup, screen } from '@testing-library/react';
 import { AccountBadge } from '../AccountBadge';
 
-// AccountBadge resolves color/icon/type via useAccounts() when the props
-// aren't supplied. We stub the hook so the component renders without
-// needing a real provider.
 vi.mock('@/contexts/AccountsContext', () => ({
   useAccounts: () => ({
     accounts: [],
@@ -16,10 +13,7 @@ vi.mock('@/contexts/AccountsContext', () => ({
   }),
 }));
 
-// AccountBadge also reads the active theme so it can darken text +
-// soften background mix in light mode. Default the mock to "gray" (the
-// dark theme) so existing tests keep their original expectations;
-// light-mode tests below override per-test.
+// Default to "gray" (the dark theme); light-mode tests override per test.
 const themeRef: { current: 'gray' | 'light' } = { current: 'gray' };
 vi.mock('@/hooks', () => ({
   useTheme: () => ({
@@ -62,18 +56,13 @@ describe('AccountBadge — size variants', () => {
     );
     const root = container.firstElementChild as HTMLElement;
     expect(root.className).toMatch(/text-xs/);
-    // The fallback (no-color) icon is intentionally one notch smaller
-    // than the colored variant — better visual balance against the
-    // muted preset color stack.
     const svg = root.querySelector('svg');
     expect(svg?.getAttribute('class')).toMatch(/h-\[12px\]/);
   });
 });
 
 describe('AccountBadge — theme-aware colored variants', () => {
-  // jsdom normalizes hex colors in inline styles to `rgb(...)`. The
-  // production browser keeps the original hex, but for assertion the
-  // canonical rgb form of `#abcdef` (171,205,239) is what surfaces.
+  // jsdom normalizes inline hex colors to rgb(...): #abcdef is (171,205,239).
   const RGB_ABCDEF = /rgb\(\s*171,?\s*205,?\s*239\s*\)/;
 
   it('gray theme: text uses the raw account color, bg/border mix toward transparent', () => {
@@ -92,15 +81,10 @@ describe('AccountBadge — theme-aware colored variants', () => {
     const { container } = render(<AccountBadge name="alpha" color="#abcdef" />);
     const root = container.firstElementChild as HTMLElement;
     const styleAttr = root.getAttribute('style') ?? '';
-    // Three color-mix expressions on the same element: bg toward
-    // white, fg toward black, border toward white. The rgb form of
-    // the account color appears in each mix.
     expect(styleAttr.match(/rgb\(\s*171,?\s*205,?\s*239\s*\)/g)?.length ?? 0)
       .toBeGreaterThanOrEqual(3);
     expect(styleAttr).toContain('white');
     expect(styleAttr).toContain('black');
-    // No `transparent` mix in the light path — that's the source of
-    // the original "yellow on white" invisibility bug.
     expect(styleAttr).not.toContain('transparent');
   });
 
@@ -128,14 +112,11 @@ describe('AccountBadge — hideName', () => {
     expect(document.querySelector('svg')).not.toBeNull();
   });
 
-  // Losing the name must not lose which account it is.
   it('names the account in a tooltip once the label is gone', () => {
     const { container } = render(<AccountBadge name="Personal" hideName />);
     expect(container.firstElementChild?.getAttribute('title')).toBe('Personal');
   });
 
-  // A mismatch shield is a warning about which account is about to run; a
-  // narrow window is not a reason to stop showing it.
   it('keeps the identity shield when the name is hidden', () => {
     render(<AccountBadge name="Personal" hideName verification="mismatch" />);
     expect(screen.getByLabelText(/DIFFERENT account/)).toBeTruthy();

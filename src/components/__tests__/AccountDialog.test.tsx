@@ -3,8 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import type { Account, CodexAuthStatus } from '@/lib/api';
 
-// Hoist mocks alongside vi.mock() factories. See CodexSignInModal.test.tsx
-// for the rationale — bare consts would land after the hoisted factory.
+// Hoisted: bare consts would land after the hoisted vi.mock factory.
 const { apiMock, useCodexAuthStatusMock } = vi.hoisted(() => ({
   apiMock: {
     getHomeDirectory: vi.fn(),
@@ -33,9 +32,7 @@ vi.mock('@/hooks/useCodexAuthStatus', () => ({
   useCodexAuthStatus: useCodexAuthStatusMock,
 }));
 
-// Stub the heavy children so jsdom doesn't choke (CodexSignInModal pulls in
-// xterm via OneShotTerminal; IconPicker pulls in framer-motion). Neither is
-// under test here.
+// Stubbed: CodexSignInModal pulls in xterm, IconPicker framer-motion.
 vi.mock('@/components/codex/CodexSignInModal', () => ({
   CodexSignInModal: () => <div data-testid="codex-signin-modal" />,
 }));
@@ -65,7 +62,6 @@ afterEach(() => {
   cleanup();
 });
 
-// Import after mocks so the module under test resolves them.
 import { AccountDialog } from '../AccountDialog';
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
@@ -100,10 +96,8 @@ describe('AccountDialog', () => {
     expect((codexRadio as HTMLInputElement).disabled).toBe(false);
     expect((claudeRadio as HTMLInputElement).checked).toBe(true);
 
-    // Thinking picker was removed (always adaptive) — absent for Claude...
     expect(screen.queryByLabelText(/thinking/i)).toBeNull();
 
-    // ...and remains absent on Codex.
     fireEvent.click(codexRadio);
     expect((codexRadio as HTMLInputElement).checked).toBe(true);
     expect(screen.queryByLabelText(/thinking/i)).toBeNull();
@@ -165,7 +159,6 @@ describe('AccountDialog', () => {
     fireEvent.change(screen.getByLabelText(/subscription/i), {
       target: { value: 'Max' },
     });
-    // Default hasCost is true — toggle it off.
     fireEvent.click(screen.getByLabelText(/has cost/i));
 
     fireEvent.click(screen.getByRole('button', { name: /save/i }));
@@ -181,11 +174,6 @@ describe('AccountDialog', () => {
       }),
     );
   });
-
-  // -------------------------------------------------------------------------
-  // Expected login email — the secondary confirmation that a config dir is
-  // authenticated as the account we think it is.
-  // -------------------------------------------------------------------------
 
   describe('expected email', () => {
     const claudeAccount = (overrides: Partial<Account> = {}): Account =>

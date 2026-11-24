@@ -1,14 +1,5 @@
 // @vitest-environment jsdom
-//
-// The "View in Log" action on an error toast hands the Settings tab a starting
-// panel through sessionStorage. That handoff read the key and DELETED it inside
-// a `useState` initializer — a mutation during render, which React StrictMode
-// (on in dev) breaks by design: it invokes the initializer twice, so the first
-// call consumed the seed and the second returned the default. The button landed
-// on Settings/General and looked like it had simply ignored the request.
-//
-// The event leg could not cover for it either: `Settings` is `React.lazy`, so
-// on a freshly created tab the chunk is still loading when the event fires.
+// Reading must be pure: StrictMode invokes a useState initializer twice.
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   SETTINGS_INITIAL_TAB_KEY,
@@ -30,7 +21,6 @@ describe('settings initial-tab handoff', () => {
   });
 
   it('survives being read twice, the way StrictMode invokes an initializer', () => {
-    // The regression. Reading must be pure: two calls, same answer.
     seedInitialSettingsTab('log');
     expect(readInitialSettingsTab()).toBe('log');
     expect(readInitialSettingsTab()).toBe('log');
@@ -45,8 +35,6 @@ describe('settings initial-tab handoff', () => {
   });
 
   it('treats an unavailable sessionStorage as no seed rather than throwing', () => {
-    // Private mode, an opaque origin, a hardened renderer — the handoff is a
-    // convenience and must never take the Settings tab down with it.
     const original = Object.getOwnPropertyDescriptor(window, 'sessionStorage');
     Object.defineProperty(window, 'sessionStorage', {
       configurable: true,

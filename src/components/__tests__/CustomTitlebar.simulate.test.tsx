@@ -100,10 +100,6 @@ afterEach(() => {
   localStorage.clear();
 });
 
-// A dev build can't see either update for real: it never downloads a release,
-// its version already matches the latest, and the installed CLI is usually
-// current. These boxes fake each state the Updates button can be in, for the
-// display only — nothing they show can install, update or notify anything.
 describe('CustomTitlebar — dev update simulation', () => {
   it('fakes a Claude Code release: green, pulsing, and the row says so', async () => {
     await openPopover();

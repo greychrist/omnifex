@@ -43,8 +43,6 @@ const mockedRefresh = vi.mocked(api.refreshSupportedModels);
 const mockedSettings = vi.mocked(api.getClaudeSettings);
 
 beforeEach(() => {
-  // Default: account pins no model in settings.json, so "default" keeps the
-  // CLI-recommended description. Individual tests override.
   mockedSettings.mockResolvedValue({});
 });
 
@@ -66,8 +64,6 @@ const RAW: SessionModelInfo[] = [
   { value: 'haiku', displayName: 'Haiku', description: 'Fastest' },
 ];
 
-// A realistic entitled catalog (no Fable) with a "default" entry, mirroring
-// what the CLI initialize handshake returns for a non-Fable account.
 const CATALOG: SessionModelInfo[] = [
   { value: 'default', displayName: 'Default (recommended)', description: 'Opus 4.8 with 1M context · Best for everyday, complex tasks' },
   { value: 'opus[1m]', displayName: 'Opus', description: 'Opus 4.8 with 1M context · Best for everyday, complex tasks' },
@@ -92,9 +88,6 @@ describe('toPickerModel', () => {
   });
 
   it('uses the purpose tail as the description when the NAME came from the detail', () => {
-    // "Sonnet 5 · Efficient for routine tasks" names the model in the detail
-    // segment, so the name becomes "Sonnet 5" — printing the detail beneath
-    // it as well said the same thing twice.
     const m = toPickerModel({
       value: 'sonnet', displayName: 'Sonnet',
       description: 'Sonnet 5 · Efficient for routine tasks',
@@ -210,7 +203,6 @@ describe('useModelCatalog', () => {
 
   it('is inert without a configDir (fallback models, no fetch)', () => {
     const { result } = renderHook(() => useModelCatalog(undefined));
-    // Same fallback set, but the "default" entry is relabeled "Account Default".
     expect(result.current.models.map((m) => m.id)).toEqual(
       FALLBACK_MODELS.map((m) => m.id),
     );
@@ -239,7 +231,6 @@ describe('useModelCatalog', () => {
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
     });
-    // Fallback set is used; only the "default" entry's label changes.
     expect(result.current.models.map((m) => m.id)).toEqual(
       FALLBACK_MODELS.map((m) => m.id),
     );
@@ -248,8 +239,6 @@ describe('useModelCatalog', () => {
     );
   });
 
-  // Rows mapped through toPickerModel now carry the version the CLI puts in
-  // the description, so the bare "Opus" alias reads "Opus 4.8".
   it('relabels "default" to the account-pinned model from settings.json', async () => {
     mockedList.mockResolvedValue(CATALOG);
     mockedSettings.mockResolvedValue({ model: 'opus[1m]' });
@@ -258,9 +247,7 @@ describe('useModelCatalog', () => {
     await waitFor(() => {
       const def = result.current.models.find((m) => m.id === 'default');
       expect(def?.name).toBe(`Opus 4.8 ${ACCOUNT_DEFAULT_MARK}`);
-      // The name already says "Opus 4.8"; the description carries the purpose.
       expect(def?.description).toBe('Best for everyday, complex tasks');
-      // One Opus line, not two.
       expect(result.current.models.map((m) => m.id)).toEqual(['default', 'sonnet', 'haiku']);
     });
     expect(mockedSettings).toHaveBeenCalledWith({
@@ -287,10 +274,7 @@ describe('useModelCatalog', () => {
 
     await waitFor(() => {
       const def = result.current.models.find((m) => m.id === 'default');
-      // No pin, but the catalog's default entry identifies the recommended
-      // model (opus[1m]) via its shared description — name it.
       expect(def?.name).toBe(`Opus 4.8 ${ACCOUNT_DEFAULT_MARK}`);
-      // The name already says "Opus 4.8"; the description carries the purpose.
       expect(def?.description).toBe('Best for everyday, complex tasks');
     });
   });
@@ -311,8 +295,6 @@ describe('resolveActualModelName', () => {
   });
 
   it('never resolves through the relabeled default entry', () => {
-    // A catalog whose only "fable" mention is inside the Account Default
-    // label must not echo that label back as the model name.
     const models: Model[] = [
       { id: 'default', name: 'Account Default (Fable 5)', description: '', icon: null, shortName: 'D' },
       { id: 'sonnet', name: 'Sonnet', description: '', icon: null, shortName: 'S' },
@@ -321,8 +303,6 @@ describe('resolveActualModelName', () => {
   });
 
   it('prettifies a concrete CLI id the catalog cannot resolve', () => {
-    // FALLBACK_MODELS has no opus entry, so no family match — the raw id
-    // must still come out human-readable, not as "claude-opus-4-8".
     expect(resolveActualModelName('claude-opus-4-8', FALLBACK_MODELS, null)).toBe('Opus 4.8');
   });
 
@@ -354,7 +334,7 @@ describe('prettyModelName', () => {
 describe('recommendedDefaultModel', () => {
   it('matches the default entry to the real model by shared description', () => {
     // The CLI stamps the default entry with the recommended model's own
-    // description — in CATALOG that is opus[1m].
+    // description.
     expect(recommendedDefaultModel(CATALOG)?.value).toBe('opus[1m]');
   });
 
@@ -395,7 +375,6 @@ describe('withAccountDefaultLabel', () => {
   it('marks the recommended model and drops the duplicate row when no model is pinned', () => {
     const out = withAccountDefaultLabel(models, null, CATALOG);
     expect(out.find((m) => m.id === 'default')?.name).toBe(`Opus ${ACCOUNT_DEFAULT_MARK}`);
-    // The standalone Opus row is gone — the marked default entry IS that row.
     expect(out.map((m) => m.id)).toEqual(['default', 'sonnet']);
   });
 
@@ -406,8 +385,6 @@ describe('withAccountDefaultLabel', () => {
   });
 
   it('keeps the merged entry selectable as "default", not as the concrete id', () => {
-    // Picking the marked row must still mean "omit --model and let the CLI
-    // read the account's pin" — the merge is a label change, not a pin.
     const out = withAccountDefaultLabel(models, 'sonnet');
     expect(out[0].id).toBe('default');
   });
@@ -428,11 +405,7 @@ describe('withAccountDefaultLabel', () => {
 
   it('lets an active (live) default model beat the settings pin', () => {
     const out = withAccountDefaultLabel(models, 'sonnet', CATALOG, 'claude-opus-4-8');
-    // Named for the version that actually ran, not the `opus[1m]` row's bare
-    // "Opus" — the alias says nothing about which Opus, and that ambiguity is
-    // what reconcileLiveModelName exists to remove.
     expect(out.find((m) => m.id === 'default')?.name).toBe(`Opus 4.8 ${ACCOUNT_DEFAULT_MARK}`);
-    // Opus is still the merged row; Sonnet keeps its own line.
     expect(out.map((m) => m.id)).toEqual(['default', 'sonnet']);
   });
 
@@ -458,7 +431,6 @@ describe('withAccountDefaultLabel', () => {
 
   it('treats a literal "default" pin as no pin', () => {
     const out = withAccountDefaultLabel(models, 'default', CATALOG);
-    // No pin, so the CLI-recommended model (Opus) is what "default" runs.
     expect(out.find((m) => m.id === 'default')?.name).toBe(`Opus ${ACCOUNT_DEFAULT_MARK}`);
   });
 });
@@ -477,8 +449,7 @@ describe('reconcileLiveModelName', () => {
   });
 
   it('keeps the richer catalog name when the two name the same model', () => {
-    // `claude-opus-5` and `claude-opus-5[1m]` are one model; the catalog's
-    // name says more (the context window), so it wins.
+    // `claude-opus-5` and `claude-opus-5[1m]` are one model.
     expect(reconcileLiveModelName(row, 'claude-opus-5')).toBe('Opus 5 (1M context)');
   });
 
@@ -489,17 +460,11 @@ describe('reconcileLiveModelName', () => {
   });
 
   it('leaves the merged account-default row alone', () => {
-    // withAccountDefaultLabel already resolved that row against the same
-    // live id, and its name carries the account-default mark. Reconciling a
-    // second time would rewrite the name and drop the mark.
     expect(reconcileLiveModelName({ id: 'default', name: 'Fable 5 *' }, 'claude-fable-5'))
       .toBe('Fable 5 *');
   });
 
   it('keeps the catalog name when the live model is a different FAMILY', () => {
-    // Switching the picker mid-session leaves the previous turn's model as
-    // the live one until the next turn lands. Relabeling "Sonnet" as
-    // "Opus 5.5" in that window would misreport what the next turn will use.
     expect(reconcileLiveModelName({ id: 'sonnet', name: 'Sonnet' }, 'claude-opus-5-5'))
       .toBe('Sonnet');
   });
@@ -558,8 +523,6 @@ describe('catalogModelName', () => {
   });
 
   it('takes the version from the description when the name has none', () => {
-    // The personal account's `opus[1m]` row: the alias name says nothing
-    // about which Opus, and the description is where the CLI puts it.
     expect(catalogModelName({
       value: 'opus[1m]', displayName: 'Opus (1M context)',
       description: 'Opus 5.5 with 1M context · Best for everyday, complex tasks',
@@ -603,15 +566,14 @@ describe('extraModelOptions', () => {
       { id: 'opus[1m]', name: 'Opus 5.5', description: '', icon: null, shortName: 'O' },
     ];
     expect(extraModelOptions(existing).map((m) => m.name)).not.toContain('Opus 5.5');
-    // A different Opus is still a distinct pick — that is the whole point.
     expect(extraModelOptions(existing).map((m) => m.name)).toContain('Opus 5');
   });
 });
 
 describe('splitLatestModels', () => {
   const m = (id: string, name: string): Model => ({ id, name, description: '', icon: null, shortName: name[0] });
-  // The personal account's real 2.1.280 catalog, after withAccountDefaultLabel
-  // folded `opus` into the default row.
+  // A real 2.1.280 catalog, after withAccountDefaultLabel folded `opus` into the
+  // default row.
   const CATALOG = [
     m('default', `Opus 5.5 ${ACCOUNT_DEFAULT_MARK}`),
     m('claude-fable-5-1', 'Fable 5.1'),
@@ -639,8 +601,6 @@ describe('splitLatestModels', () => {
   });
 
   it('drops a second row that names the same model', () => {
-    // `opus[1m]` resolves to the model the default row already names; a
-    // second "Opus 5.5" anywhere says one thing twice.
     const { latest, older } = splitLatestModels(CATALOG);
     expect([...latest, ...older].map((x) => x.id)).not.toContain('opus[1m]');
   });
@@ -663,8 +623,6 @@ describe('splitLatestModels', () => {
 });
 
 describe('modelPickerLabel', () => {
-  // The queued-prompt badge used to show the CLI's raw
-  // "Default (recommended)" while the picker for the same id says "Opus *".
   it('labels the default id with the model it runs, as the picker does', () => {
     expect(modelPickerLabel('default', CATALOG, null)).toBe(`Opus 4.8 ${ACCOUNT_DEFAULT_MARK}`);
   });
@@ -689,9 +647,6 @@ describe('modelPickerLabel', () => {
 });
 
 describe('liveDefaultEvidence', () => {
-  // What a live session runs says what "default" means only while the
-  // session IS on default. A session pinned to Fable runs Fable, and taking
-  // that as the account default put the mark on the pick, not the default.
   it('passes the live model through only while the session runs on default', () => {
     expect(liveDefaultEvidence('default', 'claude-fable-5-1')).toBe('claude-fable-5-1');
     expect(liveDefaultEvidence('claude-fable-5-1[1m]', 'claude-fable-5-1')).toBeNull();
@@ -708,9 +663,6 @@ describe('withAccountDefaultLabel — resolvedId', () => {
     { id: 'sonnet', name: 'Sonnet', description: 'Sonnet 4.6', icon: null, shortName: 'S' },
   ];
 
-  // The merged row keeps the id `default` (picking it means "omit --model"),
-  // so it also names the concrete model it stands for: that is how the
-  // picker highlights it when that model is the pick, and colors it.
   it('names the model the merged default row stands for', () => {
     expect(withAccountDefaultLabel(models, 'sonnet')[0]).toMatchObject({ id: 'default', resolvedId: 'sonnet' });
     expect(withAccountDefaultLabel(models, 'claude-fable-5[1m]')[0]).toMatchObject({ id: 'default', resolvedId: 'claude-fable-5[1m]' });
@@ -722,9 +674,7 @@ describe('withAccountDefaultLabel — resolvedId', () => {
     expect(out[0]).toMatchObject({ id: 'default', resolvedId: 'claude-opus-4-8' });
   });
 
-  // A resumed session's selectedModel is the concrete id the JSONL stamps
-  // (`claude-opus-5-5`), while the twin row is the alias `opus`; the row's
-  // own resolvedId is what the pick will equal.
+  // A resumed session's selectedModel is the concrete id the JSONL stamps.
   it('takes the twin\'s concrete id when it has one, so a resumed pick matches', () => {
     const withResolved: Model[] = [
       models[0],

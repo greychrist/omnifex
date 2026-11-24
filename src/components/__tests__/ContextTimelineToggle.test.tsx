@@ -10,7 +10,6 @@ afterEach(() => {
   cleanup();
 });
 
-// The toggle renders inside AgentSession's TooltipProvider (AgentSession.tsx:2162).
 const render = (ui: React.ReactElement) => {
   const result = rtlRender(<TooltipProvider>{ui}</TooltipProvider>);
   return {
@@ -30,8 +29,6 @@ describe('ContextTimelineToggle', () => {
     expect(button()).toHaveAttribute('aria-pressed', 'true');
   });
 
-  // The rail sits in the transcript's left gutter; a control that looks
-  // identical on and off gives no clue which state you're in.
   it('is visually distinct when active', () => {
     const { rerender } = render(<ContextTimelineToggle active={false} onToggle={() => {}} />);
     const off = button().className;

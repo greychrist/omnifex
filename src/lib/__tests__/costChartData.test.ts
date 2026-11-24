@@ -33,8 +33,7 @@ describe('toStackedSeries', () => {
     ]);
   });
 
-  // Without the zero-fill recharts leaves the key undefined and the stack
-  // tears where a model simply wasn't used that day.
+  // Without the zero-fill recharts leaves the key undefined and the stack tears.
   it('zero-fills every series in every period', () => {
     const { data } = toStackedSeries([
       row('2026-08-01', 'claude-opus-5', 1),
@@ -75,10 +74,6 @@ describe('toStackedSeries', () => {
   });
 });
 
-/**
- * Only the top of a stack is a data-end, so only it gets the 4px round. If
- * every segment were rounded, interior joins would read as separate bars.
- */
 describe('topModelFor', () => {
   const models = ['a', 'b', 'c'];
 
@@ -88,8 +83,6 @@ describe('topModelFor', () => {
     expect(topModelFor({ period: 'p', a: 1, b: 0, c: 0 }, models)).toBe('a');
   });
 
-  // A zero-height segment draws nothing, so rounding it would leave the
-  // visible top square.
   it('skips zeroed series so the round lands on a segment that renders', () => {
     expect(topModelFor({ period: 'p', a: 5, b: 0, c: 0 }, models)).toBe('a');
   });
@@ -112,8 +105,7 @@ describe('segmentPath', () => {
     expect(d.endsWith('h-20Z')).toBe(true);
   });
 
-  // The bug this function exists to prevent: an unclamped 4px round on a 3px
-  // segment inverts the arc and renders as a notch cut out of the bar.
+  // An unclamped 4px round on a 3px segment inverts the arc.
   it('clamps the radius to the segment height', () => {
     const d = segmentPath(0, 0, 20, 3, 4);
     expect(d.match(/a3,3/g)).toHaveLength(2);
@@ -144,9 +136,6 @@ describe('segmentPath', () => {
 });
 
 describe('capRadius', () => {
-  // A fixed radius is a different shape at every range length: 8px is a third
-  // of a bar on a month view and 4% of one on a three-day view, so the cap
-  // reads as "rounded" in one and "square" in the other. Scale it.
   it('scales the cap with the bar width', () => {
     expect(capRadius(20)).toBe(6);
     expect(capRadius(14)).toBe(4);
@@ -167,9 +156,6 @@ describe('topCappedModel', () => {
   // 300px of plot over a $120 axis.
   const PX_PER_USD = 2.5;
 
-  // The shape that made every bar in a real month square: $272 of Opus with
-  // $0.29 of Haiku stacked on it. Haiku is the topmost non-zero model, and it
-  // is 0.7px tall — the cap went to a segment nobody can see.
   it('skips a sliver too short to carry the round', () => {
     const bucket = { period: 'd', 'claude-opus-5': 100, 'claude-sonnet-5': 0, 'claude-haiku-4-5': 0.29 };
     expect(topCappedModel(bucket, models, PX_PER_USD, 6)).toBe('claude-opus-5');
@@ -180,8 +166,7 @@ describe('topCappedModel', () => {
     expect(topCappedModel(bucket, models, PX_PER_USD, 6)).toBe('claude-sonnet-5');
   });
 
-  // A $2 day is 5px tall in total. Refusing to round anything there would make
-  // the smallest bars the only square ones on the chart.
+  // A $2 day is 5px tall in total.
   it('falls back to the topmost drawn segment when no segment can carry a full round', () => {
     const bucket = { period: 'd', 'claude-opus-5': 1.7, 'claude-sonnet-5': 0, 'claude-haiku-4-5': 0.3 };
     expect(topCappedModel(bucket, models, PX_PER_USD, 6)).toBe('claude-haiku-4-5');

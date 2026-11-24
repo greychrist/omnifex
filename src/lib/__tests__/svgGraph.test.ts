@@ -62,7 +62,6 @@ describe('applyHighlight', () => {
     expect(ids).toContain('m1-L_B_C_0');
     expect(ids).not.toContain('m1-flowchart-E-7');
     expect(ids).not.toContain('m1-L_C_E_0');
-    // An edge's label follows its edge.
     expect(marked.some((el) => el.classList.contains('edgeLabel'))).toBe(true);
 
     applyHighlight(svg, graph, null);

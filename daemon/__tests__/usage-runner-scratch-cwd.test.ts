@@ -4,11 +4,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { ensureTrustedScratchCwd } from '../services/usage-runner/scratch-cwd';
 
-// The scratch-cwd helper is the fix for "/usage runner times out on Claude
-// Code's first-launch safety prompt" (see usage-runner.ts comments). Each
-// test uses a fresh tmp dir for the simulated userData + configDir so we
-// don't touch real Claude state.
-
 let tmpRoot: string;
 let userDataDir: string;
 let configDir: string;
@@ -46,7 +41,6 @@ describe('ensureTrustedScratchCwd', () => {
   });
 
   it('writes hasTrustDialogAccepted + hasCompletedProjectOnboarding into <configDir>/.claude.json', () => {
-    // .claude.json doesn't exist yet — helper should create it
     const cwd = ensureTrustedScratchCwd('personal', configDir, { userDataDir });
     const json = readJson(claudeJsonPath);
     expect(json.projects[cwd]).toEqual({
@@ -71,13 +65,11 @@ describe('ensureTrustedScratchCwd', () => {
     const json = readJson(claudeJsonPath);
     expect(json.anonymousId).toBe('abc-123');
     expect(json.autoUpdates).toBe(true);
-    // Other project preserved untouched
     expect(json.projects['/Users/me/Repos/foo']).toEqual({
       hasTrustDialogAccepted: true,
       lastSessionId: 'sess-1',
       someCustomField: { nested: 'value' },
     });
-    // Our scratch project now has trust set
     expect(json.projects[cwd].hasTrustDialogAccepted).toBe(true);
     expect(json.projects[cwd].hasCompletedProjectOnboarding).toBe(true);
   });
@@ -93,8 +85,6 @@ describe('ensureTrustedScratchCwd', () => {
   });
 
   it('does rewrite when trust state is missing or false (the bug scenario)', () => {
-    // This is exactly Greg's state: prior dialog rejections wrote
-    // hasTrustDialogAccepted: false. The helper must flip it to true.
     fs.writeFileSync(claudeJsonPath, JSON.stringify({
       projects: {
         [path.join(userDataDir, 'usage-cwd', 'personal')]: {
@@ -108,7 +98,6 @@ describe('ensureTrustedScratchCwd', () => {
     const json = readJson(claudeJsonPath);
     expect(json.projects[cwd].hasTrustDialogAccepted).toBe(true);
     expect(json.projects[cwd].hasCompletedProjectOnboarding).toBe(true);
-    // Existing fields preserved
     expect(json.projects[cwd].projectOnboardingSeenCount).toBe(4);
   });
 
@@ -135,7 +124,6 @@ describe('ensureTrustedScratchCwd', () => {
     const jsonB = readJson(path.join(configDir2, '.claude.json'));
     expect(jsonA.projects[cwdA].hasTrustDialogAccepted).toBe(true);
     expect(jsonB.projects[cwdB].hasTrustDialogAccepted).toBe(true);
-    // No cross-pollination
     expect(jsonA.projects[cwdB]).toBeUndefined();
     expect(jsonB.projects[cwdA]).toBeUndefined();
   });

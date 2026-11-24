@@ -23,9 +23,6 @@ describe('looksLikeUnifiedDiff', () => {
     expect(looksLikeUnifiedDiff(text)).toBe(true);
   });
 
-  // The detector decides whether a Bash result is rendered as a diff instead
-  // of as output. A false positive turns ordinary text into a broken diff, so
-  // it demands a hunk header, not merely lines that start with + or -.
   it('is not fooled by output that merely contains + and - lines', () => {
     expect(looksLikeUnifiedDiff('+ installed foo@1.2.3\n- removed bar\n')).toBe(false);
     expect(looksLikeUnifiedDiff('--- a section heading ---\nsome text\n')).toBe(false);
@@ -135,8 +132,6 @@ Binary files a/icon.png and b/icon.png differ
     expect(file.hunks[0].lines.map((l) => l.kind)).toEqual(['del', 'add']);
   });
 
-  // Nothing may be silently dropped: a command that printed something before
-  // its diff still printed it.
   it('keeps whatever was printed before the first file', () => {
     const parsed = parseUnifiedDiff(`Running git diff...\n\n${GIT_DIFF}`)!;
     expect(parsed.preamble).toEqual(['Running git diff...', '']);
@@ -148,7 +143,6 @@ Binary files a/icon.png and b/icon.png differ
     const parsed = parseUnifiedDiff(text, { maxLines: 10 })!;
     expect(parsed.files[0].hunks[0].lines).toHaveLength(10);
     expect(parsed.truncated).toBe(40);
-    // The counts still describe the whole diff, not the part that fit.
     expect(parsed.files[0].added).toBe(50);
   });
 

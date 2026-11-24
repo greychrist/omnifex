@@ -1,7 +1,5 @@
-// Drift detector — keeps the main-process and renderer-mirror log
-// taxonomies in sync. The two files exist because the renderer Vite
-// bundle can't import from the electron tree at runtime; this test
-// holds them to a single shared truth at build time.
+// The renderer bundle cannot import the daemon's tree at runtime, so its
+// mirror is held to it here.
 
 import { describe, it, expect } from 'vitest';
 import {

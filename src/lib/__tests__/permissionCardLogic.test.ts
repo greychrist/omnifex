@@ -159,10 +159,8 @@ describe('SCOPE_OPTIONS', () => {
 });
 
 describe('unmatchedFileRuleWarning', () => {
-  // CLI ≥2.1.210: file permission checks match only Edit(path) and
-  // Read(path). Write(path)/NotebookEdit(path)/Glob(path) rules are accepted
-  // but never matched, and the CLI warns for each at startup. Mirror that
-  // warning at authoring time so the rule never gets saved in a dead form.
+  // CLI >= 2.1.210 matches file permission checks only for Edit(path) and
+  // Read(path); Write/NotebookEdit/Glob path rules load but never match.
   it('warns on Write(path) and suggests Edit', () => {
     expect(unmatchedFileRuleWarning('Write(docs/**)')).toContain('Edit(docs/**)');
   });
@@ -200,8 +198,7 @@ describe('buildCommandPreview', () => {
   });
 
   it('makes zero-width characters visible instead of dropping them', () => {
-    // U+200B between `rm` and the rest renders as nothing in a <pre>, so the
-    // approval dialog would show a command different from the one that runs.
+    // U+200B renders as nothing in a <pre>.
     const p = buildCommandPreview('rm\u200B -rf ~/data');
     expect(p.text).toBe('rm<U+200B> -rf ~/data');
     expect(p.hiddenCount).toBe(1);

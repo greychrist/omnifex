@@ -1,11 +1,4 @@
 // @vitest-environment jsdom
-//
-// Backstop for the CLI 2.1.229 crash class. Field-level guards cover the tool
-// inputs we know about; this covers the ones we don't. Before this, the nearest
-// boundary above a transcript row was the app-level one in `main.tsx`, so a
-// single unrenderable message blanked all of OmniFex — and blanked it again on
-// every replay of that session's JSONL, exactly the `--resume` symptom the CLI
-// fixed for itself.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
@@ -84,9 +77,7 @@ describe('ClaudeTranscript — per-row error containment', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const { container } = renderTranscript([node(), node(true), node()]);
-      // The two healthy rows still rendered.
       expect(container.querySelectorAll('[data-stub-message]')).toHaveLength(2);
-      // The bad row shows an in-place notice rather than taking the app down.
       expect(screen.getByText(/couldn't be rendered/i)).toBeTruthy();
     } finally {
       spy.mockRestore();

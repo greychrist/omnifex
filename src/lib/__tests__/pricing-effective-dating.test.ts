@@ -10,13 +10,6 @@ import {
 const MTOK = 1_000_000;
 const perM = (rate: number) => Math.round(rate * MTOK * 1e6) / 1e6;
 
-/**
- * Rates are effective-dated: each model maps to a list of periods, and the one
- * that applies to a given day is the period with the latest `from` on or
- * before it. Editing a rate in place instead of appending a period silently
- * re-prices every past row the next time it is re-scanned — the failure mode
- * `scripts/pricing.json` documents at length.
- */
 describe('effective-dated rates', () => {
   it('every shipped row has a pattern and a well-formed effective date', () => {
     expect(SHIPPED_PRICING.length).toBeGreaterThan(0);
@@ -49,8 +42,6 @@ describe('effective-dated rates', () => {
   });
 
   it('falls back to the earliest period for a date before any of them', () => {
-    // Rather than reporting the model unpriced. A transcript predating the
-    // table is far likelier than a genuinely unknown model.
     const periods = [{ from: '2026-01-01', inputPerM: 7, outputPerM: 35 }];
     expect(ratePeriodFor(periods, '2020-05-05')?.inputPerM).toBe(7);
   });
@@ -85,11 +76,6 @@ describe('effective-dated rates', () => {
   });
 });
 
-/**
- * The migration to the period shape must be rate-neutral: every model that had
- * a price yesterday has the same price today. A regression here silently
- * re-prices all of history on the next backfill sweep.
- */
 describe('rate-neutrality of the period migration', () => {
   const EXPECTED: Record<string, [number, number]> = {
     'claude-fable-5': [10, 50],
@@ -127,11 +113,7 @@ describe('rate-neutrality of the period migration', () => {
   });
 });
 
-/**
- * `<synthetic>` records carry no usage and are written by the CLI for
- * bookkeeping. Flagging them as estimated trains the unpriced-model warning to
- * be ignored, which is how a genuinely new model would slip through.
- */
+// `<synthetic>` records carry no usage: CLI bookkeeping.
 describe('<synthetic>', () => {
   it('is priced at zero and is not flagged as estimated', () => {
     const { rates, estimated } = resolveRates('<synthetic>');
@@ -148,11 +130,6 @@ describe('<synthetic>', () => {
   });
 });
 
-/**
- * The legacy reader, used only by migration 25 to fold a retired
- * `pricing_overrides` blob into `model_pricing`. It emits pricing rows — the
- * same shape as everything else.
- */
 describe('parseLegacyPricingOverrides — row shape', () => {
   it('normalises the flat legacy shape to one always-applicable row', () => {
     expect(parseLegacyPricingOverrides('{"opus-5":{"input":4}}')).toEqual([
@@ -202,10 +179,6 @@ describe('parseLegacyPricingOverrides — row shape', () => {
   });
 });
 
-/**
- * A genuinely new model must need no release: one row has to carry everything
- * — rates, fast-mode rates, legend name and color.
- */
 describe('a user row covers a whole new model', () => {
   it('carries fast-mode rates so a fast-capable new model needs no rebuild', () => {
     const rows = [{ pattern: 'brandnew-9', effectiveFrom: '1970-01-01', inputPerM: 7, outputPerM: 35, fastInputPerM: 14, fastOutputPerM: 70 }];
@@ -224,7 +197,6 @@ describe('a user row covers a whole new model', () => {
   });
 
   it('carries an absolute cacheRead while inheriting input/output from the shipped table', () => {
-    // The Fable 5.1 shape: one field changes, everything else stays.
     const rows = [{ pattern: 'fable-5', effectiveFrom: '1970-01-01', cacheReadPerM: 0.25 }];
     const { rates } = resolveRates('claude-fable-5', rows);
     expect(perM(rates.input)).toBe(10);
@@ -233,7 +205,6 @@ describe('a user row covers a whole new model', () => {
   });
 
   it('a label-only row does not clear the unpriced flag', () => {
-    // That flag is the one signal a new model is being costed at the default.
     const rows = [{ pattern: 'brandnew-9', effectiveFrom: '1970-01-01', label: 'Brand New 9' }];
     const r = resolveRates('claude-brandnew-9', rows);
     expect(r.estimated).toBe(true);
@@ -241,8 +212,7 @@ describe('a user row covers a whole new model', () => {
   });
 
   it('a user row restating input does not wipe a shipped ABSOLUTE cache rate', () => {
-    // Fable 5.1 reads at $0.25/MTok. Bumping its input must not silently
-    // replace that with the 0.1x formula the row exists to escape.
+    // Fable 5.1 reads at $0.25/MTok.
     const rows = [{ pattern: 'fable-5-1', effectiveFrom: '1970-01-01', inputPerM: 12 }];
     const { rates } = resolveRates('claude-fable-5-1', rows);
     expect(perM(rates.input)).toBe(12);

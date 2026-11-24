@@ -7,10 +7,6 @@ import { ALL_KIND_RECORDS, KIND_OF_RECORD, drawnUuids, idOf } from './fixtures/a
 import { GREG_RENDERING_CONFIG } from './fixtures/gregRenderingConfig';
 
 
-// Expanded exists so Greg can check every record type is accounted for: it
-// draws every record, whatever the per-kind settings say.
-// A record whose content another item shows rather than a row of its own:
-// a thought's token estimate is printed on the thought.
 const FOLDED_INTO_ANOTHER = new Set(['system.thinking_tokens']);
 
 describe('transcriptItems — Expanded', () => {

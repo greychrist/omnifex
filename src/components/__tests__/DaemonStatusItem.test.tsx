@@ -55,7 +55,6 @@ describe('DaemonStatusItem', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  // The bar's readout is the trigger: `daemon live` opens the detail.
   it('opens the daemon detail from the readout and reads /healthz while open', async () => {
     remote();
     render(<DaemonStatusItem link={LIVE} />);
@@ -72,8 +71,6 @@ describe('DaemonStatusItem', () => {
     expect(document.querySelector('[data-daemon-version-mismatch]')).toBeNull();
   });
 
-  // The popover lives on a session now, so it answers for this session too —
-  // the fact the global titlebar button could never show.
   it('says whether this session is receiving events', async () => {
     remote();
     const { unmount } = render(<DaemonStatusItem link={LIVE} />);
@@ -103,8 +100,6 @@ describe('DaemonStatusItem', () => {
     expect(document.querySelector('[data-daemon-version-mismatch]')?.textContent).toMatch(/replaced automatically/);
   });
 
-  // On the web the daemon is what served this page, so nothing swaps it on
-  // the tablet's behalf — a mismatch means the page itself is stale.
   it('tells a stale web page to reload instead', async () => {
     remote('0.4.156', 'web');
     appVersion = '0.4.155';

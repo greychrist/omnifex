@@ -34,11 +34,8 @@ function readToolUse(id: string): JsonlNode {
   } as unknown as JsonlNode;
 }
 
-/**
- * A skill companion record as the CLI persists it: text content, `isMeta`,
- * and `sourceToolUseID` naming the Skill tool_use that produced it. This is
- * the shape the JSONL always carries — stream-json strips all three.
- */
+// A skill companion record as the CLI persists it: text, `isMeta` and
+// `sourceToolUseID`. stream-json strips all three.
 function skillCompanion(sourceToolUseID: string, text: string): JsonlNode {
   return {
     kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
@@ -86,9 +83,6 @@ describe('detectSkillInjection', () => {
   });
 
   it('returns null for a user message carrying no sourceToolUseID', () => {
-    // A message the user actually typed. This is the case that regressed:
-    // it must never be mistaken for a skill body, and a skill body must
-    // never be mistaken for it.
     const msg = userText('# Something');
     const all = [userText('first'), msg];
     expect(detectSkillInjection(msg, all)).toBeNull();
@@ -116,12 +110,8 @@ describe('detectSkillInjection', () => {
     expect(detectSkillInjection(tr, [tu, tr])).toBeNull();
   });
 
-  // Regression: CLI 2.1.270 emits TWO companion records when a skill is
-  // re-invoked in one session — a short "(Re-invocation of …)" preamble, then
-  // the SKILL.md body. Adjacency matched the preamble, so the body fell
-  // through to `user.prompt` and rendered as if the user had typed the whole
-  // skill. Both records name their originating tool_use in `sourceToolUseID`.
-  // Captured from WIN session 25d0800c-c395-4477-b78f-ca3f54945135.
+  // CLI 2.1.270 emits two companion records on a re-invocation, a "(Re-invocation
+  // of …)" preamble then the body, both naming their tool_use in sourceToolUseID.
   it('detects the body when a re-invocation preamble sits between it and the tool_result', () => {
     const tu = skillToolUse('toolu_011V4gwJ', 'commit');
     const tr = toolResult('toolu_011V4gwJ', 'Launching skill: commit');

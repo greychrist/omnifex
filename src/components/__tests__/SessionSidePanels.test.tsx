@@ -24,12 +24,9 @@ describe('SessionSidePanels', () => {
     ['context', 'Session context'],
   ])('hosts %s as ONE overlay side panel titled "%s"', (key, title) => {
     render(<SessionSidePanels open={key} onClose={vi.fn()} content={content} />);
-    // One panel, the same overlay component the context panel already used —
-    // nothing here pushes the transcript aside.
     expect(screen.getAllByTestId('resizable-side-panel')).toHaveLength(1);
     expect(screen.getByRole('heading', { name: title })).toBeTruthy();
     expect(screen.getByTestId(`body-${key}`)).toBeTruthy();
-    // Every other panel's body stays unmounted.
     for (const other of Object.keys(content) as SessionSidePanelKey[]) {
       if (other !== key) expect(screen.queryByTestId(`body-${other}`)).toBeNull();
     }
@@ -68,7 +65,6 @@ describe('SessionSidePanels', () => {
     expect(keys.size).toBe(3);
   });
 
-  // MCP servers and plugins are sections of Session context now, not panels.
   it('has no MCP or Plugins panel of its own', () => {
     expect(Object.keys(content).sort()).toEqual(['context', 'inspector', 'permissions']);
   });

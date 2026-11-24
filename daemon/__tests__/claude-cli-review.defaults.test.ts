@@ -1,15 +1,3 @@
-/**
- * The DEFAULT I/O adapters in claude-cli-review.
- *
- * `claude-cli-review.test.ts` drives the service with every probe injected, so
- * it never reaches the production `execFileSync` / `execFile` / `fetch` / `statSync`
- * implementations those deps default to. Those defaults are the half that
- * actually touches the machine — a broken one fails silently, because every
- * failure path here deliberately degrades to `null` rather than throwing.
- *
- * Kept in its own file because covering them needs `vi.mock('node:child_process')`
- * at module scope, and the sibling suite must keep the real module.
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -36,7 +24,6 @@ beforeEach(() => {
 });
 
 describe('probeCliVersion', () => {
-  /** Settle the async execFile the probe makes: stdout, or a thrown error. */
   function answer(result: string | Error) {
     execFileMock.mockImplementation(((_f: string, _a: string[], _o: unknown, cb: (e: Error | null, out: string, err: string) => void) => {
       process.nextTick(() => (result instanceof Error ? cb(result, '', '') : cb(null, result, '')));
@@ -49,16 +36,12 @@ describe('probeCliVersion', () => {
     expect(await probeCliVersion('/bin/claude')).toBe('2.1.266 (Claude Code)');
   });
 
-  // Async: this runs on every status check, and a sync spawn with a 5s timeout
-  // froze every live session's stream while it ran.
   it('never spawns synchronously', async () => {
     answer('2.1.266');
     await probeCliVersion('/bin/claude');
     expect(execFileSyncMock).not.toHaveBeenCalled();
   });
 
-  // No shell: a version manager can put the binary under a path with spaces,
-  // and the path goes to execFile whole rather than through /bin/sh -c.
   it('runs the binary directly and asks only for --version', async () => {
     answer('2.1.266');
     await probeCliVersion('/Applications/My Tools/claude');
@@ -71,15 +54,11 @@ describe('probeCliVersion', () => {
     expect(execFileMock).not.toHaveBeenCalled();
   });
 
-  // Whitespace-only output is indistinguishable from no answer, and an empty
-  // string would parse to a null version anyway — collapse it at the source.
   it('reports null for empty output', async () => {
     answer('   \n');
     expect(await probeCliVersion('/bin/claude')).toBeNull();
   });
 
-  // A missing binary, a non-zero exit and the 5s timeout all arrive as an error.
-  // None of them may propagate: this feeds a status popover, not a session.
   it('swallows a failing probe rather than failing the popover', async () => {
     answer(new Error('ETIMEDOUT'));
     expect(await probeCliVersion('/bin/claude')).toBeNull();
@@ -87,7 +66,6 @@ describe('probeCliVersion', () => {
 });
 
 describe('execCliUpdate', () => {
-  /** Drive the execFile callback the module registered. */
   function settle(err: Error | null, stdout = '', stderr = '') {
     const cb = execFileMock.mock.calls[0][3] as unknown as (
       e: Error | null,
@@ -112,8 +90,7 @@ describe('execCliUpdate', () => {
     expect(execFileMock).not.toHaveBeenCalled();
   });
 
-  // The actionable text ("npm global folder isn't writable") is on the CLI's
-  // own streams; err.message is just "Command failed" and would bury it.
+  // The actionable text is on the CLI's own streams; err.message is generic.
   it('rejects with the CLI\'s stderr, not the generic exec error', async () => {
     const p = execCliUpdate('/bin/claude', '/cfg/work');
     settle(new Error('Command failed'), '', "Can't auto-update: npm global folder isn't writable\n");
@@ -158,18 +135,14 @@ describe('fetchLatestCliVersion', () => {
   const urlOf = (call: number) => String(fetchMock.mock.calls[call][0]);
 
   describe('native install', () => {
-    // `claude update` on a native install reads the channel the official
-    // install.sh reads, and npm runs ahead of it: 2.1.327 was on npm hours
-    // before this channel, so the popover offered an update that `claude
-    // update` answered with "up to date".
+    // `claude update` on a native install reads install.sh's channel, which lags
+    // npm.
     it('reads the native release channel, not npm', async () => {
       fetchMock.mockResolvedValue(text('2.1.327\n'));
       await expect(fetchLatestCliVersion(NATIVE)).resolves.toBe('2.1.327');
       expect(urlOf(0)).toBe('https://downloads.claude.ai/claude-code-releases/latest');
     });
 
-    // An unknown install location is not evidence of npm, and native is the
-    // installer Anthropic ships today.
     it('treats an unknown or missing binary path as native', async () => {
       fetchMock.mockResolvedValue(text('2.1.327'));
       await fetchLatestCliVersion(null);
@@ -202,7 +175,6 @@ describe('fetchLatestCliVersion', () => {
       await expect(fetchLatestCliVersion(NPM)).resolves.toBeNull();
     });
 
-    // A proxy serving an HTML error page parses to an object with no `latest`.
     it('reports null when the payload carries no string `latest`', async () => {
       fetchMock.mockResolvedValue(ok({ latest: 42 }));
       await expect(fetchLatestCliVersion(NPM)).resolves.toBeNull();
@@ -215,9 +187,6 @@ describe('fetchLatestCliVersion', () => {
     await expect(fetchLatestCliVersion(NPM)).resolves.toBeNull();
   });
 
-  // In-flight de-duplication, and only that: the promise is released in a
-  // `finally`, so the NEXT check really re-fetches. A time-based cache would
-  // make a button labelled "Check for Upgrade" lie.
   it('shares one request between concurrent callers, then re-fetches', async () => {
     fetchMock.mockResolvedValue(text('2.1.266'));
     const [a, b] = await Promise.all([fetchLatestCliVersion(NATIVE), fetchLatestCliVersion(NATIVE)]);
@@ -229,7 +198,6 @@ describe('fetchLatestCliVersion', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  // Sharing is per source: an npm caller must not receive the native answer.
   it('does not share a request across sources', async () => {
     fetchMock.mockImplementation(async (url: string) =>
       url.includes('npmjs') ? ok({ latest: '2.1.327' }) : text('2.1.326'));
@@ -239,9 +207,6 @@ describe('fetchLatestCliVersion', () => {
   });
 });
 
-// The default `dirExists`, reached only when a caller wires no `dirExistsFn`.
-// Exercised through the override path because that is the one branch that asks
-// the filesystem whether a user-configured directory is still there.
 describe('repo_dir resolution with the real filesystem probe', () => {
   let tmp: string;
 
@@ -257,7 +222,6 @@ describe('repo_dir resolution with the real filesystem probe', () => {
       cliVersionFn: () => '2.1.266 (Claude Code)',
       repoDirOverrideFn: () => override,
       repoCandidatesFn: () => [],
-      // dirExistsFn deliberately NOT injected — that is the point of this suite.
       isOmnifexRepoFn: () => false,
     });
 
@@ -271,8 +235,7 @@ describe('repo_dir resolution with the real filesystem probe', () => {
     expect(status.repo_dir).toBeNull();
   });
 
-  // A file is not a directory. `statSync` succeeds on it, so an `existsSync`
-  // check here would wrongly accept it.
+  // statSync succeeds on a file, so existence alone would accept it.
   it('rejects an override that names a file', async () => {
     const file = path.join(tmp, 'package.json');
     fs.writeFileSync(file, '{}');
@@ -286,26 +249,19 @@ describe('runUpdate with no runner wired', () => {
     createClaudeCliReviewService({
       cliVersionFn: () => '2.1.266 (Claude Code)',
       claudeAccountsFn: () => accounts,
-      // runUpdateFn deliberately absent.
     });
 
-  // Reporting success having spawned nothing is the one outcome worse than an
-  // error: the popover would claim the CLI was updated and the drift dot would
-  // clear on a lie.
   it('throws rather than reporting a silent success', async () => {
     await expect(svc([{ name: 'Work', configDir: '/cfg/work' }]).runUpdate()).rejects.toThrow(
       /no runUpdateFn wired/,
     );
   });
 
-  // With no accounts there is genuinely nothing to run, so that stays quiet.
   it('returns an empty result when there are no accounts to run under', async () => {
     const res = await svc([]).runUpdate();
     expect(res).toEqual({ from: '2.1.266', to: '2.1.266', upgraded: false, accounts: [] });
   });
 
-  // Same outcome when the caller wired no account source at all, rather than
-  // one that returns nothing — this is the pre-accounts wiring shape.
   it('returns an empty result when no account source is wired', async () => {
     const res = await createClaudeCliReviewService({
       cliVersionFn: () => '2.1.266 (Claude Code)',

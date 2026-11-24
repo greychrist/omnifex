@@ -65,8 +65,6 @@ describe('curation on the registry', () => {
 
   beforeEach(() => {
     db = createDatabase(':memory:');
-    // `brain_queue.account_id` is a real foreign key, so the account has to
-    // exist before anything can be enqueued against it.
     db.raw
       .prepare(
         `INSERT INTO accounts (id, name, config_dir, engine, subscription_label, has_cost)
@@ -89,11 +87,6 @@ describe('curation on the registry', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  /**
-   * Plan 8. Curation is pinned to Opus on purpose, so it is the single most
-   * expensive thing the Brain does — and until the ledger existed it was the
-   * one spend that was not recorded anywhere at all, not even as a snapshot.
-   */
   it('records what curation cost in the spend ledger', async () => {
     curator.mockResolvedValue({
       collapsed: 'Early work.',
@@ -119,8 +112,6 @@ describe('curation on the registry', () => {
   });
 
   it('writes no ledger row when curation is skipped before it spends', async () => {
-    // Two entries, well under the threshold: `qualifies` rejects it, no model
-    // is reached, and a row here would claim money that was never spent.
     brain.writeNote(accountId, 'Subsystems/Small.md', noteWith(2), 'seed');
 
     await brain.curateNote(accountId, 'Subsystems/Small.md');
@@ -139,7 +130,6 @@ describe('curation on the registry', () => {
     expect(note?.body).toContain('entries collapsed)_');
     expect(note?.body).toContain('- A fact.');
     expect(note?.frontmatter.curated_at).toBeDefined();
-    // The human section survives a model-driven rewrite.
     expect(note?.body).toContain('- Ask Greg.');
   });
 
@@ -198,7 +188,6 @@ describe('curation on the registry', () => {
 
     expect(queued).toBe(2);
     const rows = brain.queueList(accountId).filter((r) => r.sourceId === CURATION_SOURCE_ID);
-    // queueList is newest-first; reversing gives enqueue order.
     expect(rows.map((r) => r.itemKey).reverse()).toEqual([
       'Subsystems/Long.md',
       'Subsystems/Medium.md',
@@ -218,14 +207,10 @@ describe('curation on the registry', () => {
   });
 
   it('commits the curated note under the message "Curation"', async () => {
-    // The commit is fire-and-forget (`commitAndRecord`), so a live `git log`
-    // read immediately after curateNote resolves races it. Asserting on the
-    // captured argv is what makes the spec's audit-trail claim testable.
+    // The commit is fire-and-forget, so assert on the captured argv, not on
+    // `git log`.
     const calls: string[][] = [];
     const svc = createBrainService(db, {
-      // `commitAll` asks git what is staged and returns `nothing-to-commit`
-      // when the answer is empty, so a stub that returns '' for everything
-      // never reaches `git commit` at all.
       execGit: async (args: string[]) => {
         calls.push(args);
         return args[0] === 'status' ? ' M Subsystems/Widget.md\n' : '';
@@ -237,7 +222,6 @@ describe('curation on the registry', () => {
     svc.writeNote(accountId, 'Subsystems/Widget.md', noteWith(12), 'seed');
 
     await svc.curateNote(accountId, 'Subsystems/Widget.md');
-    // Let the fire-and-forget commit settle.
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(calls.some((args) => args.includes('commit') && args.includes('Curation'))).toBe(true);

@@ -96,10 +96,8 @@ function makeHandle(engine: AgentEngine): SessionHandle {
   };
 }
 
-// The tail polls with statSync on a 100ms interval, so assertions have to
-// wait for at least one cycle. Poll rather than sleep a fixed span — under
-// parallel suite load fs polling granularity degrades and a fixed sleep
-// starts missing events.
+// The tail polls every 100ms and fs polling degrades under suite load, so
+// poll rather than sleep a fixed span.
 function waitUntil(predicate: () => boolean, timeoutMs = 3000): Promise<boolean> {
   return new Promise((resolve) => {
     const start = Date.now();
@@ -171,12 +169,6 @@ describe('runtime.listenToMessages — model catalog write-through', () => {
     }).not.toThrow();
   });
 });
-
-// ---------------------------------------------------------------------------
-// Post-init identity confirmation. The `system:init` account payload is the
-// identity of the process actually running the session — stronger evidence
-// than the pre-flight file read, which can be stale.
-// ---------------------------------------------------------------------------
 
 describe('runtime.listenToMessages — account identity re-check', () => {
   function setup(account: unknown) {
@@ -294,7 +286,6 @@ describe('runtime.listenToMessages — engine.onError', () => {
     const statusCalls = sendMock.mock.calls.filter(
       (c) => c[0] === 'session-status:tab-1',
     );
-    // No status flip was emitted.
     for (const call of statusCalls) {
       const payload = call[1] as { sessionStatus?: string };
       expect(payload.sessionStatus).not.toBe('error');
@@ -346,10 +337,6 @@ describe('runtime.listenToMessages — engine.onError', () => {
 });
 
 describe('runtime.listenToMessages — hook lifecycle messages', () => {
-  // SessionStart hooks emit system:hook_started / hook_progress / hook_response
-  // BEFORE the user sends any prompt. The main process must not emit any
-  // session-status events on these — conversationStatus is now derived by
-  // the renderer from JSONL content, not by main from FSM transitions.
   it('does NOT emit session-status events on hook events', () => {
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);
@@ -369,7 +356,6 @@ describe('runtime.listenToMessages — hook lifecycle messages', () => {
     const statusCalls = vi.mocked(sendToRenderer).mock.calls.filter(
       (c) => c[0] === 'session-status:tab-1',
     );
-    // No status flips emitted for hook plumbing.
     expect(statusCalls.length).toBe(0);
   });
 
@@ -440,7 +426,6 @@ describe('runtime.listenToMessages — engine.onExit', () => {
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);
     const sendToRenderer: SendToRenderer = vi.fn();
-    // Simulate a fresh handle replacing the old one for the same tab.
     const newHandle = makeHandle(makeFakeEngine());
     const sessions = new Map<string, SessionHandle>([['tab-1', newHandle]]);
 
@@ -458,15 +443,6 @@ describe('runtime.listenToMessages — engine.onExit', () => {
   });
 });
 
-/**
- * Transcript inversion: the CLI's own JSONL is the sole source of committed
- * transcript rows, delivered by the tail. stream-json keeps only the shapes
- * the CLI never writes to disk. Forwarding a committed row from BOTH sources
- * renders it twice; forwarding neither loses it entirely.
- *
- * See daemon/services/sessions/stream-forward.ts for how the deny-list was
- * derived, and why an unrecognised shape forwards rather than drops.
- */
 describe('runtime.listenToMessages — stream forwarding after the inversion', () => {
   function setup() {
     const engine = makeFakeEngine();
@@ -544,8 +520,6 @@ describe('runtime.listenToMessages — stream forwarding after the inversion', (
   });
 
   it('still dispatches the result notification for a row it forwards', () => {
-    // The forwarding gate must not short-circuit main's own handling of an
-    // event. Acting on a message and relaying it are separate decisions.
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);
     const sendToRenderer = vi.fn();
@@ -578,13 +552,6 @@ describe('runtime.listenToMessages — stream forwarding after the inversion', (
   });
 });
 
-/**
- * Transcript inversion, renderer side: the tail is now the transcript source
- * in rich mode, not just a carrier for the few closure envelopes stream-json
- * omitted. It must split lines — closure carriers to `claude-output-extra:`,
- * everything else to `agent-output:` — so the renderer sees one pipeline
- * with one normalization.
- */
 describe('runtime.listenToMessages — JSONL tail as transcript source', () => {
   let tmpDir: string;
   let jsonlPath: string;
@@ -638,8 +605,6 @@ describe('runtime.listenToMessages — JSONL tail as transcript source', () => {
   });
 
   it('delivers the skill companion fields stream-json strips', async () => {
-    // The whole point of the inversion: sourceToolUseID reaches the renderer,
-    // so skill detection never has to infer a record's role from position.
     const { sent } = setup();
 
     fs.appendFileSync(
@@ -680,13 +645,6 @@ describe('runtime.listenToMessages — JSONL tail as transcript source', () => {
   });
 });
 
-/**
- * A mod's `$.ui.notify` reaches the host as `system/ui_notify` (CLI 2.1.321,
- * CLAUDE_CODE_NOTIFICATIONS_HOST). The daemon turns it into the same
- * `claude-notification` every client already raises, carrying an id the
- * notification centre replaces by and the time to raise it at; a cancel
- * becomes `claude-notification-remove`.
- */
 describe('runtime.listenToMessages — mod notifications', () => {
   function start() {
     const engine = makeFakeEngine();
@@ -731,8 +689,6 @@ describe('runtime.listenToMessages — mod notifications', () => {
     expect(sendToRenderer).toHaveBeenCalledWith('claude-notification-remove', { ids: ['mod:sess-1:reminder@inline:k'] });
   });
 
-  // Settings › Notifications › "Notifications from mods". Read per frame, so
-  // turning it off quiets sessions already running.
   it('raises nothing while mod notifications are turned off, and resumes when back on', () => {
     const engine = makeFakeEngine();
     const handle = makeHandle(engine);

@@ -29,10 +29,6 @@ describe('claude service', () => {
     }
   });
 
-  // -------------------------------------------------------------------------
-  // getHomeDirectory
-  // -------------------------------------------------------------------------
-
   describe('getHomeDirectory', () => {
     it('returns a non-empty string', () => {
       const home = service.getHomeDirectory();
@@ -40,10 +36,6 @@ describe('claude service', () => {
       expect(home.length).toBeGreaterThan(0);
     });
   });
-
-  // -------------------------------------------------------------------------
-  // listProjects
-  // -------------------------------------------------------------------------
 
   describe('listProjects', () => {
     it('returns an array when no accounts exist', async () => {
@@ -66,7 +58,6 @@ describe('claude service', () => {
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
 
-      // Create a fake session file
       const sessionFile = path.join(projectDir, 'abc123.jsonl');
       fs.writeFileSync(sessionFile, JSON.stringify({ type: 'system', content: 'init' }) + '\n');
 
@@ -78,9 +69,6 @@ describe('claude service', () => {
       expect(found).toBeDefined();
     });
 
-    // OmniFex's own `claude -p` runs (summaries, Brain) land in a projects dir
-    // named after the scratch cwd. It is not a user project: it has no
-    // account binding, so opening it threw NO_ACCOUNT_FOR_PROJECT.
     it('does not list the summary scratch dir as a project', async () => {
       const configDir = path.join(tmpDir, '.claude-scratch');
       const scratchId = '-private-var-folders-06-x-T-omnifex-summary-scratch';
@@ -93,12 +81,8 @@ describe('claude service', () => {
     });
 
     it('does not report new activity when a session file is only touched', async () => {
-      // "Last activity" means "when Claude last worked here", not "when this
-      // inode was last written". The CLI touches a session file on reopen and
-      // on resume without appending anything — 2.1.239 fixed the same class of
-      // bug in `/resume` and the agents view, where a merely-reopened session
-      // jumped to the top of the list. Size is the discriminator, and
-      // listProjects already stats every file, so it costs no extra IO.
+      // The CLI touches a session file on reopen and resume without appending; size
+      // is the discriminator.
       const configDir = path.join(tmpDir, '.claude-touch');
       const projectDir = path.join(configDir, 'projects', '-home-user-touched');
       fs.mkdirSync(projectDir, { recursive: true });
@@ -110,7 +94,6 @@ describe('claude service', () => {
         .find((p) => p.id === '-home-user-touched');
       expect(before?.most_recent_session).toBeDefined();
 
-      // Touch only: mtime jumps an hour, contents unchanged.
       const later = new Date(Date.now() + 3600_000);
       fs.utimesSync(sessionFile, later, later);
 
@@ -120,8 +103,6 @@ describe('claude service', () => {
     });
 
     it('reports new activity when a session file actually grows', async () => {
-      // The other half: a real append must still move the timestamp, or the
-      // guard above would freeze the list permanently.
       const configDir = path.join(tmpDir, '.claude-append');
       const projectDir = path.join(configDir, 'projects', '-home-user-appended');
       fs.mkdirSync(projectDir, { recursive: true });
@@ -142,8 +123,6 @@ describe('claude service', () => {
     });
 
     it('stamps pinned onto projects, reading the pins table', async () => {
-      // The renderer gets pin state inside the payload it already fetches —
-      // no second IPC call, so the two can't drift out of sync.
       const configDir = path.join(tmpDir, '.claude-pins');
       const projectId = '-home-user-pinned';
       const projectDir = path.join(configDir, 'projects', projectId);
@@ -198,15 +177,9 @@ describe('claude service', () => {
       expect(createProjectPinsService(db).isPinned('/home/user/delpin')).toBe(false);
     });
 
-    // A project's identity is its recovered path, not its encoded dir name:
-    // pins, account overrides and path rules all key on project_path. Claude
-    // can end up with several encoded dirs resolving to one real folder (the
-    // documented rename case — it keeps writing the new cwd into the old
-    // dir), which surfaced as the same project listed twice.
     describe('directories that resolve to the same path', () => {
       const REAL = '/Users/greg/Repos/work/pi-tuitive';
 
-      /** Two encoded dirs, both resolving to REAL via their JSONL cwd. */
       function makeTwoDirs(configDir: string): void {
         const dirs: [string, number][] = [
           ['-Users-greg-Repos-work-pi-tuitive', 18],
@@ -218,8 +191,6 @@ describe('claude service', () => {
           for (let i = 0; i < count; i++) {
             const f = path.join(d, `${id}-s${i}.jsonl`);
             fs.writeFileSync(f, JSON.stringify({ type: 'user', cwd: REAL }) + '\n');
-            // The 18-session dir is the recently-active one; the 1-session
-            // dir is the stale leftover.
             const when = id.endsWith('-fe') ? new Date('2026-07-01') : new Date('2026-07-14');
             fs.utimesSync(f, when, when);
           }
@@ -233,9 +204,7 @@ describe('claude service', () => {
 
         const rows = (await service.listProjects()).filter((p) => p.path === REAL);
         expect(rows).toHaveLength(1);
-        // No conversation becomes unreachable: 18 + 1.
         expect(rows[0].sessions).toHaveLength(19);
-        // The primary dir is the recently-active one.
         expect(rows[0].id).toBe('-Users-greg-Repos-work-pi-tuitive');
       });
 
@@ -253,8 +222,6 @@ describe('claude service', () => {
         const configDir = path.join(tmpDir, '.claude-merge3');
         makeTwoDirs(configDir);
         const acct = accounts.createAccount({ name: 'Work', configDir });
-        // getProjectSessions resolves the account by path rule (no default
-        // fallback), so the rule is required for the lookup to land.
         accounts.addPathRule(acct.id, '/Users/greg/Repos/work');
 
         const sessions = await service.getProjectSessions(
@@ -264,12 +231,8 @@ describe('claude service', () => {
         expect(sessions).toHaveLength(19);
       });
 
-      // Regression: the Claude CLI can write the SAME session id into both a
-      // `.claude/worktrees/<name>` encoded dir and the project-root encoded
-      // dir (worktree session, later surfaced under the root too). Both dirs
-      // resolve to REAL, so getProjectSessions merged them without dedup,
-      // producing two Session rows sharing one `id` — duplicate React keys
-      // and a visibly doubled row in SessionList.
+      // The CLI can write one session id into both a worktree's encoded dir and the
+      // project root's.
       it('dedups a session id that appears in more than one contributing dir, keeping the newer copy', async () => {
         const configDir = path.join(tmpDir, '.claude-dupsession');
         const rootId = '-Users-greg-Repos-work-pi-tuitive';
@@ -324,30 +287,25 @@ describe('claude service', () => {
           accountId: account.id,
           projectId: '-Users-greg-Repos-work-pi-tuitive',
         });
-        // Leaving the stale dir behind would resurrect the duplicate row.
         expect(fs.existsSync(path.join(configDir, 'projects', '-Users-greg-Repos-work-pi-tuitive'))).toBe(false);
         expect(fs.existsSync(path.join(configDir, 'projects', '-Users-greg-Repos-work-pi-tuitive-fe'))).toBe(false);
       });
 
       it('opens a session that lives in a secondary dir', async () => {
-        // A merged row lists sessions from every contributing dir, so history
-        // loading must find them there too — otherwise the row promises 19
-        // conversations and silently opens some of them empty.
         const configDir = path.join(tmpDir, '.claude-merge5');
         makeTwoDirs(configDir);
         const acct = accounts.createAccount({ name: 'Work', configDir });
         accounts.addPathRule(acct.id, '/Users/greg/Repos/work');
 
         const history = await service.loadSessionHistory(
-          '-Users-greg-Repos-work-pi-tuitive-fe-s0',   // lives in the stale dir
-          '-Users-greg-Repos-work-pi-tuitive',         // but asked for via the primary id
+          '-Users-greg-Repos-work-pi-tuitive-fe-s0',
+          '-Users-greg-Repos-work-pi-tuitive',
           REAL,
         );
         expect(history.length).toBeGreaterThan(0);
       });
 
       it('keeps genuinely distinct projects separate', async () => {
-        // Guard against over-merging: same basename, different real folders.
         const configDir = path.join(tmpDir, '.claude-distinct');
         for (const [id, cwd] of [
           ['-Users-greg-a-pi-tuitive', '/Users/greg/a/pi-tuitive'],
@@ -364,12 +322,8 @@ describe('claude service', () => {
       });
     });
 
-    // Regression: Claude Code's project-dir encoding (/ → -) is lossy.
-    // `-Users-greg-Repos-work-pi-tuitive-fe` could decode to either
-    // `/Users/greg/Repos/work/pi-tuitive-fe` (correct) or
-    // `/Users/greg/Repos/work/pi/tuitive/fe` (naive). The authoritative
-    // recovery is the `cwd` field on any JSONL entry inside the project
-    // dir; only the JSONL knows where the dashes really sit.
+    // The CLI's project-dir encoding is lossy; only a JSONL `cwd` knows where the
+    // dashes really are.
     it('recovers a project path with literal dashes from the JSONL cwd field', async () => {
       const configDir = path.join(tmpDir, '.claude-recover');
       const projectId = '-Users-greg-Repos-work-pi-tuitive-fe';
@@ -391,13 +345,8 @@ describe('claude service', () => {
       expect(found!.path).toBe(realPath);
     });
 
-    // Regression: when a project folder is renamed (e.g. greychrist → omnifex),
-    // Claude continues writing to the SAME encoded project-id dir but with the
-    // new cwd. Older JSONLs in that dir still carry the pre-rename cwd. The
-    // recovered path must reflect the CURRENT name — i.e. the newest JSONL's
-    // cwd wins, not whichever file happens to sort alphabetically first by
-    // its random UUID. Without this, a renamed project shows in the UI under
-    // its old path and silently collides with any sibling using the old name.
+    // After a folder rename the CLI keeps writing to the same encoded dir with the
+    // new cwd.
     it('prefers the newest JSONL cwd so a folder rename is reflected immediately', async () => {
       const configDir = path.join(tmpDir, '.claude-rename');
       const projectId = '-Users-greg-Repos-personal-omnifex';
@@ -406,7 +355,6 @@ describe('claude service', () => {
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
 
-      // The OLDER session (alphabetically first by UUID) carries the stale cwd.
       const olderFile = path.join(projectDir, '00000000-old-session.jsonl');
       fs.writeFileSync(
         olderFile,
@@ -415,7 +363,6 @@ describe('claude service', () => {
       const olderTime = new Date('2026-01-01T00:00:00Z');
       fs.utimesSync(olderFile, olderTime, olderTime);
 
-      // The NEWER session (alphabetically last) carries the post-rename cwd.
       const newerFile = path.join(projectDir, 'ffffffff-new-session.jsonl');
       fs.writeFileSync(
         newerFile,
@@ -443,7 +390,6 @@ describe('claude service', () => {
       const projects = await service.listProjects();
       const found = projects.find((p) => p.id === projectId);
       expect(found).toBeDefined();
-      // No JSONL → no cwd to recover; naive decode is best-effort.
       expect(found!.path).toBe('/Users/greg/myproject');
     });
 
@@ -481,10 +427,6 @@ describe('claude service', () => {
       expect(found!.path).toBe('/Users/greg/myproject');
     });
   });
-
-  // -------------------------------------------------------------------------
-  // loadSessionHistory
-  // -------------------------------------------------------------------------
 
   describe('loadSessionHistory', () => {
     it('throws NoAccountError when projectPath cannot be resolved to an account', async () => {
@@ -525,7 +467,6 @@ describe('claude service', () => {
       accounts.addPathRule(account.id, tmpDir);
 
       const result = await service.loadSessionHistory(sessionId, projectId, projectPath);
-      // Should parse valid lines and skip invalid
       expect(Array.isArray(result)).toBe(true);
       expect(result.length).toBe(3);
     });
@@ -553,9 +494,6 @@ describe('claude service', () => {
       expect((result as { type: string }[]).map((r) => r.type)).toEqual(['user', 'assistant']);
     });
 
-    // Transcripts reach tens of MB and this runs on every tab open. A
-    // readFileSync + split + parse of the whole file froze every live
-    // session's stream for the duration; it now streams in chunks.
     it('streams a multi-chunk transcript without a sync read, keeping order and filtering', async () => {
       const configDir = path.join(tmpDir, '.claude-big');
       const projectPath = path.join(tmpDir, 'big-project');
@@ -596,10 +534,6 @@ describe('claude service', () => {
   });
 
 
-  // -------------------------------------------------------------------------
-  // readClaudeMdFile
-  // -------------------------------------------------------------------------
-
   describe('readClaudeMdFile', () => {
     it('returns empty string for missing file', async () => {
       const result = await service.readClaudeMdFile('/nonexistent/CLAUDE.md');
@@ -614,10 +548,6 @@ describe('claude service', () => {
       expect(result).toBe('# Hello World');
     });
   });
-
-  // -------------------------------------------------------------------------
-  // saveClaudeMdFile
-  // -------------------------------------------------------------------------
 
   describe('saveClaudeMdFile', () => {
     it('creates file and reads back content', async () => {
@@ -636,10 +566,6 @@ describe('claude service', () => {
       expect(fs.existsSync(filePath)).toBe(true);
     });
   });
-
-  // -------------------------------------------------------------------------
-  // getClaudeSettings
-  // -------------------------------------------------------------------------
 
   describe('getClaudeSettings', () => {
     it('returns empty object for missing settings file', async () => {
@@ -663,10 +589,6 @@ describe('claude service', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // saveClaudeSettings
-  // -------------------------------------------------------------------------
-
   describe('saveClaudeSettings', () => {
     it('writes and reads back settings', async () => {
       const configDir = path.join(tmpDir, '.claude-settings-test');
@@ -680,10 +602,6 @@ describe('claude service', () => {
       expect((readBack as any).fontSize).toBe(14);
     });
   });
-
-  // -------------------------------------------------------------------------
-  // checkClaudeVersion
-  // -------------------------------------------------------------------------
 
   describe('checkClaudeVersion', () => {
     it('returns an object with installed boolean', async () => {
@@ -720,10 +638,6 @@ describe('claude service', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // getHooksConfig / updateHooksConfig
-  // -------------------------------------------------------------------------
-
   describe('getHooksConfig / updateHooksConfig', () => {
     it('returns empty object for missing hooks', async () => {
       const result = await service.getHooksConfig('user', {
@@ -754,10 +668,6 @@ describe('claude service', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // validateHookCommand
-  // -------------------------------------------------------------------------
-
   describe('validateHookCommand', () => {
     it('returns valid=true for non-empty command', () => {
       const result = service.validateHookCommand('echo hello');
@@ -770,10 +680,6 @@ describe('claude service', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // getMergedHooksConfig
-  // -------------------------------------------------------------------------
-
   describe('getMergedHooksConfig', () => {
     it('returns an object', async () => {
       const result = await service.getMergedHooksConfig('/some/project/path', { configDir: tmpDir });
@@ -785,10 +691,6 @@ describe('claude service', () => {
       await expect(service.getMergedHooksConfig('/some/project', {})).rejects.toThrow(/configDir is required/i);
     });
   });
-
-  // -------------------------------------------------------------------------
-  // createProject
-  // -------------------------------------------------------------------------
 
   describe('createProject', () => {
     it('creates the project directory inside the resolved account config dir', () => {
@@ -803,29 +705,19 @@ describe('claude service', () => {
       expect(project.path).toBe(projectPath);
       expect(project.account_id).toBe(account.id);
       expect(project.account_name).toBe('Test');
-      // Project ID encoding mirrors the CLI: EVERY non-alphanumeric character
-      // becomes a dash, not just the separators. This assertion used to say
-      // `replace(/\//g, '-')` and passed only because it re-derived the wrong
-      // rule; macOS temp dirs contain an underscore, so the two forms differ
-      // right here.
+      // The CLI dashes EVERY non-alphanumeric character; macOS temp dirs contain an
+      // underscore, so the two forms differ here.
       expect(project.id).toBe(projectPath.replace(/[^a-zA-Z0-9]/g, '-'));
       expect(fs.existsSync(path.join(configDir, 'projects', project.id))).toBe(true);
     });
 
     it('throws when no account resolves for the project', () => {
-      // No accounts, no rules — resolve() returns null, createProject should throw
       const projectPath = path.join(tmpDir, 'unresolved');
       expect(() => service.createProject(projectPath)).toThrow(/No account resolved/);
     });
   });
 
-  // -------------------------------------------------------------------------
-  // getProjectSessions
-  // -------------------------------------------------------------------------
-
   describe('warmSessionMetadata', () => {
-    // Fills the persisted cache for every transcript in every account, so the
-    // sessions page's first visit after a restart reads nothing it already has.
     it('reads every transcript once into the persisted cache', async () => {
       const configDir = path.join(tmpDir, '.claude-warm');
       for (const [proj, sess] of [['-a-one', 's1'], ['-a-one', 's2'], ['-b-two', 's3']]) {
@@ -869,7 +761,6 @@ describe('claude service', () => {
       const account = accounts.createAccount({ name: 'SessionsTest', configDir });
       accounts.addPathRule(account.id, tmpDir);
 
-      // Session A: has a plain text user message
       const sessionA = path.join(projectDir, 'sess-a.jsonl');
       fs.writeFileSync(
         sessionA,
@@ -882,7 +773,6 @@ describe('claude service', () => {
         ].join('\n'),
       );
 
-      // Session B: user message has an array content with a text block
       const sessionB = path.join(projectDir, 'sess-b.jsonl');
       fs.writeFileSync(
         sessionB,
@@ -899,7 +789,6 @@ describe('claude service', () => {
         ].join('\n'),
       );
 
-      // Session C: first "user" is isMeta — second is the real one
       const sessionC = path.join(projectDir, 'sess-c.jsonl');
       fs.writeFileSync(
         sessionC,
@@ -916,7 +805,6 @@ describe('claude service', () => {
         ].join('\n'),
       );
 
-      // Session D: every candidate is a system-reminder / command — no first message
       const sessionD = path.join(projectDir, 'sess-d.jsonl');
       fs.writeFileSync(
         sessionD,
@@ -935,20 +823,14 @@ describe('claude service', () => {
       const sessions = await service.getProjectSessions(projectId, projectPath);
 
       expect(sessions).toHaveLength(4);
-      // No first-prompt preview: the project page shows a name, a summary,
-      // or "No name" — never the opening prompt — so nothing carries one.
       for (const s of sessions) expect('first_message' in s).toBe(false);
-      // Sessions should carry decoded path and timestamps
       for (const s of sessions) {
         expect(s.project_id).toBe(projectId);
         expect(typeof s.last_timestamp).toBe('string');
       }
     });
 
-    // The CLI names every session itself and persists the name as an
-    // `ai-title` record. It rewrites the record each turn, so the LAST one
-    // wins — verified across 60 transcripts, where each session carries many
-    // copies but exactly one distinct value.
+    // The CLI rewrites `ai-title` every turn; the last one wins.
     it('extracts the CLI-generated ai-title, taking the last one written', async () => {
       const configDir = path.join(tmpDir, '.claude-titles');
       const projectPath = path.join(tmpDir, 'titles-test');
@@ -968,13 +850,11 @@ describe('claude service', () => {
         ].join('\n'),
       );
 
-      // No ai-title at all — the common case for older transcripts.
       fs.writeFileSync(
         path.join(projectDir, 'sess-untitled.jsonl'),
         JSON.stringify({ type: 'user', message: { content: 'untitled prompt' } }),
       );
 
-      // Malformed: aiTitle present but not a string, and an empty one.
       fs.writeFileSync(
         path.join(projectDir, 'sess-malformed.jsonl'),
         [
@@ -992,10 +872,7 @@ describe('claude service', () => {
       expect(byId['sess-malformed'].ai_title).toBeUndefined();
     });
 
-    // A rename lands as a `custom-title` record. The CLI goes on rewriting
-    // `ai-title` afterwards, so a reader that just took the last title record
-    // in the file would show the generated name again on the next turn — the
-    // session list has to resolve the two the way the CLI does.
+    // The CLI keeps rewriting `ai-title` after a rename (`custom-title`).
     it('extracts a rename, and keeps it when an ai-title follows', async () => {
       const configDir = path.join(tmpDir, '.claude-renames');
       const projectPath = path.join(tmpDir, 'renames-test');
@@ -1015,7 +892,6 @@ describe('claude service', () => {
         ].join('\n'),
       );
 
-      // Renamed twice: the last rename is the session's name.
       fs.writeFileSync(
         path.join(projectDir, 'sess-renamed-twice.jsonl'),
         [
@@ -1033,8 +909,6 @@ describe('claude service', () => {
       expect(byId['sess-renamed-twice'].custom_title).toBe('Second name');
     });
 
-    // Resuming an old session should bring it to the top: the list orders by
-    // last activity, not by when the transcript file was created.
     it('sorts by most recent activity, not creation time', async () => {
       const configDir = path.join(tmpDir, '.claude-order');
       const projectPath = path.join(tmpDir, 'order-test');
@@ -1047,12 +921,10 @@ describe('claude service', () => {
       const record = (ts: string) =>
         JSON.stringify({ type: 'user', timestamp: ts, message: { content: 'x' } });
 
-      // Created first, but worked on most recently.
       fs.writeFileSync(
         path.join(projectDir, 'sess-resumed.jsonl'),
         [record('2026-01-01T00:00:00.000Z'), record('2026-10-20T12:00:00.000Z')].join('\n'),
       );
-      // Created later, last touched in the middle.
       fs.writeFileSync(
         path.join(projectDir, 'sess-middle.jsonl'),
         record('2026-06-01T00:00:00.000Z'),
@@ -1090,19 +962,12 @@ describe('claude service', () => {
       expect(sessions[0].project_path).toBe(projectPath);
     });
 
-    // Regression: when the same projectId directory exists under more than one
-    // account's configDir (e.g. a stray run under the wrong account left a few
-    // JSONLs behind), getProjectSessions must read from the configDir resolved
-    // by the path rule, NOT from whichever directory happens to be alphabetically
-    // first in listAccounts() order. This was the WIN-project bug: 264 real
-    // sessions in .claude-personal hidden by 2 stray sessions in .claude-local.
     it('reads sessions from the path-rule-resolved configDir, not the first dir whose project folder exists', async () => {
       const personalDir = path.join(tmpDir, '.claude-personal');
       const localDir = path.join(tmpDir, '.claude-local');
       const projectPath = path.join(tmpDir, 'Repos', 'personal', 'WIN');
       const projectId = projectPath.replace(/\//g, '-');
 
-      // Stray (wrong-account) sessions under .claude-local — alphabetically first.
       const localProjectDir = path.join(localDir, 'projects', projectId);
       fs.mkdirSync(localProjectDir, { recursive: true });
       fs.writeFileSync(
@@ -1114,7 +979,6 @@ describe('claude service', () => {
         JSON.stringify({ type: 'user', message: { content: 'stray' } }),
       );
 
-      // Real sessions under .claude-personal — what the path rule should resolve to.
       const personalProjectDir = path.join(personalDir, 'projects', projectId);
       fs.mkdirSync(personalProjectDir, { recursive: true });
       for (const id of ['real-1', 'real-2', 'real-3']) {
@@ -1124,8 +988,7 @@ describe('claude service', () => {
         );
       }
 
-      // Both accounts exist. Path rule binds ~/Repos/personal → Personal.
-      // Note: 'Local' sorts before 'Personal' in listAccounts() ORDER BY name.
+      // 'Local' sorts before 'Personal' in listAccounts() ORDER BY name.
       const personal = accounts.createAccount({ name: 'Personal', configDir: personalDir });
       accounts.createAccount({ name: 'Local', configDir: localDir });
       accounts.addPathRule(personal.id, path.join(tmpDir, 'Repos', 'personal'));
@@ -1138,7 +1001,6 @@ describe('claude service', () => {
     it('throws NoAccountError when no path rule resolves the project path', async () => {
       const personalDir = path.join(tmpDir, '.claude-personal');
       accounts.createAccount({ name: 'Personal', configDir: personalDir });
-      // No path rule covering /Some/Other/Path.
 
       const orphanPath = path.join(tmpDir, 'orphan');
       const orphanId = orphanPath.replace(/\//g, '-');
@@ -1164,12 +1026,6 @@ describe('claude service', () => {
       ).rejects.toThrow(/no claude account/i);
     });
 
-    // Regression: a real resolve() failure (e.g. a stale binary querying a
-    // column a newer migration dropped — "no such column: r.agent") must
-    // surface as the actual error. Previously findProjectConfigDir swallowed
-    // EVERY exception and reported NO_ACCOUNT_FOR_PROJECT, disguising a
-    // version-skew SQL error as "no account configured" and sending users to
-    // Account Settings to add a path rule that already existed.
     it('propagates an unexpected resolve() error instead of masking it as NoAccountError', async () => {
       const boom = new Error('SqliteError: no such column: r.agent');
       const brokenAccounts = {
@@ -1186,18 +1042,7 @@ describe('claude service', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // loadAgentSessionHistory
-  // -------------------------------------------------------------------------
-
-  // -------------------------------------------------------------------------
-  // deleteSession
-  // -------------------------------------------------------------------------
-
   describe('deleteSession', () => {
-    // Helper: register a configDir with the accounts service and bind it
-    // to the test's tmpDir via a path rule so any projectPath under tmpDir
-    // resolves to this account.
     function bindAccount(name: string, configDir: string) {
       const account = accounts.createAccount({ name, configDir });
       accounts.addPathRule(account.id, tmpDir);
@@ -1285,7 +1130,6 @@ describe('claude service', () => {
     });
 
     it('throws NoAccountError when the project path does not resolve to any account', async () => {
-      // No accounts and no rules → no configDir resolves.
       await expect(
         service.deleteSession('any', 'nope', path.join(tmpDir, 'unbound')),
       ).rejects.toThrow(/no claude account/i);
@@ -1322,7 +1166,6 @@ describe('claude service', () => {
       const projectId = projectPath.replace(/\//g, '-');
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
-      // Drop a few session files so we can prove the recursive delete.
       fs.writeFileSync(path.join(projectDir, 'a.jsonl'), '{}\n');
       fs.writeFileSync(path.join(projectDir, 'b.jsonl'), '{}\n');
       fs.writeFileSync(path.join(projectDir, 'a.summary.json'), '{}');
@@ -1332,7 +1175,6 @@ describe('claude service', () => {
       await service.deleteProject({ accountId: account.id, projectId });
 
       expect(fs.existsSync(projectDir)).toBe(false);
-      // Sibling project dirs in the same configDir are untouched.
       expect(fs.existsSync(path.join(configDir, 'projects'))).toBe(true);
     });
 
@@ -1408,8 +1250,6 @@ describe('claude service', () => {
       expect(history).toHaveLength(2);
     });
 
-    // The search touches every project dir in every account: sync, that was
-    // hundreds of existsSync calls on the daemon's one event loop.
     it('searches without sync fs calls', async () => {
       const configDir = path.join(tmpDir, '.claude-agent-async');
       for (const p of ['a-proj', 'b-proj', 'c-proj']) fs.mkdirSync(path.join(configDir, 'projects', p), { recursive: true });
@@ -1428,13 +1268,8 @@ describe('claude service', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // getSystemPrompt / saveSystemPrompt
-  // -------------------------------------------------------------------------
-
   describe('getSystemPrompt / saveSystemPrompt', () => {
     it('round-trips by delegating to readClaudeMdFile/saveClaudeMdFile', async () => {
-      // Write a CLAUDE.md into tmpDir and read it back
       fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Test prompt', 'utf-8');
       const content = await service.getSystemPrompt({ configDir: tmpDir });
       expect(content).toBe('# Test prompt');
@@ -1444,10 +1279,6 @@ describe('claude service', () => {
       await expect(service.getSystemPrompt()).rejects.toThrow(/configDir is required/);
     });
   });
-
-  // -------------------------------------------------------------------------
-  // Hooks config — project scope + merging
-  // -------------------------------------------------------------------------
 
   describe('hooks config (project scope)', () => {
     it('returns empty object when project settings.json is missing', async () => {
@@ -1475,7 +1306,6 @@ describe('claude service', () => {
       const settingsDir = path.join(projectPath, '.claude');
       fs.mkdirSync(settingsDir, { recursive: true });
 
-      // Pre-existing unrelated setting
       fs.writeFileSync(
         path.join(settingsDir, 'settings.json'),
         JSON.stringify({ theme: 'dark' }),
@@ -1488,11 +1318,9 @@ describe('claude service', () => {
       };
       await service.updateHooksConfig('project', hooks, { projectPath });
 
-      // Round-trip reads the same hooks back
       const readBack = await service.getHooksConfig('project', { projectPath });
       expect(readBack).toEqual(hooks);
 
-      // And the unrelated setting is preserved
       const raw = JSON.parse(
         fs.readFileSync(path.join(settingsDir, 'settings.json'), 'utf-8'),
       );
@@ -1521,7 +1349,6 @@ describe('claude service', () => {
       fs.mkdirSync(userConfigDir, { recursive: true });
       fs.mkdirSync(path.join(projectPath, '.claude'), { recursive: true });
 
-      // User-level hooks
       await service.updateHooksConfig(
         'user',
         {
@@ -1530,9 +1357,8 @@ describe('claude service', () => {
         },
         { configDir: userConfigDir },
       );
-      // The user-level read in getMergedHooksConfig uses the default ~/.claude
-      // path rather than our test configDir, so we can only assert that the
-      // project override is present — which is the critical behavior.
+      // The user-level read uses the default ~/.claude, not this configDir, so only
+      // the project override can be asserted.
       await service.updateHooksConfig(
         'project',
         { PreToolUse: [{ source: 'project' }] },
@@ -1540,7 +1366,6 @@ describe('claude service', () => {
       );
 
       const merged = await service.getMergedHooksConfig(projectPath, { configDir: userConfigDir });
-      // Project override wins for PreToolUse
       expect((merged as any).PreToolUse).toEqual([{ source: 'project' }]);
     });
   });

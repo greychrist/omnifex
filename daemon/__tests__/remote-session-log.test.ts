@@ -43,7 +43,6 @@ describe('remote session log', () => {
     expect(a.seq).toBe(1);
     expect(b.seq).toBe(2);
     expect(log.lastSeq('s1')).toBe(2);
-    // A second session has its own counter.
     log.open({ ...META, sessionId: 's2' });
     expect(log.append({ ...transcript(1), sessionId: 's2' }).seq).toBe(1);
   });
@@ -61,9 +60,7 @@ describe('remote session log', () => {
   });
 
   it('reports a gap when fromSeq predates the ring', () => {
-    // ringSize is 3, so seq 1 and 2 have been evicted by the time 5 lands.
-    // Nothing on disk holds them any more: the client must reload the
-    // transcript from the CLI's JSONL instead.
+    // ringSize is 3, so seq 1 and 2 are evicted by the time 5 lands.
     log.open(META);
     for (let i = 1; i <= 5; i++) log.append(transcript(i));
     expect(log.replay('s1', 0)).toBeNull();
@@ -72,7 +69,6 @@ describe('remote session log', () => {
   });
 
   it('reports a gap when fromSeq is ahead of the log', () => {
-    // A client still holding a seq from before a daemon restart.
     log.open(META);
     log.append(transcript(1));
     expect(log.replay('s1', 9)).toBeNull();
@@ -90,7 +86,6 @@ describe('remote session log', () => {
     log.open(META);
     for (let i = 1; i <= 4; i++) log.append(transcript(i));
 
-    // A fresh log over the same directory is what a daemon restart looks like.
     const reopened = createSessionLog({ root, ringSize: 3 });
     expect(reopened.lastSeq('s1')).toBe(0);
     const meta = reopened.open({ sessionId: 's1' });
@@ -105,14 +100,9 @@ describe('remote session log', () => {
     expect(fresh.list().map((m) => m.sessionId).sort()).toEqual(['s1', 's2']);
   });
 
-  // /healthz calls list() twice per 5s poll, and the permission-timeout poll
-  // once a second: reading 400+ meta files from disk each time blocked the
-  // event loop. The log owns every write, so it answers from memory once the
-  // index is built.
   it('answers list() from memory after the first scan', () => {
     log.open(META);
     expect(log.list().map((m) => m.sessionId)).toEqual(['s1']);
-    // Written behind the log's back: a rescan would pick it up.
     writeFileSync(join(root, 'stray.meta.json'), JSON.stringify({ ...META, sessionId: 'stray' }));
     expect(log.list().map((m) => m.sessionId)).toEqual(['s1']);
   });
@@ -129,7 +119,6 @@ describe('remote session log', () => {
     expect(byId.get('s2')?.options).toEqual({ permissionMode: 'plan' });
     log.remove('s1');
     expect(log.list().map((m) => m.sessionId)).toEqual(['s2']);
-    // And the disk agrees: a fresh log sees the same set.
     expect(createSessionLog({ root }).list()).toEqual(log.list());
   });
 
@@ -142,8 +131,6 @@ describe('remote session log', () => {
     expect(JSON.parse(readFileSync(join(root, 's1.meta.json'), 'utf8')).title).toBe('renamed');
   });
 
-  // A mid-session switch (permission mode) must survive a resume: resume
-  // spawns from these options, never from the client's picker.
   it('merges a patch into the persisted options', () => {
     log.open({ ...META, options: { model: 'opus', permissionMode: 'auto' } });
     log.updateOptions('s1', { permissionMode: 'plan' });

@@ -9,17 +9,6 @@ import type { CostFs } from '../services/cost/transcript-usage';
 import { rangeReader } from './fixtures/cost/range-reader';
 import { computeSessionCost, type SessionCostDailyRow } from '../services/cost/session-cost-core';
 
-/**
- * Migration 22 splits main-loop and subagent spend into separate rows and
- * persists the component cost breakdown that `computeSessionCost` was already
- * calculating and discarding.
- *
- * The split lives in the PRIMARY KEY rather than in a pair of `subagent_*`
- * columns so that EVERY metric splits — tokens, requests, cache ratios — for
- * one column instead of eight, and so main-vs-subagent is an ordinary WHERE
- * clause rather than a special-cased display mode.
- */
-
 const CFG = '/cfg';
 const PROJ_DIR = path.join(CFG, 'projects', '-Users-me-proj');
 const SUBAGENTS = path.join(PROJ_DIR, 'sessA', 'subagents');
@@ -92,8 +81,6 @@ describe('session_cost_daily component + subagent columns', () => {
     expect(rows[0].output_tokens).toBe(1000);
     expect(rows[1].is_subagent).toBe(1);
     expect(rows[1].output_tokens).toBe(4000);
-    // Same session, date and model on both — only is_subagent separates them,
-    // which is exactly what the widened primary key has to allow.
     expect(rows[0].date).toBe(rows[1].date);
     expect(rows[0].model).toBe(rows[1].model);
   });
@@ -118,8 +105,6 @@ describe('session_cost_daily component + subagent columns', () => {
     });
     const r = dailyRows[0];
     expect(r.input_usd + r.output_usd + r.cache_read_usd + r.cache_write_usd).toBeCloseTo(r.cost_usd, 10);
-    // and they match what the live snapshot reports, since both come from the
-    // same computeMessageCost call
     expect(r.input_usd).toBeCloseTo(snapshot.breakdown.inputUsd, 10);
     expect(r.output_usd).toBeCloseTo(snapshot.breakdown.outputUsd, 10);
     expect(r.cache_read_usd).toBeCloseTo(snapshot.breakdown.cacheReadUsd, 10);
@@ -127,9 +112,6 @@ describe('session_cost_daily component + subagent columns', () => {
   });
 
   it('component costs are stored, not recomputed — a later rate change cannot desync them', async () => {
-    // The point of persisting the split: if the page recomputed it from tokens
-    // at current rates, the parts would stop summing to the stored whole the
-    // moment a price changed, and would disagree silently.
     const svc = createCostHistoryService(db);
     svc.replaceSession('s1', [{
       session_id: 's1', date: '2026-08-01', model: 'claude-opus-4-8', account_name: 'Work',
@@ -170,10 +152,8 @@ describe('session_cost_daily component + subagent columns', () => {
 });
 
 describe('migration 22 rebuild', () => {
-  /** Build a v21-era database on disk, then let createDatabase migrate it.
-   *  SQLite cannot widen a primary key in place, so migration 22 rebuilds the
-   *  table — and a rebuild is the migration shape most likely to lose rows or
-   *  silently drop indexes (see migration 22's note on renamed tables). */
+  // SQLite cannot widen a primary key in place, so migration 22 rebuilds the
+  // table: the shape most likely to lose rows or indexes.
   let dir: string;
   let file: string;
   beforeEach(() => {
@@ -213,9 +193,6 @@ describe('migration 22 rebuild', () => {
     expect(rows[1].is_estimated).toBe(1);
     expect(rows[0].cache_write_1h_tokens).toBe(5);
 
-    // Pre-migration rows predate the split, so they are all attributed to the
-    // main loop and carry no request count or component breakdown until the
-    // next backfill sweep re-reads their transcripts.
     expect(rows.every((r) => r.is_subagent === 0)).toBe(true);
     expect(rows.every((r) => r.request_count === 0)).toBe(true);
     expect(rows.every((r) => r.input_usd === 0 && r.cache_read_usd === 0)).toBe(true);
@@ -226,7 +203,6 @@ describe('migration 22 rebuild', () => {
     expect(idx).toContain('idx_session_cost_daily_date');
     expect(idx).toContain('idx_session_cost_daily_account');
 
-    // The old table must not survive under a renamed alias.
     const leftovers = db.raw
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'session_cost_daily%'")
       .all() as { name: string }[];

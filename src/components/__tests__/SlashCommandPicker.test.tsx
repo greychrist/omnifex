@@ -3,15 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import type { SlashCommand } from '@/lib/api';
 
-// Stub framer-motion so motion.* renders as a plain element. The picker only
-// uses motion.div, but proxy every key for safety.
-//
-// The component per tag is CACHED. A proxy that builds a fresh function on
-// every `get` hands React a new component TYPE on every render, which
-// unmounts and remounts the subtree and wipes its state — here, the picker's
-// selected index, so Enter selected nothing and `onSelect` never fired. It
-// presented as a flake because it only bites when a re-render lands between
-// the `waitFor` and the keypress.
+// The component per tag is CACHED: a fresh one per `get` is a new component
+// type each render, which remounts the subtree and wipes its state.
 const motionComponents = new Map<string, any>();
 vi.mock('framer-motion', () => ({
   motion: new Proxy(
@@ -47,7 +40,6 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-// Imported after the mock so the component picks up the stubbed api.
 import { SlashCommandPicker } from '../SlashCommandPicker';
 
 const makeCmd = (over: Partial<SlashCommand>): SlashCommand => ({
@@ -126,7 +118,6 @@ describe('SlashCommandPicker filter tabs', () => {
   it('selects the All tab on open', async () => {
     renderPicker();
     await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
-    // "All" is the default selection — every scope should be visible.
     notNull(screen.queryByText('/projonly'));
     notNull(screen.queryByText('/useronly'));
     notNull(screen.queryByText('/help'));
@@ -142,16 +133,13 @@ describe('SlashCommandPicker filter tabs', () => {
   });
 
   it('surfaces a fresh CLI command from the config-dir catalog that the session snapshot lacks', async () => {
-    // The stale session snapshot is missing /design-sync; the fresh catalog
-    // (keyed by configDir) has it. The picker must union both so it appears.
+    // The stale session snapshot lacks /design-sync; the config-dir catalog has it.
     listSupportedCommandsMock.mockResolvedValue([
       { name: 'design-sync', description: 'Sync design tokens' },
     ]);
     renderPicker({ configDir: '/Users/me/.claude-personal' });
     await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
-    // Default tab is "All" — the freshly-catalogued command shows up.
     notNull(screen.queryByText('/design-sync'));
-    // And it doesn't crash the existing session/custom commands.
     notNull(screen.queryByText('/help'));
     notNull(screen.queryByText('/projonly'));
   });
@@ -185,7 +173,6 @@ describe('SlashCommandPicker filter tabs', () => {
     renderPicker();
     await waitFor(() => { isNull(screen.queryByText(/Loading commands/)); });
     fireEvent.keyDown(window, { key: 'ArrowLeft' });
-    // "Claude" (last tab) shows only the CLI default-scope commands.
     notNull(screen.queryByText('/help'));
     notNull(screen.queryByText('/clear'));
     isNull(screen.queryByText('/projonly'));
@@ -203,10 +190,6 @@ describe('SlashCommandPicker filter tabs', () => {
   });
 
   it('only fires onSelect once when Enter is pressed twice in a row', async () => {
-    // Repro for the bug where the picker, kept mounted briefly by AnimatePresence's
-    // exit animation, would re-fire onSelect on the next Enter — after the parent
-    // had already moved on to "send". This caused the typed command to repopulate
-    // the textarea after the first send, requiring a second Enter to finally clear.
     const onSelect = vi.fn();
     renderPicker({ onSelect });
     await waitFor(() => { notNull(screen.queryByText('/projonly')); });
@@ -216,15 +199,11 @@ describe('SlashCommandPicker filter tabs', () => {
   });
 
   it('still navigates command list with ArrowUp/ArrowDown (does not regress)', async () => {
-    // Two project commands so up/down has somewhere to go.
     const projectCmd2 = makeCmd({ id: 'p2', name: 'projonly2', full_command: '/projonly2', scope: 'project' });
     slashCommandsListMock.mockResolvedValue([projectCmd, projectCmd2]);
     renderPicker();
     await waitFor(() => { notNull(screen.queryByText('/projonly')); });
-    // Narrow to the Project tab so only the two project commands are listed
-    // (the default "All" tab would interleave the CLI commands).
     fireEvent.click(getFilterButton('Project'));
-    // Selected row gets the .bg-accent class; the first row should be selected on load.
     const rowOne = screen.getByText('/projonly').closest('tr')!;
     const rowTwo = screen.getByText('/projonly2').closest('tr')!;
     expect(rowOne.className).toMatch(/bg-accent/);

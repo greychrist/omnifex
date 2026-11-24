@@ -25,8 +25,6 @@ describe('slotToResolution', () => {
   });
 
   it('returns null for an engine with no matching rule', () => {
-    // Callers must NOT fall back to the other engine's slot — that lands a
-    // Claude session on a Codex account.
     expect(slotToResolution(null)).toBeNull();
     expect(slotToResolution(undefined)).toBeNull();
   });

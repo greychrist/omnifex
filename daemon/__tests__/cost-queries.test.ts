@@ -16,8 +16,6 @@ function row(p: Partial<SessionCostDailyRow>): SessionCostDailyRow {
   };
 }
 
-/** A small but structurally complete fixture: two accounts, two projects, two
- *  models, both sides of the subagent split. */
 function seed(svc: CostHistoryService): void {
   svc.replaceSession('s1', [
     row({ session_id: 's1', date: '2026-08-01', model: 'claude-opus-5', project_path: '/Users/me/alpha', cost_usd: 10, request_count: 5, output_usd: 4, cache_read_usd: 6, cache_read_tokens: 1_000_000, cache_write_5m_tokens: 50_000 }),
@@ -47,9 +45,6 @@ describe('cost query surface', () => {
       expect(all.reduce((n, r) => n + r.cost_usd, 0)).toBeCloseTo(20, 10);
     });
 
-    // An empty selection in the UI means "no filter applied", not "match
-    // nothing" — a filter bar that renders zero rows the moment you clear a
-    // checkbox reads as a bug.
     it('treats an empty array as no filter', () => {
       expect(svc.byModel({ accountName: [] }).reduce((n, r) => n + r.cost_usd, 0)).toBeCloseTo(20, 10);
     });
@@ -135,8 +130,6 @@ describe('cost query surface', () => {
       expect(roi.read_write_ratio).toBeCloseTo(20, 10);
     });
 
-    // Break-even is around 2:1. Below that, caching costs more than it saves
-    // and the UI has to say so rather than printing a number.
     it('flags a ratio at or below break-even', () => {
       const db2 = createDatabase(':memory:');
       const s2 = createCostHistoryService(db2);
@@ -179,18 +172,12 @@ describe('cost query surface', () => {
       expect(f.maxDate).toBe('2026-08-02');
     });
 
-    // Narrowing to one account must not narrow the account list itself, or
-    // the control you just used to filter would erase its own alternatives.
-    // The same guard applies to models.
     it('keeps the account and model lists whole when an account filter is applied', () => {
       const f = svc.facets({ accountName: 'Work' });
       expect(f.accounts).toEqual(['Personal', 'Work']);
       expect(f.models).toEqual(['claude-opus-5', 'claude-sonnet-5']);
     });
 
-    // Projects are the deliberate exception: a project belongs to an account,
-    // so listing every account's projects under a chosen account is noise.
-    // Personal only ever touched beta.
     it('narrows the project list to the selected account', () => {
       expect(svc.facets({ accountName: 'Personal' }).projects).toEqual(['/Users/me/beta']);
     });
@@ -229,12 +216,6 @@ describe('cost query surface', () => {
   });
 });
 
-/**
- * Session counts were the one metric the (now removed) Usage dashboard had
- * that the Cost Report did not. Requests and sessions answer different
- * questions — "6,637 requests" and "42 sessions" are both true and neither
- * substitutes for the other.
- */
 describe('session counts', () => {
   let db: Database;
   let svc: CostHistoryService;
@@ -257,8 +238,6 @@ describe('session counts', () => {
     expect(p.session_count).toBe(1);
   });
 
-  // A session spanning two days must not be counted twice in the range total,
-  // which is exactly what SUM over per-period counts would do.
   it('does not double-count a session that spans periods', () => {
     svc.replaceSession('span', [
       row({ session_id: 'span', date: '2026-08-05', cost_usd: 1 }),

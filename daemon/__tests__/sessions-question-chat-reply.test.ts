@@ -5,11 +5,6 @@ import path from 'node:path';
 import os from 'node:os';
 import type { AgentPermissionRequest } from '../services/agents/types';
 
-// A chat message sent while an AskUserQuestion card is on screen is the
-// user's reply to it: the question is answered as `replied_in_chat` before
-// the message is written, so the CLI is not left blocked on the card with
-// the message queued behind it.
-
 const permissionCbs: ((r: AgentPermissionRequest) => void)[] = [];
 const stdin: string[] = [];
 const caps = { current: ['ask_user_question_unanswered_v1'] as string[] | null };

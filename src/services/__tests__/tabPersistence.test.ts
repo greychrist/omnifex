@@ -69,9 +69,6 @@ describe('TabPersistenceService — saveTabs / loadTabs roundtrip', () => {
   });
 
   it('persists tabs with status=running, normalized to idle', () => {
-    // The daemon owns the CLI process and it outlives the renderer, so a
-    // running tab is the one most worth restoring — its session is still
-    // live and resumable. Dropping it is how a reload loses real work.
     const tabs = [
       makeTab({ id: 't1', type: 'chat', title: 'Alive' }),
       makeTab({ id: 'running', type: 'chat', title: 'Was Running', status: 'running' }),
@@ -79,8 +76,6 @@ describe('TabPersistenceService — saveTabs / loadTabs roundtrip', () => {
     TabPersistenceService.saveTabs(tabs, 't1');
     const { tabs: loaded } = TabPersistenceService.loadTabs();
     expect(loaded.map((t) => t.id)).toEqual(['t1', 'running']);
-    // Restored, but not pretending to still be streaming — it has not
-    // reattached to the daemon yet.
     expect(loaded.find((t) => t.id === 'running')?.status).toBe('idle');
   });
 
@@ -92,8 +87,6 @@ describe('TabPersistenceService — saveTabs / loadTabs roundtrip', () => {
   });
 
   it('persists activeTabId for a running active tab', () => {
-    // The active tab is the likeliest one to be mid-turn. Losing the
-    // pointer put you back on an arbitrary tab after every reload.
     const tabs = [
       makeTab({ id: 't1', type: 'chat', title: 'Alive' }),
       makeTab({ id: 'running', type: 'chat', title: 'Running', status: 'running' }),
@@ -124,11 +117,6 @@ describe('TabPersistenceService — saveTabs / loadTabs roundtrip', () => {
 
 describe('TabPersistenceService — agent field', () => {
   it('round-trips the agent kind on chat tabs (claude and codex)', () => {
-    // Without this round-trip, restoring a Codex tab on app restart would
-    // drop the agent identity and the next `api.startSession` call would
-    // dispatch the Claude engine instead — the user's selection would
-    // silently flip back. Both literal kinds must survive the save/load
-    // cycle.
     const tabs = [
       makeTab({ id: 't1', type: 'chat', title: 'Claude', agent: 'claude' }),
       makeTab({ id: 't2', type: 'chat', title: 'Codex', agent: 'codex', order: 1 }),
@@ -140,11 +128,6 @@ describe('TabPersistenceService — agent field', () => {
   });
 
   it('defaults to "claude" when loading a tab record saved by a pre-Codex build (no `agent` key)', () => {
-    // Users upgrading from a release that pre-dates Codex have
-    // serialized tabs in localStorage without an `agent` field. The
-    // Tab interface requires it, so deserialization MUST inject a
-    // default — otherwise the restored tab violates the type contract
-    // and downstream code reads `undefined` where it expects a literal.
     const out = JSON.stringify([
       {
         id: 'legacy', type: 'chat', title: 'Pre-Codex Chat',
@@ -248,9 +231,6 @@ describe('TabPersistenceService — migrateFromOldFormat', () => {
     localStorage.setItem(STORAGE_KEY, '[NEW]');
     TabPersistenceService.migrateFromOldFormat();
     expect(localStorage.getItem(STORAGE_KEY)).toBe('[NEW]');
-    // Stale opcode_tabs key sticks around when migration doesn't run; the
-    // migration only deletes the source when it actually wrote to the
-    // destination. That's the intended idempotent behavior.
     expect(localStorage.getItem('opcode_tabs')).toBe('[OLD]');
   });
 });

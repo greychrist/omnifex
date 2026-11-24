@@ -5,14 +5,6 @@ import { installRemoteBridge } from '@/lib/remote/bootstrap';
 import type { WebSocketLike } from '@/lib/remote/serverClient';
 import type { NativeBridge } from '@/lib/platform';
 
-/**
- * The native app publishes ONLY `__omnifexNative`; `window.electronAPI` is
- * bootstrap's to define (the name is the Electron era's — it stuck). There is
- * one desktop mode: the daemon. The in-process fallback Electron used to give
- * is gone with Electron (2026-10-23), so a daemon that is down is a banner
- * and a reconnect loop, not a different app.
- */
-
 class FakeSocket implements WebSocketLike {
   static instances: FakeSocket[] = [];
   readyState = 0;
@@ -87,8 +79,8 @@ describe('installRemoteBridge (desktop)', () => {
     expect(FakeSocket.instances.at(-1)!.url).toBe(URL);
   });
 
-  // The page is plain http on the tailnet address, which WebKit does not
-  // count as secure, so the async clipboard is missing; the app supplies it.
+  // Plain http on the tailnet address is no secure context in WebKit, so the
+  // async clipboard is missing.
   it('gives the page the native clipboard', async () => {
     const native = nativeBridge(URL);
     w.__omnifexNative = native;
@@ -97,8 +89,6 @@ describe('installRemoteBridge (desktop)', () => {
     expect(native.invoke).toHaveBeenCalledWith('clipboard:write', { items: [{ type: 'text/plain', text: 'copied' }] });
   });
 
-  // Install first, connect second, as on the web: there is nothing to fall
-  // back to, and the shim queues requests while the socket comes up.
   it('does not wait for the handshake before installing', async () => {
     w.__omnifexNative = nativeBridge(URL);
     const info = await installRemoteBridge({ createSocket: (url) => new FakeSocket(url) });
@@ -106,8 +96,6 @@ describe('installRemoteBridge (desktop)', () => {
     expect(info.client!.state).not.toBe('connected');
   });
 
-  // The page itself came from the daemon, so its origin is the daemon's
-  // address when the app could not say.
   it('dials the page origin when the app has no daemon url', async () => {
     w.__omnifexNative = nativeBridge(null);
     const info = await installRemoteBridge({ createSocket: (url) => new FakeSocket(url) });

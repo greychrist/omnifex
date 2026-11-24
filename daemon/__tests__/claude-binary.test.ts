@@ -32,11 +32,8 @@ describe('claude binary service', () => {
     expect(service.getPath()).toBe('/usr/local/bin/claude');
   });
 
-  // listInstallations spawns `--version` on every real binary it discovers
-  // (which/nvm/standard paths + one per installed VS Code extension copy —
-  // observed 9 on a machine with 8 accumulated extension versions). Each probe
-  // is fast alone, but under full-suite CPU contention the spawns can blow the
-  // default 5s budget, so these two get explicit headroom.
+  // listInstallations probes `--version` per discovered binary; under
+  // full-suite load that can exceed the 5s default.
   it('listInstallations returns an array', { timeout: 20_000 }, async () => {
     const installations = await service.listInstallations();
     expect(Array.isArray(installations)).toBe(true);
@@ -57,11 +54,8 @@ describe('claude binary service', () => {
   });
 
   it('findBestBinary prefers custom configured path', async () => {
-    // Can't reliably test with a real path, but verify logic:
-    // If a custom path is set but doesn't exist, falls through to other methods
     service.setPath('/nonexistent/path/claude');
     const best = service.findBestBinary();
-    // Should NOT return the nonexistent path
     expect(best).not.toBe('/nonexistent/path/claude');
   });
 
@@ -101,11 +95,8 @@ describe('claude binary service', () => {
       service.setPath(fakeBin);
       const installations = await service.listInstallations();
       const custom = installations.find((i) => i.source === 'custom');
-      // Either it shows up as 'custom', or it was already discovered by another source
-      // (in which case the dedup branch in listInstallations short-circuits).
       const seenAtAnySource = installations.some((i) => i.path === fakeBin);
       expect(seenAtAnySource).toBe(true);
-      // If 'custom' label appears, it must point at our fake binary
       if (custom) expect(custom.path).toBe(fakeBin);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });

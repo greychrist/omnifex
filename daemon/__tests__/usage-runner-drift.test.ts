@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { collectUsageDriftWarnings, parseUsageOutput } from '../services/usage-runner/parser';
 
-// Mirrors the real Claude Code 2.1.159 `/usage` render captured live on
-// 2026-06-02 (session 17% / week 4% / Sonnet 0%). All labels intact — the
-// baseline the drift audit must treat as clean.
+// The real 2.1.159 `/usage` render, all labels intact.
 const HEALTHY = `
 Session
 Total cost: $0.0000
@@ -28,26 +26,21 @@ describe('collectUsageDriftWarnings', () => {
   });
 
   it('flags a session field label that drifted (the silent-zero case)', () => {
-    // CLI reworded "Total cost:" → "Total spend:". parseSessionBlock silently
-    // returns cost_usd: 0 even though the real value is $12.34 — exactly the
-    // failure the audit exists to catch.
+    // parseSessionBlock silently returns cost_usd: 0 for a reworded label.
     const drifted = HEALTHY.replace('Total cost: $0.0000', 'Total spend: $12.3456');
 
-    // Prove the silent corruption first: the parse "succeeds" with a zero cost.
     const parsed = parseUsageOutput(drifted);
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.data.session.cost_usd).toBe(0);
 
-    // ...and the audit surfaces it.
     const warns = collectUsageDriftWarnings(drifted);
     expect(warns.some((w) => w.includes('Total cost:'))).toBe(true);
     expect(warns).toHaveLength(1);
   });
 
   it("reads 2.1.326's `Estimated cost:` label as the session cost, with no drift warning", () => {
-    // 2.1.326 renamed the session block's "Total cost:" to "Estimated cost:".
-    // Older CLIs, still possible on another account's config dir, print the
-    // original wording, so both are read.
+    // 2.1.326 renamed "Total cost:" to "Estimated cost:"; older CLIs still print
+    // the original.
     const renamed = HEALTHY.replace('Total cost: $0.0000', 'Estimated cost: $12.3456');
     const parsed = parseUsageOutput(renamed);
     expect(parsed.ok).toBe(true);
@@ -62,7 +55,6 @@ describe('collectUsageDriftWarnings', () => {
   });
 
   it('does not flag a legitimately absent Session block (free-tier / partial render)', () => {
-    // No Session header at all — a known-tolerated shape, not drift.
     const partial = `
 Current session
 17% used
@@ -72,9 +64,6 @@ Resets 1:10am (America/New_York)
   });
 
   it('does not flag an absent window (partial render mid-async-load)', () => {
-    // Session block intact, but the Sonnet window hasn't rendered yet. Absent
-    // window ≠ drifted label; the audit stays quiet so the runner's existing
-    // incomplete-parse grace handling owns that case.
     const noSonnet = HEALTHY.replace(
       /Current week \(Sonnet only\)[\s\S]*$/,
       '',

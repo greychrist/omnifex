@@ -17,26 +17,12 @@ describe('distillTranscript', () => {
 
   it('never lets a tool result or file content reach the output', () => {
     const { prose } = distillTranscript(normal, 'sess-normal');
-    // The single most important assertion in this file: spec §6's "the model
-    // must never see raw JSONL" is what keeps whole source files, diffs and
-    // command output out of a note that later gets read back into a prompt.
     expect(prose).not.toContain('600 lines of source');
     expect(prose).not.toContain('The file has been updated');
     expect(prose).not.toContain('tool_result');
     expect(prose).not.toContain('old_string');
   });
 
-  /**
-   * Measured on the real corpus (2026-08-12): across the 25 largest
-   * transcripts, 107 of 576 candidate prompt rows — 19% — were pure
-   * `<task-notification>` payloads, and on two sessions machine text was 45-47%
-   * of the ENTIRE distillation. Prompt priority spends the scarcest budget
-   * first, so this noise was displacing real asks.
-   *
-   * Blocks are stripped rather than whole rows dropped: all 107 observed
-   * rows were pure machine text, but the CLI can append a block to text the
-   * user actually typed, and dropping the row would lose the ask with it.
-   */
   function userRow(text: string): string {
     return JSON.stringify({
       type: 'user',
@@ -79,9 +65,6 @@ describe('distillTranscript', () => {
   });
 
   it('drops a row whose synthetic block was left unclosed', () => {
-    // 107 of 107 observed blocks were well formed. A malformed one is machine
-    // text regardless, and letting a stray opening tag through would leak the
-    // payload this filter exists to remove.
     const jsonl = [
       userRow('<task-notification>\n<task-id>abc</task-id>'),
       userRow('Real ask.'),
@@ -104,9 +87,6 @@ describe('distillTranscript', () => {
 
   it('anchors turn counting on prompts, not assistant adjacency', () => {
     const { metadata } = distillTranscript(normal, 'sess-normal');
-    // Two real prompts. Five assistant rows and three tool-result user rows
-    // sit between them; an adjacency-based count would say something else,
-    // which is the exact miscount turnDelta.ts documents.
     expect(metadata.promptCount).toBe(2);
     expect(metadata.proseCount).toBe(2);
   });
@@ -137,8 +117,6 @@ describe('distillTranscript', () => {
   });
 
   it('truncates oldest-first with an explicit marker', () => {
-    // Sized off the constant so raising the budget does not silently stop
-    // exercising truncation — the behaviour is under test, not the number.
     const filler = 'x'.repeat(Math.ceil(DISTILL_MAX_CHARS / 4));
     const rows: string[] = [];
     for (let i = 0; i < 12; i += 1) {
@@ -156,9 +134,6 @@ describe('distillTranscript', () => {
 
     expect(truncated).toBe(true);
     expect(prose.length).toBeLessThanOrEqual(DISTILL_MAX_CHARS);
-    // Oldest-first: the tail survives, the head is dropped. A reader that
-    // cannot tell it is holding a tail will narrate the session as if it
-    // started in the middle.
     expect(prose).toContain('PROMPT-11');
     expect(prose).not.toContain('PROMPT-0 ');
     expect(prose).toContain('earlier turns elided');
@@ -198,10 +173,7 @@ describe('distillTranscript', () => {
 
     expect(truncated).toBe(true);
     expect(prose.length).toBeLessThanOrEqual(DISTILL_MAX_CHARS);
-    // Every prompt survives — the whole point of the policy. Measured on the
-    // real corpus, plain oldest-first dropped ALL of them.
     for (let i = 0; i < 10; i += 1) expect(prose).toContain(`PROMPT-${i}`);
-    // Replies are sacrificed oldest-first, so the newest survives.
     expect(prose).toContain('REPLY-9');
     expect(prose).not.toContain('REPLY-0 ');
     expect(prose).toContain('elided');
@@ -228,8 +200,6 @@ describe('distillTranscript', () => {
       }),
     ];
     const { prose } = distillTranscript(rows.join('\n'), 's');
-    // Reordering would make the prose read as a different conversation than
-    // the one that happened.
     expect(prose.indexOf('FIRST-ASK')).toBeLessThan(prose.indexOf('SECOND-ASK'));
   });
 
@@ -241,9 +211,6 @@ describe('distillTranscript', () => {
       }),
     );
     const { prose, truncated } = distillTranscript(rows.join('\n'), 's');
-    // The ceiling is a hard budget. "Keep every prompt" is a PRIORITY, not an
-    // exemption — otherwise one pathological session blows the bound that
-    // makes extraction cost predictable.
     expect(truncated).toBe(true);
     expect(prose.length).toBeLessThanOrEqual(DISTILL_MAX_CHARS);
     expect(prose).toContain('P5');
@@ -279,16 +246,12 @@ describe('distillTranscript', () => {
       }),
     ].join('\n');
     const { prose, metadata } = distillTranscript(withSidechain, 's');
-    // A subagent's conversation is not the user's. Counting it inflates the
-    // turn count and puts a dispatch brief in the vault as if it were typed.
     expect(prose).not.toContain('SUBAGENT');
     expect(metadata.promptCount).toBe(0);
     expect(metadata.proseCount).toBe(0);
   });
 
   it('reads a prompt whose content is an array of text blocks', () => {
-    // The CLI emits both shapes for a typed prompt: a bare string, and an
-    // array of content blocks when the message carries more than plain text.
     const arrayForm = JSON.stringify({
       type: 'user',
       uuid: 'u1',
@@ -325,12 +288,6 @@ describe('distillTranscript', () => {
   });
 });
 
-/**
- * `isPromptRow` decides what counts as a HUMAN prompt, which feeds both the
- * distilled prose and the MIN_PROMPTS admission gate (spec §7). Excluding a
- * row that is really a prompt costs a session its note; including a CLI
- * replay puts the CLI's own words in the vault as the user's.
- */
 describe('isPromptRow', () => {
   const prompt = (extra: Record<string, unknown> = {}) => ({
     type: 'user',
@@ -343,9 +300,6 @@ describe('isPromptRow', () => {
   });
 
   it('excludes a compaction summary', () => {
-    // The CLI replaying its own recap back into the transcript. This is the
-    // marker that actually appears on disk — 21 rows across 890 personal
-    // transcripts carry it.
     expect(isPromptRow(prompt({ isCompactSummary: true }))).toBe(false);
   });
 
@@ -355,11 +309,6 @@ describe('isPromptRow', () => {
   });
 
   it('does not consult isReplay', () => {
-    // `isReplay: false` was a stream-json proxy for a compact summary, copied
-    // here from the renderer. This source reads persisted CLI transcripts,
-    // where the field has never appeared: 0 occurrences across 890 files.
-    // Keying on it could only ever have dropped a real prompt emitted by some
-    // future writer that sets isReplay for its own reasons.
     expect(isPromptRow(prompt({ isReplay: false }))).toBe(isPromptRow(prompt()));
   });
 });
@@ -376,10 +325,6 @@ describe('distillTranscriptAsync', () => {
     expect(await distillTranscriptAsync(jsonl, 's')).toEqual(distillTranscript(jsonl, 's'));
   });
 
-  /**
-   * Parsing a 100 MB transcript is seconds of CPU on the daemon's one event
-   * loop. The async form has to give that loop back while it works.
-   */
   it('yields to the event loop while parsing a large transcript', async () => {
     const big = Array.from({ length: 40 }, () => normal).join('\n').repeat(20);
     let ticks = 0;

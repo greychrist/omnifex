@@ -7,8 +7,6 @@ describe('parseCommandEnvelope', () => {
     expect(parseCommandEnvelope('')).toBeNull();
   });
 
-  // The built-in shape: name, then message, then args. This is what the
-  // old inline regex in StreamMessage matched, and it must keep working.
   it('parses the name-first shape with args', () => {
     const text = '<command-name>/usage</command-name>\n'
       + '            <command-message>usage</command-message>\n'
@@ -20,9 +18,8 @@ describe('parseCommandEnvelope', () => {
     });
   });
 
-  // The shape the CLI actually persists for custom / skill-backed commands:
-  // message FIRST, and no <command-args> at all. This fell through to the
-  // raw markdown renderer and printed the pseudo-XML verbatim.
+  // The CLI persists custom and skill-backed commands message FIRST, with no
+  // <command-args>.
   it('parses the message-first shape with no args', () => {
     const text = '<command-message>timesheet-review</command-message>\n'
       + '<command-name>/timesheet-review</command-name>';
@@ -83,9 +80,6 @@ describe('localCommandOutput', () => {
 });
 
 // The CLI writes an envelope as the whole record, so the tags open the text.
-// A prompt that merely quotes them — a pasted JSONL line, OmniFex's own
-// summary prompts — is prose, and treating it as a command hid everything
-// but the quoted stdout (session 5220766b).
 describe('commandEnvelopeKind', () => {
   it('recognises every shape the CLI persists', () => {
     expect(commandEnvelopeKind('<command-name>/usage</command-name><command-args></command-args>')).toBe('echo');

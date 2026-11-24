@@ -26,13 +26,11 @@ describe('parseUsageOutput fixtures', () => {
 });
 
 describe('stale (last-known) render detection', () => {
-  // Claude Code 2.1.208: when the usage endpoint is rate-limited (or a
-  // refresh fails), /usage renders last-known bars with a marker line:
+  // Claude Code 2.1.208: a rate-limited or failed refresh renders last-known
+  // bars with a marker line:
   //   "Showing last-known usage as of <time> (rate limited — try again in a moment)"
   //   "Showing last-known usage as of <time> (could not refresh)"
   // 2.1.304 adds "(rate limited until <time>)" when the reset is known.
-  // The bars parse normally, but the data is stale and must be flagged so
-  // the runner doesn't record it as fresh utilization.
   const WINDOWS = `
 Current session
 33% used
@@ -73,13 +71,7 @@ Resets 7pm (America/New_York)
 
 describe('isUsageOutputComplete', () => {
   it('accepts a window at 0% usage even when it has no Resets line', () => {
-    // Observed in 2026-05-22 real /usage output: when Sonnet usage is 0%,
-    // the TUI renders the "Current week (Sonnet only)" header and the
-    // "0% used" bar but OMITS the "Resets ..." line entirely (because
-    // there's nothing to reset to). The parser already handles this
-    // (resets_at_label becomes ''), but the fast-path completeness check
-    // was rejecting it, forcing the runner to wait the full
-    // usageQuietMs + incompleteParseGraceMs every successful poll.
+    // At 0% the TUI omits the "Resets …" line.
     const FIXTURE = `
 Session
 Total cost:             $0.0000
@@ -106,10 +98,8 @@ What's contributing to your limits usage?
   });
 
   it('still rejects a render whose windows are mid-load', () => {
-    // The whole point of the check. "Mid-load" is detected by the absence of
-    // the contributing header, which renders below every window — NOT by
-    // demanding a particular per-model bar, because the set of those is open
-    // and an account may legitimately have none.
+    // Mid-load is the missing contributing header, which renders below every
+    // window.
     const FIXTURE = `
 Session
 Total cost:             $0.0000
@@ -126,9 +116,7 @@ Resets May 25 at 7pm (America/New_York)
   });
 
   it('still rejects a non-zero window that is missing its Resets line', () => {
-    // 0% with no Resets line is fine (nothing to reset). But a non-zero %
-    // with no Resets line means the window is still rendering — keep
-    // waiting.
+    // A non-zero % with no Resets line is still rendering.
     const FIXTURE = `
 Session
 Total cost:             $0.0000
@@ -151,9 +139,7 @@ What's contributing to your limits usage?
   });
 
   it('accepts an account whose only per-model weekly bar is not Sonnet', () => {
-    // 2.1.236 renders `Current week (Fable)` for accounts that never show a
-    // Sonnet bar. Requiring Sonnet by name meant the fast path never fired
-    // for them and every poll paid the full quiet timeout.
+    // 2.1.236 renders `Current week (Fable)` for accounts with no Sonnet bar.
     const FIXTURE = `
 Session
 Total cost:             $0.0000
@@ -195,11 +181,8 @@ What's contributing to your usage?
   });
 
   it('accepts a window-less (enterprise) render once the tables footer prints', () => {
-    // Enterprise/Console accounts have no subscription rate-limit windows, so
-    // the TUI never renders the "Current session"/"Current week" headers — it
-    // shows a persistent "Loading usage data…" placeholder then the
-    // contributing breakdown + ranked tables. The render is complete once the
-    // "d to day · w to week" tables footer prints.
+    // Window-less (enterprise) renders show "Loading usage data…" then tables; the
+    // render is complete once the "d to day · w to week" footer prints.
     const FIXTURE = `
 Session
 Total cost: $0.0000
@@ -220,10 +203,7 @@ d to day · w to week
   });
 
   it('accepts a window-less render whose footer leads with the 2.1.305 fix hint', () => {
-    // 2.1.305 turned the contributing entries into one-line recommendation
-    // rows and, when any of them can be applied in the session, prepends an
-    // `f to fix …` hint to the footer — so `d to day` is no longer the first
-    // thing on its line.
+    // 2.1.305 can prepend `f to fix …` to the footer.
     const FIXTURE = `
 Session
 Total cost: $0.0000
@@ -253,8 +233,6 @@ f to fix this · d to day · w to week
   });
 
   it('keeps waiting on a window-less render before the tables footer prints', () => {
-    // Still mid-load: contributing header is up but the local-session scan
-    // hasn't finished (no tables footer yet). Don't snapshot a partial render.
     const FIXTURE = `
 Session
 Total cost: $0.0000
@@ -295,7 +273,6 @@ d to day · w to week
       { name: 'some-server', pct_used: 1 },
     ]);
     expect(result.data.mcp_servers.more_count).toBe(4);
-    // The subagents table above must not bleed the MCP rows in.
     expect(result.data.subagents.rows).toEqual([
       { name: 'general-purpose', pct_used: 16 },
     ]);
@@ -303,13 +280,8 @@ d to day · w to week
 });
 
 describe('parseUsageOutput contributing — multi-frame buffers', () => {
-  // The pty buffer accumulates multiple TUI redraw frames. The first
-  // "What's contributing" header can land in an earlier (incomplete) frame,
-  // so the contributing slice legitimately spans into the later complete
-  // frame to reach the real entries. A 0%-used window renders its bar label
-  // as a bare "0% used" line (no leading bar glyph to disqualify it), which
-  // otherwise gets mis-read as a contributing headline — injecting a bogus
-  // entry. Verified against the live 2.1.159 capture on 2026-06-02.
+  // The pty buffer holds several redraw frames; the first contributing header
+  // can land in an incomplete one.
   const TWO_FRAME = `
 Session
 Total cost: $0.0000
@@ -360,9 +332,7 @@ Longer sessions are more expensive even when cached.
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const headlines = result.data.contributing.map((c) => c.headline);
-    // The bar-less window label must never appear as a contributing headline.
     expect(headlines).not.toContain('0% used');
-    // The two real entries survive intact.
     expect(headlines).toEqual([
       '82% of your usage came from subagent-heavy sessions',
       '51% of your usage was at >150k context',
@@ -371,11 +341,8 @@ Longer sessions are more expensive even when cached.
 });
 
 describe('parseUsageOutput — Loops table (CLI 2.1.243+)', () => {
-  // 2.1.243 added a Loops breakdown to `/usage`, rendered AFTER the four
-  // "% of usage" tables and BEFORE the `d to day · w to week` footer.
-  // Verified against the 2.1.246 binary: the section list is
-  // [Skills, Subagents, Plugins, MCP servers, Loops] and the Loops header
-  // row is `Loops  every  runs  tokens  per run  last run`.
+  // 2.1.243's Loops table renders after the four "% of usage" tables and before
+  // the footer.
   const FIXTURE = `
 Session
 Total cost: $0.0000

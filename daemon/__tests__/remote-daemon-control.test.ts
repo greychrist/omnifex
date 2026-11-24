@@ -7,9 +7,8 @@ import { createDaemonControl } from '../remote/daemon-control';
 import type { ServerConfig } from '../remote/config';
 
 const CONFIG = { host: '127.0.0.1', port: 47700, stateDir: '/tmp/x' } as ServerConfig;
-// Paths that do not exist anywhere. A test whose fake spawner is not wired
-// in falls through to the real one; with the installed app's paths here that
-// once launched three real daemons against the user's database (2026-11-18).
+// Paths that exist nowhere: a test whose fake spawner is not wired in falls
+// through to the real one.
 const INVOCATION = { execPath: '/nonexistent/omnifex-test/omnifexd', script: '/nonexistent/omnifex-test/omnifex-server.js' };
 
 let home: string;
@@ -48,10 +47,6 @@ describe('daemon control', () => {
     expect(await make({ pid: 777, alive: false }).control.stop(CONFIG)).toBe(false);
   });
 
-  // Every daemon belongs to the app that started it: in the app's process
-  // group, stopped on quit, the idle watch as backstop. There is no detached
-  // kind left to ask for. See
-  // docs/superpowers/specs/2026-11-18-daemon-dies-with-app-design.md.
   it('spawns the daemon in the caller\'s process group, logging to ~/Library/Logs', () => {
     const { control, spawnDaemon } = make();
     expect(control.spawn(CONFIG)).toBe(true);
@@ -60,7 +55,7 @@ describe('daemon control', () => {
     expect(inv).toEqual(INVOCATION);
     expect(logPath).toBe(join(home, 'Library', 'Logs', 'omnifex-server.log'));
     expect(env).toEqual({ PATH: '/opt/bin' });
-    expect(rest).toEqual([]); // no detached option left to pass
+    expect(rest).toEqual([]);
   });
 
   // A KeepAlive job would respawn the daemon the app had just stopped.

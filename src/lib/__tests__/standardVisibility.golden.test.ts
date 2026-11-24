@@ -1,11 +1,6 @@
 /**
- * What the chat draws, pinned. Written against the Modern pipeline as it was
- * on 2026-11-18, before Standard and Expanded replaced the four formats.
- *
- * Greg's rule: what Modern shows today is what Standard shows afterwards,
- * whatever the old Compact/Verbose settings said. So this snapshot is NEVER
- * regenerated with `-u`. A change that alters it has changed what Standard
- * shows; fix the change, not the snapshot.
+ * What the chat draws, pinned. NEVER regenerate this snapshot with `-u`: a
+ * change that alters it changed what Standard shows; fix the change.
  */
 import { describe, it, expect } from 'vitest';
 import { KIND_REGISTRY, mergeConfig, type MessageRenderingConfig } from '@/lib/messageRenderingConfig';
@@ -21,11 +16,8 @@ const BLOCK_LEVEL = new Set([
   'user.image', 'user.compactSummary', 'user.sdkSystemBracket',
 ]);
 
-/**
- * A saved v5 config, loaded the way the app loads one. The goldens drive
- * Standard through `mergeConfig`, so after the v6 config they exercise the
- * migration: what an old saved setting showed is what Standard shows.
- */
+// The goldens drive Standard through `mergeConfig`, so they exercise the v6
+// migration.
 const savedV5 = (rules: 'compact' | 'verbose' | 'all', kinds: Record<string, Record<string, unknown>> = {}): MessageRenderingConfig =>
   mergeConfig({ version: 5, kinds, modern: { recordRules: rules } });
 
@@ -55,11 +47,6 @@ describe('what Standard draws (golden — never update with -u)', () => {
   });
 });
 
-// Each kind set to Verbose and to Never, one at a time, under each record
-// rule. Pins the two ways the old settings hid a kind — a line Compact hid,
-// a record Never dropped — which the v6 migration has to reproduce for every
-// kind separately (Modern draws thinking, tool calls and answers as its own
-// items, which Verbose never hid).
 describe('what Standard draws per kind setting (golden — never update with -u)', () => {
   const kinds = Object.keys(KIND_REGISTRY);
   for (const rules of ['compact', 'verbose'] as const) {

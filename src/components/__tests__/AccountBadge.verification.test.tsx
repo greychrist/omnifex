@@ -17,8 +17,6 @@ vi.mock('@/hooks', () => ({
   useTheme: () => ({ theme: 'gray' }),
 }));
 
-// The engine brand mark, stubbed so we can assert whether it was displaced by
-// a shield.
 vi.mock('../shared/BrandIcon', () => ({
   BrandIcon: () => <span data-testid="brand-icon" />,
 }));
@@ -62,12 +60,9 @@ describe('AccountBadge verification shield', () => {
 
   it('replaces the engine brand mark when a verdict is shown', () => {
     renderBadge('verified');
-    // The trailing slot holds one mark, not two — the shield takes it over.
     expect(screen.queryByTestId('brand-icon')).toBeNull();
   });
 
-  // Asserting "verified" with no expectation configured would be a claim we
-  // haven't earned, so the badge stays exactly as it was.
   it('keeps the brand mark and shows no shield when verification is unconfigured', () => {
     renderBadge('unverified');
     expect(screen.getByTestId('brand-icon')).toBeTruthy();
@@ -81,8 +76,6 @@ describe('AccountBadge verification shield', () => {
   });
 });
 
-// The running process's lost sign-in outranks the config dir's verdict: the
-// dir can read as verified while this session can no longer make a request.
 describe('AccountBadge — session sign-in expired', () => {
   it('shows an alert shield even when the config dir is verified', () => {
     render(<AccountBadge name="Work" agent="claude" verification="verified" sessionSignedOut />);

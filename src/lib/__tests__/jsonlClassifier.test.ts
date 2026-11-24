@@ -47,11 +47,8 @@ describe('classifyJsonlLine', () => {
     }
   });
 
-  // The marker the CLI writes when the user presses Stop. A plain `user`
-  // record with no isMeta, so without a dedicated kind it read as something
-  // the user typed — see the interrupt regression in sessionDerivedState.
-  // The prefix is the CLI's own predicate (2.1.273 detects interruptions with
-  // `text.includes("[Request interrupted by user")`).
+  // The CLI's Stop marker is a plain `user` record; 2.1.273 detects it with
+  // `text.includes("[Request interrupted by user")`.
   describe('interrupt notices', () => {
     const notice = (text: string) => classifyJsonlLine({
       type: 'user',
@@ -80,8 +77,7 @@ describe('classifyJsonlLine', () => {
       if (node?.kind === 'user') expect(node.userKind).toBe('interrupt');
     });
 
-    // The CLI can prepend the marker to the prompt the user typed next. That
-    // record IS a prompt and must stay one, or the turn it opens never closes.
+    // The CLI can prepend the marker to the prompt typed next.
     it('leaves a marker followed by typed text as userKind=prompt', () => {
       const node = notice('[Request interrupted by user]\nUse Sonnet instead.');
       expect(node?.kind).toBe('user');
@@ -100,11 +96,8 @@ describe('classifyJsonlLine', () => {
     expect(node?.kind).toBe('attachment');
   });
 
-  // A /compact summary is written by the CLI as a `user` record, so without a
-  // dedicated kind it reads as something the user typed. Two ingress shapes:
-  // the persisted JSONL carries `isCompactSummary`, while stream-json drops
-  // that field and leaves only `isReplay: false` (the CLI emits
-  // `isReplay: !isCompactSummary`, and every other emitter hard-codes `true`).
+  // /compact summaries are `user` records: the JSONL carries `isCompactSummary`,
+  // stream-json only `isReplay: false` (the CLI emits `isReplay: !isCompactSummary`).
   describe('compact summaries', () => {
     const body = { role: 'user', content: [{ type: 'text', text: 'Session continued…' }] };
 
@@ -121,14 +114,6 @@ describe('classifyJsonlLine', () => {
       if (node?.kind === 'user') expect(node.userKind).toBe('compact-summary');
     });
 
-    // `isReplay: false` was a stream-json-only proxy, used back when the
-    // stream delivered committed rows and stripped `isCompactSummary`. It no
-    // longer does: the transcript comes from the CLI's JSONL, which marks
-    // summaries outright. A census of all 890 personal transcripts found 21
-    // rows carrying `isCompactSummary` and ZERO carrying `isReplay: false`,
-    // across six CLI versions — the field has never appeared on disk. Keying
-    // on it now would only let some other emitter's `isReplay: false` be
-    // mistaken for a compaction.
     it('does not treat a bare isReplay:false as a compact summary', () => {
       const node = classifyJsonlLine({
         type: 'user',
@@ -143,9 +128,8 @@ describe('classifyJsonlLine', () => {
       if (node?.kind === 'user') expect(node.userKind).not.toBe('compact-summary');
     });
 
-    // A directed /summarize sets isCompactSummary but NOT
-    // isVisibleInTranscriptOnly. It is still a compaction summary and must
-    // not read as a prompt.
+    // A directed /summarize sets isCompactSummary but not
+    // isVisibleInTranscriptOnly.
     it('catches a directed summarize, which carries no isVisibleInTranscriptOnly', () => {
       const node = classifyJsonlLine({
         type: 'user',
@@ -158,9 +142,7 @@ describe('classifyJsonlLine', () => {
       if (node?.kind === 'user') expect(node.userKind).toBe('compact-summary');
     });
 
-    // isSynthetic is far too broad to key on: the CLI sets it for every skill
-    // body and image marker. Those already have their own kinds and must keep
-    // them.
+    // The CLI sets isSynthetic for every skill body and image marker.
     it('does not mistake a synthetic skill body for a compact summary', () => {
       const node = classifyJsonlLine({
         type: 'user',
@@ -175,8 +157,6 @@ describe('classifyJsonlLine', () => {
       if (node?.kind === 'user') expect(node.userKind).toBe('meta-skill');
     });
 
-    // Replayed history is the common case on resume — every one of those
-    // carries isReplay:true and is an ordinary prompt.
     it('leaves a replayed prompt as userKind=prompt', () => {
       const node = classifyJsonlLine({
         type: 'user',
@@ -189,8 +169,7 @@ describe('classifyJsonlLine', () => {
       if (node?.kind === 'user') expect(node.userKind).toBe('prompt');
     });
 
-    // A live prompt omits isReplay entirely. `undefined` must not be read as
-    // "not a replay, therefore a compact summary".
+    // A live prompt omits isReplay entirely.
     it('leaves a live prompt with no isReplay field as userKind=prompt', () => {
       const node = classifyJsonlLine({
         type: 'user',
@@ -221,10 +200,7 @@ describe('classifyJsonlLine', () => {
   });
 
   it('returns kind: unknown even when timestamp and receivedAt are both absent', () => {
-    // The catch-all must catch: several real CLI record types (`summary`,
-    // `mode`) ship with no top-level timestamp, and dropping them here meant
-    // they could never render, on any path. Ordering falls back to file
-    // position, which the history loader already preserves.
+    // Several CLI record types (`summary`, `mode`) carry no top-level timestamp.
     const node = classifyJsonlLine({ type: 'unknown-future-type', sessionId: 's1' });
     expect(node?.kind).toBe('unknown');
     if (node?.kind === 'unknown') expect(node.receivedAt).toBeNull();
@@ -241,8 +217,6 @@ describe('classifyJsonlLine', () => {
   });
 
   it('accepts a live envelope that has receivedAt but no timestamp (main-process IPC stamping)', () => {
-    // OmnifexEnvelope: live messages are stamped with receivedAt by main process.
-    // The CLI stream-json output does not include a `timestamp` field.
     const raw = {
       type: 'assistant',
       sessionId: 's1',
@@ -281,9 +255,7 @@ describe('classifyJsonlLine', () => {
     expect(node?.kind).toBe('ai-title');
   });
 
-  // Not in JSONL_SAMPLES: the sampled corpus predates the app being able to
-  // rename anything, so no transcript had one. This is the record the CLI
-  // wrote when `rename_session` was fired at 2.1.273.
+  // The record the CLI writes for `rename_session` (2.1.273).
   it('classifies custom-title lines', () => {
     const node = classifyJsonlLine({
       type: 'custom-title',
@@ -323,10 +295,8 @@ describe('classifyJsonlLine', () => {
   });
 
   it('classifies system/background_tasks_changed', () => {
-    // Emitted by the CLI whenever the set of running background tasks
-    // changes (agent launched, shell finished). Payload verified against a
-    // live 2.1.235 stream: a `tasks[]` snapshot, each entry carrying
-    // task_id, task_type ('local_agent' | 'local_bash') and description.
+    // Verified against a live 2.1.235 stream: `tasks[]` entries carry task_id,
+    // task_type ('local_agent' | 'local_bash') and description.
     const sample = {
       type: 'system',
       subtype: 'background_tasks_changed',
@@ -346,10 +316,8 @@ describe('classifyJsonlLine', () => {
   });
 
   it('classifies system/feedback_draft_queued', () => {
-    // Emitted by the CLI's SendFeedback tool after it writes a local draft to
-    // <CLAUDE_CONFIG_DIR>/feedback/drafts/, so a host UI can surface a review
-    // card without polling the filesystem. Shape taken from the message schema
-    // in the 2.1.247 binary: display fields only, the body stays on disk.
+    // Shape from the 2.1.247 binary's schema: display fields only; the body stays
+    // on disk under <CLAUDE_CONFIG_DIR>/feedback/drafts/.
     const sample = {
       type: 'system',
       subtype: 'feedback_draft_queued',
@@ -421,9 +389,7 @@ describe('classifyJsonlLine', () => {
     expect(node?.kind).toBe('rate-limit-event');
   });
 
-  // `progress` is in the CLI's merge-strategy map ("boundary-cleared") but no
-  // transcript on this machine holds one. Classified so that if the CLI writes
-  // one it shows as a progress line, not an Unrecognized card.
+  // `progress` is in the CLI's merge-strategy map but no transcript has one yet.
   it('classifies a progress record as its own kind, keeping its data payload', () => {
     const node = classifyJsonlLine({
       type: 'progress',
@@ -519,8 +485,6 @@ describe('classifyJsonlLine', () => {
   });
 
   it('classifies model-fallback and execution-error system subtypes as system nodes', () => {
-    // Observed in real transcripts (Fable 5 safety-fallback notices carry a
-    // user-facing `content` string). These were silently invisible before.
     const subtypes = [
       'model_fallback',
       'model_refusal_fallback',
@@ -847,13 +811,9 @@ describe('tool_progress', () => {
   });
 });
 
-// Frames a mod produces in a headless session (CLI >= 2.1.287), observed on
-// stdout with a --plugin-dir mod loaded on 2.1.288. Unclassified, each one
-// drew an orange "Unrecognized record" card — a redrawing mod sends
-// ui_invalidate on every change.
-// CLI 2.1.292: a tool call whose automatic permission check (auto mode's
-// classifier) has run ~4 s announces `checking`, then `done`. Stream-only,
-// ungated — unclassified, every slow classifier call drew two cards.
+// Mod frames from a headless session (CLI >= 2.1.287); a redrawing mod sends
+// ui_invalidate on every change. CLI 2.1.292: a ~4 s automatic permission check
+// announces `checking`, then `done`.
 it('classifies system:permission_check_status as a known system subtype', () => {
   const node = classifyJsonlLine({
     type: 'system',

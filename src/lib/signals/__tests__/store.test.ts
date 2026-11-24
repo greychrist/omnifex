@@ -58,8 +58,7 @@ describe('signal store — event routing', () => {
   });
 
   it('de-dupes a re-emitted event by id, not by key', () => {
-    // Signals are derived from the message stream every render: the same jump
-    // arrives over and over and must land as one row.
+    // Signals are re-derived every render, so the same event arrives repeatedly.
     let s = emit(EMPTY_SIGNAL_STATE, signal({ kind: 'event', key: 'context.delta', id: 'p1' }));
     s = emit(s, signal({ kind: 'event', key: 'context.delta', id: 'p1', title: 'updated' }));
 
@@ -92,7 +91,6 @@ describe('signal store — event routing', () => {
     }
 
     expect(s.events).toHaveLength(MAX_EVENTS);
-    // The oldest are the ones dropped.
     expect(s.events[s.events.length - 1].id).toBe('p10');
   });
 
@@ -125,8 +123,6 @@ describe('signal store — action routing', () => {
     s = emit(s, action('a', 'high', 2000));
     s = emit(s, action('d', 'low', 500));
 
-    // Oldest-first inside a band: an unresolved item must not be buried by a
-    // newer one of equal urgency.
     expect(attentionQueue(s).map((x) => x.key)).toEqual(['a', 'c', 'b', 'd']);
   });
 
@@ -139,9 +135,6 @@ describe('signal store — action routing', () => {
   });
 
   it('keeps a dismissed action dismissed when derivation re-emits it', () => {
-    // The boundary condition still holds on the next render, so the same key
-    // arrives again. Waving it off once must not become waving it off forever
-    // only to have it reappear a frame later.
     let s = emit(EMPTY_SIGNAL_STATE, action('context.boundary', 'high', 1000));
     s = dismissAction(s, 'context.boundary');
     s = emit(s, action('context.boundary', 'high', 2000));
@@ -219,9 +212,6 @@ describe('signal store — snooze', () => {
   });
 
   it('re-arms: an action emitted after a snooze reaches the queue again', () => {
-    // The offset lives in the store, but it is the *emitter* that applies it.
-    // Once the raised threshold is crossed the action is a fresh one and must
-    // not be suppressed by the snooze that preceded it.
     let s = emit(EMPTY_SIGNAL_STATE, signal({ kind: 'action', key: 'context.boundary', priority: 'high' }));
     s = snooze(s, 'context.boundary', 20_000);
     s = emit(s, signal({ kind: 'action', key: 'context.boundary', priority: 'high', at: 9000 }));

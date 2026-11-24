@@ -7,16 +7,6 @@ import { createBrainService, type BrainService } from '../services/brain/registr
 import type { AccountsService } from '../services/accounts';
 import type { BrainSource, SourceItem } from '../services/brain/sources/types';
 
-/**
- * Durable project exclusion.
- *
- * A view filter is not enough: with Auto-index on, closing a session in a temp
- * project indexes it in the background whatever the table is showing. So an
- * excluded project has to drop out of every path that can reach the model, and
- * each path is pinned separately here — one shared test would pass while four
- * of the five leaked.
- */
-
 const stubExec = async () => '';
 
 const accountsStub = {
@@ -35,7 +25,6 @@ function item(itemKey: string, label: string): SourceItem {
   };
 }
 
-/** Two projects: ordinary work, and scratch. Labels are folder paths. */
 const WIN = '/Users/greg/Repos/personal/WIN';
 const ITEMS = [
   item('keep-1', WIN),
@@ -79,7 +68,6 @@ describe('durable project exclusion', () => {
   let extractor: ReturnType<typeof vi.fn>;
   const accountId = 1;
   const TMP = '/private/tmp/brain-probe';
-  /** Exclude the scratch project the way a stored decision would. */
   const excludeTmp = { [TMP]: true };
 
   beforeEach(() => {
@@ -107,10 +95,6 @@ describe('durable project exclusion', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  /**
-   * Scratch is out of the box. A probe session in `/private/tmp` is the Brain
-   * watching itself, and indexing it spends tokens on nothing.
-   */
   it('excludes a scratch project with no decision recorded', async () => {
     const rows = await brain.listSources(accountId);
     expect(rows.map((r) => r.itemKey).sort()).toEqual(['keep-1', 'keep-2']);
@@ -130,8 +114,6 @@ describe('durable project exclusion', () => {
          VALUES (2, 'work', '/cfg/work', 'claude', 'Max', 0)`,
       )
       .run();
-    // Account 2 owns none of these items, but the point is that its settings
-    // key is untouched: the WIN exclusion is account 1's alone.
     expect(db.getSetting('brain.excludedProjects.2')).toBeNull();
   });
 
@@ -160,12 +142,7 @@ describe('durable project exclusion', () => {
     expect(await brain.backfill(accountId)).toBe(2);
   });
 
-  /**
-   * The backstop. The queue is durable across restarts, so an exclusion added
-   * today has to stop work that was queued yesterday.
-   */
   it('skips an already-queued item whose project was excluded afterwards', async () => {
-    // Included first, or the default rule would refuse the enqueue outright.
     brain.setExcludedProjects(accountId, { [TMP]: false });
     await brain.enqueueSource(accountId, 'tmp-1');
     expect(brain.queueCounts(accountId).pending).toBe(1);

@@ -3,10 +3,6 @@ import { extractResendPayload } from '../extractResendPayload';
 
 describe('extractResendPayload', () => {
   it('returns empty payload when content is not an array', () => {
-    // Boundary normalization (normalizeMessage) coerces string content into
-    // array form before any caller sees it. Anything that still arrives as a
-    // bare string here has skipped the boundary, so we refuse to resend it
-    // rather than silently sending wrong-shaped wire data.
     expect(extractResendPayload({ content: 'hello world' })).toEqual({ text: '' });
   });
 
@@ -37,8 +33,6 @@ describe('extractResendPayload', () => {
   });
 
   it('omits the images key entirely when there are no images', () => {
-    // The resend callback signature is (text, images?) — passing
-    // images: [] would be a behavior change vs the original.
     const result = extractResendPayload({
       content: [{ type: 'text', text: 'just text' }],
     });

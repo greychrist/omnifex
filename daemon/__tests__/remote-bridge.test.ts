@@ -54,11 +54,6 @@ describe('remote session bridge', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  /**
-   * The early-warning test the plan asks for: a captured turn goes through
-   * the bridge and the emitted protocol sequence is asserted in full. When a
-   * CLI release moves a shape we depend on, this is where it shows.
-   */
   it('replays the captured turn into the expected push sequence', () => {
     openSession(log, FIXTURE.sessionId);
     for (const [channel, payload] of FIXTURE.frames) {
@@ -99,7 +94,6 @@ describe('remote session bridge', () => {
       'session-summary:updated',
     ]);
 
-    // Everything emitted is valid on the wire.
     for (const p of [...published, ...broadcast]) {
       expect(ServerMessageSchema.safeParse(JSON.parse(JSON.stringify(p))).success, JSON.stringify(p)).toBe(true);
     }
@@ -128,19 +122,6 @@ describe('remote session bridge', () => {
     expect(node.anchorToolUseId).toBe('toolu_A');
   });
 
-  /**
-   * Heartbeats go through the ordinary logged path, and that is deliberate.
-   *
-   * An earlier design had the bridge forward them without logging, on the
-   * theory that replay bought nothing. It does not survive the code: `emit`
-   * is `publish(log.append(push))` and `broadcast` takes only `channel`
-   * messages, so skipping the log needs either a new unsequenced push type or
-   * a stamp-without-persist method — new protocol surface to avoid one line
-   * per 30 seconds per slow tool against a 5,000-entry ring. Replaying a
-   * beat is also harmless: the chip refuses to paint progress for a tool
-   * whose result has landed, and for one still running the replayed value is
-   * simply correct.
-   */
   it('logs a tool_progress frame like any other transcript row', () => {
     openSession(log, 's1');
     bridge.sendToRenderer('agent-output:s1', {
@@ -209,9 +190,6 @@ describe('remote session bridge', () => {
     expect(bridge.pendingPermissions('s1')).toEqual(['req-2']);
   });
 
-  // The CLI withdrew a queued request (an interrupted turn). Main announces it
-  // on agent-output as `permission_withdrawn`; the bridge must stop counting
-  // it as pending and carry the withdrawal to the client, never as transcript.
   it('forgets a withdrawn permission and forwards the withdrawal', () => {
     openSession(log, 's1');
     bridge.sendToRenderer('agent-output:s1', { type: 'permission_request', request_id: 'req-1', tool_name: 'Bash', tool_input: {} });
@@ -255,8 +233,6 @@ describe('remote session bridge', () => {
     const states = published.filter((p) => p.type === 'session.state');
     expect(states.at(-1)).toMatchObject({ sessionStatus: 'started', turn: { status: 'running', since: '2026-09-20T00:00:00.000Z' } });
 
-    // The bridge does not close turns itself — a result row is transcript,
-    // and the session announces its own idle.
     bridge.sendToRenderer('agent-output:s1', { type: 'result', subtype: 'success', is_error: false, result: 'done', receivedAt: '2026-09-10T03:00:02.000Z' });
     expect(bridge.state('s1')).toMatchObject({ turn: { status: 'running' } });
     bridge.sendToRenderer('session-turn:s1', { status: 'idle', since: null });
@@ -273,11 +249,7 @@ describe('remote session bridge', () => {
     ]);
   });
 
-  // `session-cost:<id>` is keyed by the CLI session UUID, not a tab. The
-  // daemon names resumed and new sessions by that same UUID, so treating the
-  // suffix as a tab re-emitted it client-side as `session-cost:<rendererTab>`
-  // — a channel useSessionCost never listens on — and the readout froze at
-  // its first snapshot ($0.00 for a fresh session).
+  // `session-cost:<id>` is keyed by the CLI session UUID, not a tab.
   it('broadcasts session-cost under its own name even when the id is an open session', () => {
     openSession(log, 'de6b9aa2');
     bridge.sendToRenderer('session-cost:de6b9aa2', { totalUsd: 1.78, estimated: false });

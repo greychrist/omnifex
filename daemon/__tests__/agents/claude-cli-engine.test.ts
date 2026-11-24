@@ -6,8 +6,6 @@ import { createClaudeCliEngine } from '../../services/agents/claude-cli-engine';
 import type { AgentEngineExit, AgentMessage } from '../../services/agents/types';
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
-// The real buildClaudeEnv spreads process.env; the stand-in spreads this, so
-// a test can say what the parent shell carried.
 const inheritedEnv: Record<string, string> = {};
 vi.mock('../../services/util/claude-env', () => ({
   buildClaudeEnv: (configDir: string) => ({ ...inheritedEnv, CLAUDE_CONFIG_DIR: configDir }),
@@ -75,9 +73,8 @@ describe('ClaudeCliEngine', () => {
     expect(opts.env.CLAUDE_CONFIG_DIR).toBe('/home/user/.claude');
   });
 
-  // CLI 2.1.321: a mod's `$.ui.notify` reaches the host as `system/ui_notify`
-  // only when the host says it raises notifications; otherwise the mod hears
-  // "no_surface". The daemon raises them (sessions/mod-notifications.ts).
+  // CLI 2.1.321 delivers `$.ui.notify` only to a host that declares it raises
+  // notifications; otherwise the mod hears "no_surface".
   it('declares itself a notifications host', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
@@ -87,10 +84,8 @@ describe('ClaudeCliEngine', () => {
     expect(opts.env.CLAUDE_CODE_NOTIFICATIONS_HOST).toBe('1');
   });
 
-  // CLI 2.1.323: the Artifact tool (Claude Design in Claude Code) is off by
-  // default for an `sdk-cli` session unless the host sets CLAUDE_CODE_ARTIFACT.
-  // Verified live: 26 tools without it, 29 (Artifact, ArtifactComments,
-  // ArtifactData) with it.
+  // CLI 2.1.323: the Artifact tool is off for sdk-cli sessions unless
+  // CLAUDE_CODE_ARTIFACT is set.
   it('opts sessions into the Artifact tool', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
@@ -115,8 +110,7 @@ describe('ClaudeCliEngine', () => {
   });
 
   it('enables --forward-subagent-text so subagent narration reaches the stream', async () => {
-    // CLI ≥2.1.211: forwards subagent text/thinking as assistant envelopes
-    // tagged with parent_tool_use_id. subagent rows render them live.
+    // CLI >= 2.1.211 forwards subagent text tagged with parent_tool_use_id.
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
     const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
@@ -138,8 +132,6 @@ describe('ClaudeCliEngine', () => {
     const i = args.indexOf('--append-system-prompt');
     expect(i).toBeGreaterThan(-1);
     expect(args[i + 1]).toMatch(/```mermaid/);
-    // Labels are drawn as SVG text, which prints HTML tags literally; the
-    // markdown-string form is the one that renders bold and italic.
     expect(args[i + 1]).toMatch(/markdown string/i);
     expect(args[i + 1]).toMatch(/not HTML tags/);
   });
@@ -167,10 +159,6 @@ describe('ClaudeCliEngine', () => {
     expect(args).not.toContain('--model');
   });
 
-  // The effort picked before the session starts used to be dropped in main:
-  // only a mid-session change reached the CLI. Invisible while every default
-  // model defaulted to `high` (the picker's own default); Opus 5.5 defaults to
-  // `medium`, so the picker said High while the session ran medium.
   describe('spawn-time effort', () => {
     async function argsFor(extra: Partial<typeof baseParams> & { effort?: string }) {
       const fake = makeFakeChild();
@@ -199,9 +187,8 @@ describe('ClaudeCliEngine', () => {
       expect(await argsFor({ effort: 'auto' })).not.toContain('--effort');
     });
 
-    // Thinking is the CLI's adaptive default, always. There is no off switch
-    // to forward: the picker went in v0.4.70, and Fable 5, Fable 5.1 and
-    // Opus 5.5 refuse thinking-off anyway (`rejects_disabled_thinking`).
+    // No thinking-off to forward: current models reject it
+    // (`rejects_disabled_thinking`).
     it('never passes --thinking', async () => {
       expect(await argsFor({ effort: 'high' })).not.toContain('--thinking');
     });
@@ -256,9 +243,6 @@ describe('ClaudeCliEngine', () => {
     await engine.start(baseParams);
     await engine.send('hello there');
 
-    // Start writes initialize (agent summaries, see
-    // claude-cli-engine-agent-summaries.test.ts) and the thinking-display
-    // request (claude-cli-engine-thinking-display.test.ts); the prompt follows.
     expect(fake.stdin._writes).toHaveLength(3);
     expect(JSON.parse(fake.stdin._writes[0].trim()).request?.subtype).toBe('initialize');
     expect(JSON.parse(fake.stdin._writes[1].trim()).request?.subtype).toBe('set_max_thinking_tokens');
@@ -291,17 +275,12 @@ describe('ClaudeCliEngine', () => {
     engine.onExit((info) => exits.push(info));
 
     await engine.start(baseParams);
-    // Restart (e.g. restartQuery after a stream death) — spawns childB and
-    // tears down childA.
     await engine.start({ ...baseParams, resume: true });
 
-    // The old child's delayed exit must NOT reach our exit callbacks, or the
-    // runtime would delete the just-restarted session.
     childA.emit('exit', 143, 'SIGTERM');
     await flush();
     expect(exits).toHaveLength(0);
 
-    // The live child's exit still works.
     childB.emit('exit', 0, null);
     await flush();
     expect(exits).toHaveLength(1);
@@ -321,27 +300,15 @@ describe('ClaudeCliEngine', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// The control channel: sendControlRequest / control_response / can_use_tool.
-//
-// This is the half of the engine that carries every mid-session setting
-// change and every permission prompt, and it was untested. Its failure mode
-// is a promise that never settles — the "control_request: reply was never
-// sent" hang the pending-request registry exists to prevent.
-// ---------------------------------------------------------------------------
-
-/** Start an engine on a fake child and hand back both. */
 async function started(params: Record<string, unknown> = {}) {
   const fake = makeFakeChild();
   mockedSpawn.mockReturnValue(fake as never);
   const engine = createClaudeCliEngine({ tabId: 't1', claudeBinaryPath: '/bin/claude' });
   await engine.start({ ...baseParams, ...params });
-  /** Feed one NDJSON line in on stdout. */
   const emit = async (obj: unknown) => {
     fake.stdout.push(JSON.stringify(obj) + '\n');
     await flush();
   };
-  /** Every JSON line the engine wrote to stdin. */
   const written = () => fake.stdin._writes.join('').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
   return { engine, fake, emit, written };
 }
@@ -364,8 +331,8 @@ describe('ClaudeCliEngine — control requests', () => {
   it('rejects with the CLI-supplied text on an error response', async () => {
     const { engine, emit, written } = await started();
     const p = engine.sendControlRequest('set_model', {});
-    // Attach the expectation before the rejection lands, or vitest reports
-    // the momentarily-unhandled rejection as a suite error.
+    // Attach the expectation first, or vitest flags the momentary unhandled
+    // rejection as a suite error.
     const rejected = expect(p).rejects.toThrow('unknown model');
     const id = (written().at(-1) as { request_id: string }).request_id;
     await emit({
@@ -404,8 +371,6 @@ describe('ClaudeCliEngine — control requests', () => {
     await expect(engine.sendControlRequest('set_model', {})).rejects.toThrow('child not running');
   });
 
-  // The response can never arrive after an exit, so waiting for each
-  // request's own timeout would hang the renderer's IPC calls for nothing.
   it('fails every in-flight request when the child exits', async () => {
     const { engine, fake } = await started();
     const p = engine.sendControlRequest('get_context_usage');
@@ -448,8 +413,7 @@ describe('ClaudeCliEngine — control requests', () => {
 });
 
 describe('ClaudeCliEngine — applyExtendedPermissionMode', () => {
-  // 'auto' and 'dontAsk' are not accepted by the CLI's argv parser (it exits
-  // 1), so they are applied after spawn over the control channel instead.
+  // The CLI's argv parser rejects 'auto' and 'dontAsk' (exits 1).
   it('sends set_permission_mode for a mode argv cannot express', async () => {
     const { engine, written } = await started();
     void engine.applyExtendedPermissionMode('dontAsk');
@@ -458,8 +422,6 @@ describe('ClaudeCliEngine — applyExtendedPermissionMode', () => {
       .toEqual({ subtype: 'set_permission_mode', mode: 'dontAsk' });
   });
 
-  // The four argv-expressible modes were already pinned at spawn; re-sending
-  // them would be a redundant round trip.
   it('is a no-op for a mode already pinned on argv', async () => {
     const { engine, written } = await started();
     const before = written().length;
@@ -467,7 +429,6 @@ describe('ClaudeCliEngine — applyExtendedPermissionMode', () => {
     expect(written().length).toBe(before);
   });
 
-  // Non-fatal by design: the CLI keeps whatever mode it defaulted to.
   it('swallows a rejection rather than failing the session start', async () => {
     const { engine, emit, written } = await started();
     const p = engine.applyExtendedPermissionMode('auto');
@@ -530,8 +491,6 @@ describe('ClaudeCliEngine — permission requests', () => {
     expect(seen).toHaveLength(0);
   });
 
-  // The CLI matches the decision by toolUseID, which only the original
-  // can_use_tool carried — the engine remembers it per request_id.
   it('echoes the remembered toolUseID back on the control_response', async () => {
     const { engine, emit, written } = await started();
     engine.onPermissionRequest(() => {});
@@ -547,7 +506,6 @@ describe('ClaudeCliEngine — permission requests', () => {
     });
   });
 
-  // Re-pinned after the payload spread so a caller can't clobber them.
   it('refuses to let the payload overwrite behavior or toolUseID', async () => {
     const { engine, emit, written } = await started();
     await emit(canUseTool('r1', 'toolu_abc'));
@@ -592,9 +550,6 @@ describe('ClaudeCliEngine — stdin writes and lifecycle', () => {
     expect((written().at(-1) as { session_id: string }).session_id).toBe('sess-from-cli');
   });
 
-  // The resume id is pinned from the start params at spawn (that is the whole
-  // point of --session-id: the JSONL path is known before the CLI answers),
-  // then corrected if the CLI reports a different one on system:init.
   it('starts from the pinned session id and adopts the one the CLI reports', async () => {
     const { engine, emit } = await started();
     expect(engine.getResumeId()).toBe('sess-1');
@@ -674,12 +629,7 @@ describe('ClaudeCliEngine — stdin writes and lifecycle', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// MCP elicitations. The CLI asks the host by default (`hostAnswersElicitations`
-// is true in stream-json mode) and parks the session until it answers, so an
-// elicitation that falls through to the transcript is a hang plus an orange
-// "Unrecognized record: control_request" card.
-// ---------------------------------------------------------------------------
+// The CLI parks the session until the host answers an elicitation.
 
 describe('ClaudeCliEngine — elicitations', () => {
   const formElicitation = (requestId = 'e1') => ({
@@ -761,9 +711,7 @@ describe('ClaudeCliEngine — elicitations', () => {
     expect(msgs).toHaveLength(0);
   });
 
-  // Anything else the CLI asks a host (hook_callback, mcp_message, …) is for
-  // capabilities we never declare. An error reply fails it now; silence
-  // would park the session until the CLI's own deadline.
+  // Silence would park the session until the CLI's own deadline.
   it('answers an unhandled inbound control_request with an error instead of forwarding it', async () => {
     const { engine, emit, written } = await started();
     const msgs: AgentMessage[] = [];

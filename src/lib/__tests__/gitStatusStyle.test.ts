@@ -3,10 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { GIT_CHANGED_STYLE, GIT_UNTRACKED_STYLE, GIT_FILE_STATUS_STYLE } from '@/lib/gitStatusStyle';
 
-// The counts sit on tinted branch chips, and the dark themes' bright shades
-// wash out on a light page. The app picks its theme with a class on <html>
-// (`theme-light`), not the OS appearance Tailwind's `dark:` follows — so the
-// colors are theme tokens, overridden under `.theme-light` like every other.
+// The app themes with a class on <html> (`theme-light`), not the OS appearance
+// Tailwind's `dark:` follows.
 describe('git status colors', () => {
   it('are theme tokens, not fixed shades', () => {
     expect(GIT_CHANGED_STYLE.className).toBe('text-git-changed');

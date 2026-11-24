@@ -55,8 +55,6 @@ describe('useSessionAuthExpiry', () => {
     expect(result.current?.text).toBe(EXPIRED);
   });
 
-  // A restored tab replays history that can end on an old failure. The
-  // process now running is fresh and has not failed.
   it('ignores a failure older than the running process', () => {
     vi.setSystemTime(new Date('2026-09-29T20:04:32Z'));
     const { result } = setup({

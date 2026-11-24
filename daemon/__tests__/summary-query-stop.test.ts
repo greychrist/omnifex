@@ -5,12 +5,6 @@ import { join } from 'node:path';
 
 import { runCliOnce, stopInternalRuns } from '../services/sessions/summary-query';
 
-// The daemon dies with the app now, and a Brain extraction or summary in
-// flight was a `claude -p` child nobody stopped: it ran on after the daemon
-// exited, paid for its whole call, and its result went nowhere — then the
-// next start re-queued the item and paid again (review I-5, 2026-11-18).
-// Stopping it at close caps that orphan's spend at the moment of the quit.
-// A real spawn of a stand-in `claude` that just sleeps, in a temp dir.
 describe('stopInternalRuns', () => {
   let dir: string;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'omnifex-runstop-')); });
@@ -27,7 +21,6 @@ describe('stopInternalRuns', () => {
 
   it('stops a run in flight, which then fails rather than hanging', async () => {
     const run = runCliOnce({ claudeBinary: sleepyClaude(), prompt: 'p', configDir: dir, cwd: dir });
-    // Let the spawn land.
     await new Promise((r) => setTimeout(r, 200));
     const started = Date.now();
     expect(stopInternalRuns()).toBe(1);

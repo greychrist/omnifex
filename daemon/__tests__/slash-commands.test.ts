@@ -22,12 +22,8 @@ describe('slash commands service', () => {
   });
 
   it('reads a command whose file starts with a UTF-8 BOM', () => {
-    // CLI 2.1.239 fixed agents, skills and commands whose .md begins with a
-    // BOM being silently ignored. Editors on Windows add one routinely, and
-    // our frontmatter regex anchors on /^---/, so the BOM pushed the file down
-    // the no-frontmatter path: description and allowed_tools came back empty
-    // and the raw `---` block leaked into the body. A file the CLI now honours
-    // must not read differently here.
+    // The frontmatter regex anchors on /^---/, so a BOM would hide the
+    // frontmatter; the CLI honors such files (2.1.239).
     fs.writeFileSync(
       path.join(configDir, 'commands', 'bommed.md'),
       '\uFEFF---\ndescription: Has a BOM\nallowed_tools: Read\n---\nBody text\n',
@@ -118,7 +114,6 @@ describe('slash commands service', () => {
   });
 
   it('list with projectPath returns project and global commands', () => {
-    // Global command
     service.save({
       scope: 'user',
       name: 'global-cmd',
@@ -129,7 +124,6 @@ describe('slash commands service', () => {
       configDir,
     });
 
-    // Project command
     const projectPath = path.join(tmpDir, 'proj2');
     fs.mkdirSync(path.join(projectPath, '.claude', 'commands'), { recursive: true });
 
@@ -167,17 +161,13 @@ describe('slash commands service', () => {
     const content = fs.readFileSync(path.join(commandsDir, files[0]), 'utf-8');
     expect(content).toContain('---');
     expect(content).toContain('description:');
-    // The CLI reads `allowed-tools` (hyphen). It has no underscore fallback
-    // for this key, so the `allowed_tools` we used to write was never read.
+    // The CLI reads `allowed-tools` (hyphen), with no underscore fallback.
     expect(content).toContain('allowed-tools: read_file, write_file');
     expect(content).not.toContain('allowed_tools:');
     expect(content).toContain('Content here');
   });
 
   it('user-scoped save throws when configDir is omitted (no default-account fallback)', () => {
-    // Per CLAUDE.md "Multi-Account Rules": there is no silent fallback to a
-    // default account or to ~/.claude. User-scoped commands need an explicit
-    // configDir so they land in the right account's tree.
     expect(() =>
       service.save({
         scope: 'user',
@@ -194,24 +184,13 @@ describe('slash commands service', () => {
   });
 
   it('list silently skips user-scope when configDir is omitted (project-only listing is valid)', () => {
-    // list() is the one read path that legitimately needs to work without a
-    // configDir — e.g. when no project is open the renderer still calls
-    // list() with no args. We return an empty array (user-scope skipped)
-    // rather than throwing, so the picker just shows nothing.
     const commands = service.list();
     expect(commands).toEqual([]);
   });
 
   describe('frontmatter round-trip', () => {
-    // The CLI's own frontmatter key list, read out of the 2.1.260 binary:
-    //   name, description, model, allowed-tools, argument-hint, arguments,
-    //   disable-model-invocation, user-invocable, effort, shell, version,
-    //   when_to_use, paths, hooks, context, agent, ...
-    // This service models exactly two of them. Rebuilding the whole block on
-    // save therefore deleted every other key the user had. That was mostly
-    // inert until CLI 2.1.259 started honouring frontmatter `model:` in
-    // interactive sessions — dropping it now changes which model the command
-    // runs on.
+    // The CLI reads many frontmatter keys; this service models two, so a save
+    // must keep the rest.
 
     it('preserves frontmatter keys it does not model when re-saving a command', () => {
       const filePath = path.join(configDir, 'commands', 'keeper.md');
@@ -242,7 +221,6 @@ describe('slash commands service', () => {
       expect(written).toContain('model: haiku');
       expect(written).toContain('argument-hint: <file>');
       expect(written).toContain('disable-model-invocation: true');
-      // The two keys this service does own are replaced, not duplicated.
       expect(written).toContain('description: New text');
       expect(written).toContain('allowed-tools: Read, Edit');
       expect(written).not.toContain('Old text');
@@ -329,11 +307,6 @@ describe('slash commands service', () => {
 
   describe('skill discovery', () => {
     it('list includes project skills (.claude/skills/<name>/SKILL.md) as project-scoped', () => {
-      // Skills live as folders under <projectPath>/.claude/skills/<skillName>/
-      // with a SKILL.md frontmatter file. The CLI exposes them
-      // alongside built-in slash commands, but with no scope info — so the
-      // renderer mislabels them as "default". Including them here lets the
-      // picker's dedup re-tag them as project.
       const projectPath = path.join(tmpDir, 'proj-skills');
       const skillDir = path.join(projectPath, '.claude', 'skills', 'omnifex-release');
       fs.mkdirSync(skillDir, { recursive: true });
@@ -370,17 +343,13 @@ describe('slash commands service', () => {
       const projectPath = path.join(tmpDir, 'proj-broken-skill');
       const skillDir = path.join(projectPath, '.claude', 'skills', 'no-manifest');
       fs.mkdirSync(skillDir, { recursive: true });
-      // No SKILL.md — should be ignored.
 
       const all = service.list(projectPath);
       expect(all.find((c) => c.name === 'no-manifest')).toBeUndefined();
     });
 
     it('follows a symlinked skill folder and skips a broken one', () => {
-      // Skills installed as symlinks (<configDir>/skills/mac-health → a repo)
-      // report isDirectory() === false on the Dirent; they must still be
-      // listed as user-scoped rather than falling through to the CLI's
-      // "default" bucket.
+      // A symlinked skill folder reports isDirectory() === false on the Dirent.
       const target = path.join(tmpDir, 'elsewhere', 'mac-health');
       fs.mkdirSync(target, { recursive: true });
       fs.writeFileSync(
@@ -428,7 +397,6 @@ describe('slash commands service', () => {
     });
 
     it('list with different configDirs returns different results', () => {
-      // Write a command file directly into each account's commands dir
       fs.writeFileSync(
         path.join(accountADir, 'commands', 'cmd-a.md'),
         '---\ndescription: Account A command\nallowed_tools: \n---\nDo A things\n',
@@ -463,11 +431,9 @@ describe('slash commands service', () => {
         configDir: accountADir,
       });
 
-      // Should exist in accountA
       const accountAFiles = fs.readdirSync(path.join(accountADir, 'commands'));
       expect(accountAFiles).toContain('account-cmd.md');
 
-      // Should NOT exist in accountB or default configDir
       const accountBFiles = fs.readdirSync(path.join(accountBDir, 'commands'));
       expect(accountBFiles).not.toContain('account-cmd.md');
 
@@ -476,7 +442,6 @@ describe('slash commands service', () => {
     });
 
     it('get with configDir reads from the specified directory', () => {
-      // Save a command to accountA via configDir param
       const saved = service.save({
         scope: 'user',
         name: 'get-test',
@@ -487,17 +452,14 @@ describe('slash commands service', () => {
         configDir: accountADir,
       });
 
-      // Should be retrievable with accountADir
       const retrieved = service.get(saved.id, accountADir);
       expect(retrieved.name).toBe('get-test');
       expect(retrieved.content).toBe('Get test content');
 
-      // Should NOT be found in accountB (throws)
       expect(() => service.get(saved.id, accountBDir)).toThrow();
     });
 
     it('delete with configDir removes from the specified directory', () => {
-      // Save to accountA
       const saved = service.save({
         scope: 'user',
         name: 'delete-test',
@@ -508,13 +470,10 @@ describe('slash commands service', () => {
         configDir: accountADir,
       });
 
-      // Confirm it exists
       expect(fs.existsSync(path.join(accountADir, 'commands', 'delete-test.md'))).toBe(true);
 
-      // Delete with configDir
       service.delete(saved.id, undefined, accountADir);
 
-      // Confirm it's gone
       expect(fs.existsSync(path.join(accountADir, 'commands', 'delete-test.md'))).toBe(false);
     });
   });

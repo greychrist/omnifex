@@ -2,8 +2,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 
-// Mock the api module before importing the component. The panel reads
-// three app_settings keys on mount and writes back on every change.
 vi.mock('@/lib/api', async () => {
   return {
     api: {
@@ -22,9 +20,6 @@ import { SaveStatusProvider, SaveStatusBanner } from '../saveStatus';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default load: every key absent → defaults apply (enabled+auto both
-  // true, prompt = built-in default). Individual tests can override
-  // mockImplementation before render.
   vi.mocked(api.getSetting).mockImplementation(async () => null);
   vi.mocked(api.saveSetting).mockResolvedValue();
 });
@@ -34,8 +29,8 @@ afterEach(() => {
   cleanup();
 });
 
-// The heading renders while settings are still loading; the editor only once
-// they have. Waiting on the heading raced the load under full-suite load.
+// The editor renders only once settings load; waiting on the heading raced it
+// under suite load.
 async function waitForLoaded() {
   await screen.findByRole('textbox', { name: /session summary prompt/i });
 }
@@ -105,13 +100,11 @@ describe('SummaryPromptSettings', () => {
   it('auto-saves prompt edits (debounced) without a Save button', async () => {
     render(<SummaryPromptSettings />);
     await waitForLoaded();
-    // Switch to fake timers AFTER the load resolves so we can drive the
-    // debounce window deterministically.
+    // Fake timers only after the load resolves.
     vi.useFakeTimers();
     try {
       const textarea = screen.getByRole('textbox');
       fireEvent.change(textarea, { target: { value: 'edited prompt body' } });
-      // Inside debounce — no save yet.
       expect(
         vi.mocked(api.saveSetting).mock.calls.filter(
           (c) => c[0] === 'sessionsSummary.promptTemplate',
@@ -165,9 +158,7 @@ describe('SummaryPromptSettings', () => {
     });
     render(<SummaryPromptSettings />);
     await waitForLoaded();
-    // Generic-typed getter narrows to HTMLTextAreaElement for .value
-    // access without needing a separate `as` cast (which the
-    // no-unnecessary-type-assertion auto-fix would strip).
+    // The generic getter narrows to HTMLTextAreaElement without a cast.
     const textarea = screen.getByRole<HTMLTextAreaElement>('textbox');
     expect(textarea.value).toBe('CUSTOM');
     vi.useFakeTimers();

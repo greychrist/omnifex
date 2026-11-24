@@ -2,9 +2,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, cleanup, screen, fireEvent } from '@testing-library/react';
 
-// The panel's only use of the hooks barrel is useTheme, which otherwise
-// demands a ThemeProvider ancestor. The syntax theme it feeds is irrelevant
-// to everything asserted here. Same shim as InflightAssistantBubble's tests.
+// useTheme() throws without a ThemeProvider.
 vi.mock('@/hooks', () => ({
   useTheme: () => ({ theme: 'dark' }),
 }));
@@ -30,15 +28,11 @@ const ledger = (entries: LedgerEntry[], tracked = true, startedAt: string | null
 
 describe('ContextLedgerPanel', () => {
   describe('untracked sessions', () => {
-    // An empty list reads as "nothing influenced this session", which is
-    // false — the CLI only began emitting these records around 2026-09-08.
     it('says the session predates tracking rather than showing an empty list', () => {
       render(<ContextLedgerPanel ledger={ledger([], false)} />);
       expect(screen.getByText(/predates/i)).toBeTruthy();
     });
 
-    // Before the first prompt the CLI has loaded nothing yet, so there is
-    // nothing to report — that is not the same as an old session.
     it('says nothing is loaded yet before the first prompt, not that the session predates tracking', () => {
       render(<ContextLedgerPanel ledger={ledger([], false, null)} />);
       expect(screen.queryByText(/predates/i)).toBeNull();
@@ -84,8 +78,6 @@ describe('ContextLedgerPanel', () => {
       expect(screen.getByTestId('entry-mcp-server:here').getAttribute('data-live')).toBe('true');
     });
 
-    // The Instructions section heading carries the count, as every other
-    // section's does; a second count line inside threw the layout off.
     it('does not repeat the count the section heading shows', () => {
       render(<ContextLedgerPanel ledger={ledger([
         entry({ kind: 'mcp-server', label: 'a', live: true }),
@@ -107,8 +99,6 @@ describe('ContextLedgerPanel', () => {
       expect(screen.getByTestId('group-mcp-server').textContent).toContain('2');
     });
 
-    // 2 deferred_tools_delta records expand to ~197 entries in a real
-    // session. Open by default that group is the panel.
     it('collapses the high-volume deferred-tool group by default', () => {
       const tools = Array.from({ length: 50 }, (_, i) =>
         entry({ kind: 'deferred-tool', label: `Tool${i}` }));
@@ -157,8 +147,6 @@ describe('ContextLedgerPanel', () => {
     });
 
     it('does not make an entry without content clickable', () => {
-      // An open-by-default group, so the row is actually rendered; the point
-      // under test is the missing content, not the collapse state.
       render(<ContextLedgerPanel ledger={ledger([
         entry({ kind: 'instruction-file', label: '/a/CLAUDE.md' }),
       ])} />);
@@ -192,7 +180,6 @@ describe('ContextLedgerPanel — content view mode', () => {
   it('defaults to the rendered view', () => {
     render(<ContextLedgerPanel ledger={withContent()} />);
     openContent();
-    // Rendered: the markdown became a real heading element.
     expect(screen.getByRole('heading', { name: 'Heading' })).toBeTruthy();
   });
 
@@ -220,7 +207,6 @@ describe('ContextLedgerPanel — content view mode', () => {
     expect(screen.getByRole('button', { name: 'Source' }).getAttribute('aria-pressed')).toBe('true');
   });
 
-  // The toggle is a reading preference, not a property of one file.
   it('keeps the chosen view when a different entry is opened', () => {
     render(<ContextLedgerPanel ledger={ledger([
       entry({ kind: 'instruction-file', label: '/a/CLAUDE.md', content: md }),
@@ -237,8 +223,6 @@ describe('ContextLedgerPanel — content view mode', () => {
 });
 
 describe('ContextLedgerPanel — sizing', () => {
-  // Resizing belongs to the side-panel shell (see ResizableSidePanel). The
-  // panel's job is to fill whatever box it is handed, at any size.
   it('fills its container rather than sizing itself', () => {
     render(<ContextLedgerPanel ledger={ledger([entry({ kind: 'mcp-server', label: 'ctx' })])} />);
     const el = screen.getByTestId('context-ledger-panel');
@@ -256,8 +240,6 @@ describe('ContextLedgerPanel — sizing', () => {
 });
 
 describe('ContextLedgerPanel — indentation', () => {
-  // Rows used to start outboard of their own group's chevron, so a child read
-  // as sitting to the LEFT of its parent.
   it('indents rows past the group chevron', () => {
     render(<ContextLedgerPanel ledger={ledger([
       entry({ kind: 'instruction-file', label: '/a/CLAUDE.md' }),

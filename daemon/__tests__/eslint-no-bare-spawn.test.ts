@@ -3,10 +3,6 @@ import { Linter } from 'eslint';
 
 import { noBareSpawn } from '../../eslint/no-bare-spawn.mjs';
 
-// Bare command names regressed three times (git watcher, /usage scraper MCP
-// servers, limactl) before the spawn helper existed. The lint rule is what
-// stops a fourth.
-
 const linter = new Linter({ configType: 'flat' });
 const lint = (code: string) =>
   linter.verify(code, [{ rules: { 'no-restricted-syntax': ['error', ...noBareSpawn] } }]).map((m) => m.message);

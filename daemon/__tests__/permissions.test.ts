@@ -50,7 +50,6 @@ describe('augmentPermissionsWithSession', () => {
       { type: 'addRules', rules: [{ toolName: 'Edit' }], behavior: 'allow', destination: 'localSettings' },
     ];
     const out = augmentPermissionsWithSession(input) ?? [];
-    // Only the addRules entry gets a session duplicate; setMode and addDirectories are passed through unchanged.
     expect(out).toHaveLength(4);
     const addRulesEntries = out.filter((u: any) => u.type === 'addRules');
     expect(addRulesEntries).toHaveLength(2);
@@ -93,9 +92,7 @@ describe('buildDefaultRule', () => {
     ['NotebookEdit', 'Edit'],
     ['Edit', 'Edit'],
   ])('builds %s file requests as a %s(path) rule', (toolName, expected) => {
-    // The CLI never suggests a rule for file-edit tools (it suggests
-    // setMode:acceptEdits instead), so this is the ONLY source of the rule —
-    // it has to be the form file permission checks actually match.
+    // The CLI never suggests a rule for file-edit tools, only setMode:acceptEdits.
     expect(
       buildDefaultRule(toolName, { file_path: `${PROJ}/src/foo.ts` }, PROJ),
     ).toEqual({ toolName: expected, ruleContent: '/src/foo.ts' });
@@ -148,8 +145,6 @@ describe('withDefaultRuleSuggestion', () => {
   };
 
   it('keeps the CLI setMode suggestion and adds the rule alongside it', () => {
-    // A file-edit request arrives with ONLY setMode:acceptEdits. Replacing the
-    // array would throw away the CLI's actual recommendation.
     const out = withDefaultRuleSuggestion([setMode], defaultRule) ?? [];
     expect(out).toHaveLength(2);
     expect(out).toContainEqual(setMode);

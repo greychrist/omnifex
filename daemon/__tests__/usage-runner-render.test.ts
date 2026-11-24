@@ -5,16 +5,10 @@ import { stripAnsi } from '../services/usage-runner/ansi';
 import { parseUsageOutput } from '../services/usage-runner/parser';
 
 /**
- * A real `/usage` render captured from Claude Code 2.1.236 through a pty
- * sized exactly as `usage-runner` sizes its own (200 cols), with the size
- * set before the child ever ran so no SIGWINCH re-render pollutes it.
- *
- * The CLI paints this screen with a DIFFING renderer: after the first full
- * paint it re-emits only the cells whose contents changed, stepping over the
- * unchanged ones with cursor-positioning escapes (`ESC[<n>G`, `ESC[<n>C`,
- * `ESC[<n>B`). Those stepped-over cells still hold their characters on a real
- * screen — which is why this fixture is the regression test that a linear
- * escape stripper cannot pass and a screen-grid replay can.
+ * A real `/usage` render from Claude Code 2.1.236, through a pty sized as
+ * usage-runner sizes its own (200 cols) before the child ran. The CLI's
+ * diffing renderer steps over unchanged cells with cursor moves, so only a
+ * screen-grid replay reads it correctly.
  */
 const RAW = fs.readFileSync(
   path.join(__dirname, 'fixtures/usage-2.1.236-render.raw'),
@@ -25,8 +19,6 @@ describe('real 2.1.236 /usage render', () => {
   const text = stripAnsi(RAW);
 
   it('does not drop characters that the diffing renderer stepped over', () => {
-    // Every one of these arrived mangled under the linear stripper:
-    // "/ mnifex-rele se", "mc -atlassian", "these ind p nd t characteristi s".
     expect(text).toContain('/omnifex-release');
     expect(text).toContain('mcp-atlassian');
     expect(text).toContain('general-purpose');
@@ -56,10 +48,6 @@ describe('real 2.1.236 /usage render', () => {
     const r = parseUsageOutput(text);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    // 2.1.236 renders a `Current week (Fable)` bar alongside the two classic
-    // windows. The old `Current week (Son…)` header regex matched only Sonnet,
-    // so this window was silently dropped from the popover and never reached
-    // rate-limits storage.
     expect(r.data.windows.map((w) => w.label)).toEqual([
       'current_session',
       'week_all_models',
@@ -78,12 +66,7 @@ describe('real 2.1.236 /usage render', () => {
   });
 });
 
-/**
- * A real 2.1.306 render, captured with scripts/probe-usage-runner.ts. 2.1.305
- * turned the contributing entries into one-line recommendations and, when one
- * can be applied in the session, leads the footer with `f to fix …` — which
- * pushed `d to day` off the start of its line.
- */
+// A real 2.1.306 render, captured with scripts/probe-usage-runner.ts.
 describe('real 2.1.306 /usage render', () => {
   const text = stripAnsi(fs.readFileSync(
     path.join(__dirname, 'fixtures/usage-2.1.306-render.raw'),

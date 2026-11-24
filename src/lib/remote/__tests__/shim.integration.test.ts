@@ -1,11 +1,6 @@
 // @vitest-environment node
-//
-// The renderer path minus React, against a REAL daemon: `window.electronAPI`
-// shim → ServerClient → ws → omnifex-server → sessions service → claude CLI.
-//
-// Gated: runs only when OMNIFEX_DAEMON_URL is set (e.g. ws://127.0.0.1:47701/ws)
-// because it needs a live daemon with an account, and it spends one tiny turn.
-//
+// Gated on OMNIFEX_DAEMON_URL: needs a live daemon with an account, and spends
+// one tiny turn.
 //   OMNIFEX_DAEMON_URL=ws://127.0.0.1:47701/ws npx vitest run src/lib/remote/__tests__/shim.integration.test.ts
 import { describe, it, expect } from 'vitest';
 import WebSocket from 'ws';
@@ -52,7 +47,6 @@ describe.skipIf(!URL)('electronAPI shim against a live daemon', () => {
     api.onEvent(`agent-output:${tabId}`, (m) => outputs.push(m as Record<string, unknown>));
     api.onEvent(`session-status:${tabId}`, (p) => statuses.push((p as { sessionStatus: string }).sessionStatus));
 
-    // Exactly what useSessionLifecycle sends.
     await api.invoke('session_start', {
       tabId, projectPath: PROJECT, model: 'default', permissionMode: 'default', mode: 'rich', agent: 'claude',
     });
@@ -78,7 +72,6 @@ describe.skipIf(!URL)('electronAPI shim against a live daemon', () => {
     }
     expect(first).toMatchObject({ type: 'result', is_error: false });
     expect(String((first as { result?: unknown }).result)).toMatch(/ok/i);
-    // The renderer would have rendered these: an assistant tool_use frame and a tool_result.
     expect(outputs.some((m) => m.type === 'assistant')).toBe(true);
     expect(outputs.some((m) => m.type === 'user')).toBe(true);
 

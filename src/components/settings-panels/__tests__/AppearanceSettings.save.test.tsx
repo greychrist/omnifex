@@ -1,9 +1,4 @@
 // @vitest-environment jsdom
-/**
- * Chats-tab edits report through the Settings save indicator — the real
- * outcome of the write — instead of an "Appearance saved" toast that fired
- * whether or not the write landed.
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 

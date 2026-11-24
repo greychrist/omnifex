@@ -1,18 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createClaudeCliReviewService } from '../services/claude-cli-review';
 
-/**
- * `runUpdate()` drives the CLI's own `claude update` subcommand once per
- * Claude-engine account.
- *
- * The two properties that carry the design are sequencing and isolation:
- * the CLI takes a `.update.lock` for the shared `versions/` tree, so parallel
- * runs report `lockFailed` and silently do nothing; and each account's
- * `.last-update-result.json` only gets stamped if that account's own
- * CLAUDE_CONFIG_DIR was on the environment when the command ran.
- */
-
-/** A runner that records call order and the config dir each call received. */
 function recordingRunner(impl?: (configDir: string) => Promise<string>) {
   const calls: string[] = [];
   const fn = vi.fn(async (configDir: string) => {
@@ -47,9 +35,7 @@ describe('createClaudeCliReviewService — runUpdate', () => {
   });
 
   it('serialises the runs rather than firing them together', async () => {
-    // The CLI's update lock is per-machine, not per-config-dir: a second
-    // concurrent `claude update` hits `.update.lock` and returns having done
-    // nothing. Overlap here would mean only one account ever really updates.
+    // The CLI's update lock is per-machine, not per-config-dir.
     let inFlight = 0;
     let maxInFlight = 0;
     const runner = recordingRunner(async () => {
@@ -98,8 +84,6 @@ describe('createClaudeCliReviewService — runUpdate', () => {
   });
 
   it('reports the version move by re-probing after the runs', async () => {
-    // The binary is swapped underneath us, so the only honest "did it work?"
-    // is a fresh probe — not the CLI's stdout, whose wording drifts.
     const versions = ['2.1.252 (Claude Code)', '2.1.257 (Claude Code)'];
     let probe = 0;
     const result = await createClaudeCliReviewService({
@@ -126,9 +110,6 @@ describe('createClaudeCliReviewService — runUpdate', () => {
   });
 
   it('spawns nothing when there are no Claude accounts', async () => {
-    // Codex-engine-only installs have no `claude` toolchain to update. The
-    // engine filter lives at the wiring site; the service just honours an
-    // empty list without inventing a config dir to run under.
     const runner = recordingRunner();
     const result = await createClaudeCliReviewService({
       cliVersionFn: () => '2.1.252',
@@ -142,9 +123,6 @@ describe('createClaudeCliReviewService — runUpdate', () => {
   });
 
   it('throws when accounts exist but no runner was wired', async () => {
-    // A missing runner is a wiring bug, not a degraded network. Failing loudly
-    // here beats a popover that reports success having done nothing — the same
-    // posture buildClaudeEnv takes on an empty configDir.
     const service = createClaudeCliReviewService({
       cliVersionFn: () => '2.1.252',
       claudeAccountsFn: () => [account('Personal', '/p')],

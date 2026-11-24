@@ -4,11 +4,7 @@ import type { JsonlNode } from '@/types/jsonl';
 
 describe('normalizeJsonlNode', () => {
   it('a normalized CLI-shaped slash-command message still classifies as user.command', async () => {
-    // Regression guard. JSONL-restored slash commands arrive as
-    // `content: "<command-name>/clear</command-name>…"` (string). After
-    // normalizeJsonlNode wraps them, the downstream classifier must still
-    // detect the command pattern in the resulting text block — the renderer
-    // relies on the `user.command` classification to swap in CommandWidget.
+    // JSONL-restored slash commands arrive as string content.
     const { classifyStandaloneKind } = await import('../messageKind');
     const node = {
       kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',

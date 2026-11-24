@@ -5,10 +5,6 @@ import path from 'node:path';
 import os from 'node:os';
 import type { AgentMessage, AgentEngineExit } from '../services/agents/types';
 
-// The session owns its turn axis: a prompt opens it, the CLI's result row
-// (or the process going away) closes it. Nothing here is inferred from the
-// transcript — see docs/session-lifecycle.md.
-
 const messageCbs: ((m: AgentMessage) => void)[] = [];
 const sendImpl = { current: async (_p: string): Promise<void> => {} };
 const exitCbs: ((info: AgentEngineExit) => void)[] = [];
@@ -87,8 +83,6 @@ describe('sessions — the turn axis', () => {
     expect(sessions.getHealth('t1')).toMatchObject({ alive: true, turn });
   });
 
-  // The renderer needs this to know whether Bypass is reachable mid-session,
-  // including after a reload, when it did not start the session itself.
   it('reports the permission mode the CLI was launched with', () => {
     const { sessions } = setup();
     void sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'bypassPermissions' });
@@ -96,8 +90,6 @@ describe('sessions — the turn axis', () => {
     expect(sessions.getHealth('nope')).toMatchObject({ alive: false, launchPermissionMode: null });
   });
 
-  // A resume spawns from the daemon's persisted options, not the picker; the
-  // renderer reads the live mode back so its picker cannot show another one.
   it('reports the permission mode the session is in now', () => {
     const { sessions } = setup();
     void sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'auto' });
@@ -109,7 +101,6 @@ describe('sessions — the turn axis', () => {
     const { sessions, turnEvents } = setup();
     void sessions.start({ tabId: 't1', projectPath, configDir: tmpConfig, model: 'opus', permissionMode: 'default' });
     sessions.sendMessage('t1', 'hello');
-    // Assistant output does not close it.
     for (const cb of messageCbs) cb({ payload: { type: 'assistant', message: { role: 'assistant', content: [] } }, receivedAt: '2026-09-20T00:00:01.000Z' } as AgentMessage);
     expect(sessions.getTurn('t1').status).toBe('running');
     emitResult();
@@ -164,10 +155,6 @@ describe('sessions — the turn axis', () => {
   });
 });
 
-// Auto-recap rides the turn axis: the scheduler itself is tested in
-// sessions-auto-recap.test.ts; this pins the wiring — which transitions reach
-// it, and that the recap goes through the engine without counting as the
-// user's own prompt.
 describe('sessions — automatic recap', () => {
   afterEach(() => { vi.useRealTimers(); });
 

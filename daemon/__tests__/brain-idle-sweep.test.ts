@@ -1,16 +1,3 @@
-// Indexing used to reach a session transcript only when its tab closed. A tab
-// left open for a week meant a conversation that ended on Tuesday was never
-// indexed, because the 5-minute timer in main.ts only DRAINED an existing
-// queue — nothing discovered.
-//
-// Two changes close that, and both are tested here:
-//
-//  - "live" stops meaning `open` and starts meaning `still being written`: an
-//    open session whose transcript has been untouched for the idle threshold
-//    is eligible again.
-//  - `backfill` takes an mtime floor, so the periodic sweep can look at the
-//    recent past without the first tick after the opt-in enqueueing the user's
-//    entire history unattended.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -32,7 +19,6 @@ import type { AccountsService } from '../services/accounts';
 const SESSION_A = '11111111-1111-4111-8111-111111111111';
 const SESSION_B = '22222222-2222-4222-8222-222222222222';
 
-/** A fixed clock, so "45 minutes ago" is a number and not a race. */
 const NOW = 1_700_000_000_000;
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -72,7 +58,6 @@ describe('brain: idle open sessions', () => {
     listAccounts: () => [{ id: 1, config_dir: '/cfg/personal' }],
   } as unknown as AccountsService;
 
-  /** Sessions with an explicit mtime, which is the whole point of these tests. */
   function sessionSource(items: { key: string; mtimeMs: number }[]): BrainSource {
     return {
       id: 'session',
@@ -153,9 +138,6 @@ describe('brain: idle open sessions', () => {
   });
 
   it('treats a transcript exactly at the threshold as idle', async () => {
-    // `< idleMs` is live, so equality is idle. Pinned because an off-by-one
-    // here is invisible in normal use and only shows up as "why did nothing
-    // ever index at exactly my setting".
     const brain = service({
       items: [{ key: SESSION_A, mtimeMs: NOW - 15 * MINUTE }],
       live: [SESSION_A],
@@ -173,7 +155,6 @@ describe('brain: idle open sessions', () => {
     });
     brain.setVaultPath(1, join(dir, 'vault'));
 
-    // 30 minutes idle against a 60-minute threshold: still active.
     expect((await brain.indexSource(1, SESSION_A)).reason).toMatch(/active/i);
     minutes = 15;
     expect((await brain.indexSource(1, SESSION_A)).reason).not.toMatch(/active/i);
@@ -215,7 +196,6 @@ describe('brain: bounded sweep', () => {
     listAccounts: () => [{ id: 1, config_dir: '/cfg/personal' }],
   } as unknown as AccountsService;
 
-  /** Counts `admit` calls: the sweep must not distil what it will not queue. */
   let admitCalls: string[];
 
   function sessionSource(items: { key: string; mtimeMs: number }[]): BrainSource {
@@ -275,9 +255,6 @@ describe('brain: bounded sweep', () => {
   });
 
   it('never distils an item the floor already excluded', async () => {
-    // `admit()` reads and parses the WHOLE transcript. Calling it before the
-    // mtime check would make every 5-minute tick re-read the user's entire
-    // history — the one thing that would make this feature expensive.
     const brain = service([
       { key: SESSION_A, mtimeMs: NOW - 2 * HOUR },
       { key: SESSION_B, mtimeMs: NOW - 48 * HOUR },
@@ -310,31 +287,18 @@ describe('brain: bounded sweep', () => {
     expect(brain.queueList(1).map((e) => e.itemKey)).toEqual([SESSION_B]);
   });
 
-  /**
-   * The floor is an age limit on the FILE, not a watermark since the last
-   * sweep, so an item that changed while the app was closed for longer than
-   * the floor was stranded: every later tick re-excluded it on age, and the
-   * Sources table went on reporting it as changed with nothing to act on it.
-   *
-   * The floor's stated job is the first tick after the opt-in — not enqueuing
-   * every transcript ever written. An item already carrying state was admitted
-   * and paid for once; re-reading it because its bytes moved is not that case.
-   */
   it('re-queues a known item that changed, however old its file is', async () => {
     const before = service([{ key: SESSION_A, mtimeMs: NOW - 48 * HOUR }]);
     before.setVaultPath(1, join(dir, 'vault'));
     await before.indexSource(1, SESSION_A);
     before.closeAll();
 
-    // Same session, edited — and still older than the floor, which is what an
-    // edit that landed while the app was shut down looks like on the next run.
     const after = service([{ key: SESSION_A, mtimeMs: NOW - 47 * HOUR }]);
     after.setVaultPath(1, join(dir, 'vault'));
     expect(await after.backfill(1, { sinceMs: NOW - 24 * HOUR })).toBe(1);
     after.closeAll();
   });
 
-  /** The escape hatch above must not become a hole in the floor itself. */
   it('still excludes an old item it has never seen', async () => {
     const brain = service([{ key: SESSION_B, mtimeMs: NOW - 48 * HOUR }]);
     expect(await brain.backfill(1, { sinceMs: NOW - 24 * HOUR })).toBe(0);

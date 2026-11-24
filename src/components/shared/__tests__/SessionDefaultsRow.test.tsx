@@ -47,10 +47,7 @@ describe('SessionDefaultsRow', () => {
 
   it("engine='claude' uses the stylized pickers (no plain labeled selects)", () => {
     render(<Harness engine="claude" />);
-    // The stylized pickers are buttons, not <select> with htmlFor labels.
     expect(screen.queryByLabelText(/model/i)).toBeNull();
-    // Trigger reflects the current model + permission mode via the shared
-    // ModelPicker / PermissionPicker components.
     expect(screen.getByText('Sonnet')).toBeTruthy();
     expect(screen.getByText('Default')).toBeTruthy();
   });
@@ -79,14 +76,11 @@ describe('SessionDefaultsRow', () => {
     render(<Harness engine="claude" />);
     fireEvent.click(screen.getByText('Sonnet'));
     expect(screen.getAllByText('Fable 5').length).toBeGreaterThan(0);
-    // The "default" entry is relabeled "Account Default" by useModelCatalog
-    // (nothing identifies the model without a configDir).
     expect(screen.getAllByText('Account Default').length).toBeGreaterThan(0);
   });
 
   it("engine='claude' permission picker lists all six CLI modes when opened", () => {
     render(<Harness engine="claude" />);
-    // Open the permissions picker (its trigger shows the current mode "Default").
     fireEvent.click(screen.getByText('Default'));
     for (const name of ['Accept Edits', 'Plan', 'No Prompts', 'Auto Review', 'Bypass']) {
       expect(screen.getAllByText(name).length).toBeGreaterThan(0);

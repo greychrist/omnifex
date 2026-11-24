@@ -138,7 +138,7 @@ describe('vault', () => {
     chmodSync(join(dir, 'Topics', 'locked'), 0o000);
     vault.writeNote(vault.notePath('Subsystem', 'Real'), NOTE);
     expect(vault.listNotes()).toEqual(['Subsystems/Real.md']);
-    chmodSync(join(dir, 'Topics', 'locked'), 0o755); // so afterEach can clean up
+    chmodSync(join(dir, 'Topics', 'locked'), 0o755);
   });
 
   it('rejects a note name containing a NUL byte', () => {

@@ -49,13 +49,7 @@ import { TITLEBAR_LABEL } from '@/lib/titlebar';
 
 afterEach(cleanup);
 
-/**
- * The right-hand button group carries icon + word. Below the `lg` viewport
- * the words go and the icons stay, so a narrow window keeps every button
- * instead of wrapping or clipping the group. jsdom evaluates no media
- * queries, so this pins the responsive classes and the fallback name each
- * icon-only button keeps for hover and assistive tech.
- */
+// jsdom evaluates no media queries, so the responsive classes are pinned.
 describe('title-bar buttons on a narrow window', () => {
   it('hides every label below lg and keeps a title on the button', () => {
     render(
@@ -72,8 +66,6 @@ describe('title-bar buttons on a narrow window', () => {
   });
 });
 
-// Daemon connectivity is about the session you are in, so it lives on the
-// session's status bar (DaemonStatusItem), not in the app's title bar.
 describe('title bar', () => {
   it('has no Daemon button', () => {
     render(<CustomTitlebar onSettingsClick={() => {}} />);

@@ -8,11 +8,8 @@ import {
   osxNotarizeConfig,
 } from '../../signing';
 
-// What the bundled node (`Contents/MacOS/omnifexd`) needs under hardened
-// runtime. V8 JITs, so it must be allowed to mark memory executable and run
-// code it generated itself, and it loads the better-sqlite3 / node-pty .node
-// addons, so library validation comes off. The Swift app needs nothing beyond
-// hardened runtime: the web view's JIT runs in WebKit's own processes.
+// V8 JITs, so omnifexd needs executable memory; it loads .node addons, so
+// library validation comes off. The Swift app needs only hardened runtime.
 const REQUIRED_ENTITLEMENTS = [
   'com.apple.security.cs.allow-jit',
   'com.apple.security.cs.allow-unsigned-executable-memory',

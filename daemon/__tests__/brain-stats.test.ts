@@ -87,7 +87,6 @@ describe('computeVaultStats', () => {
       ],
       '2026-03-01',
     );
-    // Only b: a is too short, c has not changed since it was curated.
     expect(s.qualifyingCount).toBe(1);
   });
 

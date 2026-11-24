@@ -58,7 +58,6 @@ describe('useGitWatchVisibility', () => {
     expect(calls()).toEqual([['w1', true]]);
     act(() => { link?.({ state: 'connected' }); });
     expect(calls()).toEqual([['w1', true], ['w1', true]]);
-    // A hidden tab re-reports hidden, so the new connection holds it too.
     rerender({ active: false });
     act(() => { link?.({ state: 'connected' }); });
     expect(calls().at(-1)).toEqual(['w1', false]);

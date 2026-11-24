@@ -1,10 +1,7 @@
 // @vitest-environment jsdom
-//
-// Where the chat settings are read from and written to. v6 has a key of its
-// own: the dev build and the installed app share one database, and an
-// installed app from before v6 resets anything under its key that is not v5
-// — writing v6 there would have wiped the settings for both (review,
-// 2026-11-19). The v5 key is only ever read, to migrate from.
+// v6 has its own key: the dev build and the installed app share one database,
+// and a pre-v6 app resets anything under its key that is not v5. The v5 key is
+// only read, to migrate from.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';

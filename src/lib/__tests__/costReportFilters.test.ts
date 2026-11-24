@@ -51,8 +51,6 @@ describe('toFilterParams', () => {
     expect(p.model).toEqual(['claude-opus-5']);
   });
 
-  // A custom date must beat the preset, or typing a start date would appear
-  // to do nothing while the preset silently kept winning.
   it('custom dates override the preset', () => {
     const p = toFilterParams({ ...base, rangeKey: 'month', customStart: '2026-01-01', customEnd: '2026-02-01' }, TODAY);
     expect(p.startDate).toBe('2026-01-01');
@@ -99,11 +97,6 @@ describe('formatters', () => {
   });
 });
 
-/**
- * The page remembers what you last set — everything except the date range,
- * which resets so you never reopen weeks later still pinned to a stale
- * absolute window.
- */
 describe('filter persistence', () => {
   const KEY = 'omnifex.costReport.filters';
   beforeEach(() => { window.localStorage.clear(); });
@@ -123,9 +116,6 @@ describe('filter persistence', () => {
     expect(back.groupBy).toBe('week');
   });
 
-  // The date range deliberately does NOT persist: an absolute custom window
-  // saved in August is meaningless in October, and would silently show an
-  // empty page.
   it('never restores the date range', () => {
     saveFilterState({ ...emptyFilterState(), rangeKey: 'all', customStart: '2026-01-01', customEnd: '2026-02-01' });
     const back = loadFilterState();
@@ -143,8 +133,6 @@ describe('filter persistence', () => {
     expect(loadFilterState()).toEqual(emptyFilterState());
   });
 
-  // A stored value from an older build must not smuggle an unknown scope or
-  // groupBy into a query.
   it('drops fields whose stored value is no longer valid', () => {
     window.localStorage.setItem(KEY, JSON.stringify({ scope: 'nonsense', groupBy: 'fortnight', accounts: 'Work' }));
     const back = loadFilterState();

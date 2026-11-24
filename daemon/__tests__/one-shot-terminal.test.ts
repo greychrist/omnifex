@@ -1,7 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// node-pty is mocked so tests run under plain Node without a real subprocess.
 vi.mock('node-pty', () => ({ spawn: vi.fn() }));
 
 import { spawn as ptySpawn } from 'node-pty';
@@ -13,9 +12,7 @@ interface FakePty {
   kill: ReturnType<typeof vi.fn>;
   onData: (cb: (data: string) => void) => { dispose: () => void };
   onExit: (cb: (info: { exitCode: number; signal?: number }) => void) => { dispose: () => void };
-  /** Test-only — fire a data chunk to subscribers. */
   __emitData(data: string): void;
-  /** Test-only — fire an exit event to subscribers. */
   __emitExit(info: { exitCode: number; signal?: number }): void;
 }
 
@@ -44,8 +41,7 @@ beforeEach(() => {
 });
 
 describe('createOneShotTerminalService', () => {
-  // The binary arrives over IPC. A bare name would make node-pty's helper walk
-  // PATH; every caller resolves an absolute path first, so insist on one.
+  // A bare name would make node-pty's helper walk PATH.
   it('spawn() refuses a binary that is not an absolute path, without spawning', () => {
     const service = createOneShotTerminalService();
     expect(() => service.spawn({ binary: 'codex', args: ['login'] })).toThrow(/absolute/);
@@ -123,8 +119,6 @@ describe('createOneShotTerminalService', () => {
     service.kill(ptyHandle);
     expect(pty.kill).toHaveBeenCalledTimes(1);
 
-    // After kill the handle is gone — these must NOT throw and must NOT
-    // re-invoke the dead pty.
     service.write(ptyHandle, 'late');
     service.resize(ptyHandle, 1, 1);
     service.kill(ptyHandle);
@@ -156,7 +150,6 @@ describe('createOneShotTerminalService', () => {
     expect(cb).toHaveBeenNthCalledWith(1, 'chunk-1');
     expect(cb).toHaveBeenNthCalledWith(2, 'chunk-2');
 
-    // Dispose stops further callbacks.
     sub.dispose();
     pty.__emitData('chunk-3');
     expect(cb).toHaveBeenCalledTimes(2);

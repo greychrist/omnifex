@@ -2,11 +2,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, screen, fireEvent, waitFor } from '@testing-library/react';
 
-// Animation wrappers render as plain DOM so assertions are synchronous.
-// The component cache is load-bearing: a Proxy that builds a fresh component
-// on every property access remounts the whole subtree on every render, which
-// silently wipes the popover's `copied` state and makes the copy-feedback
-// assertion fail for a reason that has nothing to do with the component.
+// The component per tag is CACHED: a fresh one per property access remounts
+// the subtree every render and wipes the popover's `copied` state.
 vi.mock('framer-motion', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.mock factory hoisted before module imports settle.
   const React = require('react');
@@ -50,8 +47,6 @@ describe('RawJsonPopover', () => {
     expect(screen.queryByRole('button', { name: /^copy$/i })).toBeNull();
   });
 
-  // The whole point of the change: the old footer button copied on click,
-  // giving no way to just look at the payload.
   it('does not copy when the trigger is clicked', () => {
     render(<RawJsonPopover text={SAMPLE} />);
     fireEvent.click(screen.getByRole('button', { name: /view raw json/i }));
@@ -89,7 +84,6 @@ describe('RawJsonPopover', () => {
     await waitFor(() => {
       expect(screen.getByText(/copied/i)).toBeTruthy();
     });
-    // Still open — looking at the payload is the primary use.
     expect(screen.getByTestId('raw-json-body')).toBeTruthy();
   });
 

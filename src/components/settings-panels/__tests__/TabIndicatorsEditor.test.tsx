@@ -34,8 +34,6 @@ describe("TabIndicatorsEditor", () => {
 
   it("renders an icon picker and color input per state", () => {
     renderEditor();
-    // One icon-picker trigger (aria-label "Icon") + one color input per state:
-    // error, permission, question, complete, cacheExpiring.
     expect(screen.getAllByLabelText("Icon").length).toBe(5);
     expect(screen.getAllByLabelText("Color").length).toBe(5);
   });
@@ -69,15 +67,8 @@ describe("TabIndicatorsEditor", () => {
     );
   });
 
-  // "MessageCircleQuestion" is the shipped default for the question state and
-  // is wider than the picker's column, so a fresh install shows the overflow:
-  // the name pushed the chevron out of the button and over the color input
-  // sitting beside it.
-  //
-  // jsdom has no layout engine, so this asserts the layout contract that makes
-  // the overflow impossible rather than measuring the overflow itself — the
-  // label must be allowed to shrink and clip, and the chevron must not be
-  // shrinkable at all.
+  // The shipped default "MessageCircleQuestion" is wider than the picker's
+  // column. jsdom has no layout, so the layout contract is asserted.
   it("clips a long icon name instead of pushing the chevron out", () => {
     renderEditor();
     const label = screen.getByText("MessageCircleQuestion");

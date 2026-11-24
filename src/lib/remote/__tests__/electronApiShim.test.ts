@@ -8,7 +8,6 @@ import type { NativeBridge } from '@/lib/platform';
 
 const APP_VERSION = (JSON.parse(readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
-/** A protocol client double: records requests, lets the test push. */
 function fakeClient() {
   const requests: { method: string; params: unknown }[] = [];
   const pushListeners = new Set<(m: ServerMessage) => void>();
@@ -216,8 +215,6 @@ describe('electronAPI shim', () => {
       expect(native.invoke).toHaveBeenCalledWith('notify:show', { title: 'OmniFex — x', body: 'done', isError: false, tabId: 'tab-A' });
     });
 
-    // "Permission Request:" / "Answer Needed:" is what tells a banner that
-    // wants an answer from one that reports a finished task.
     it('carries the subtitle into the native banner', async () => {
       await started();
       f.push({ type: 'event', sessionId: 'sid-1', seq: 3, kind: 'notification', channel: 'claude-notification', payload: { tab_id: 'sid-1', title: 'OmniFex — x', body: 'Run ls?', is_error: false, subtitle: 'Permission Request:' } });
@@ -238,8 +235,6 @@ describe('electronAPI shim', () => {
       expect(native.invoke).toHaveBeenCalledWith('notify:remove', { ids: ['mod:s:r@x:k'] });
     });
 
-    // The web has no notification centre to book one with: a delayed notice
-    // can only be dropped there, never raised early.
     it('on the web, raises an immediate mod notification and drops a delayed one', async () => {
       const webNotify = vi.fn();
       createElectronApiShim({ client: f.client, native: null, storage, webNotify });
@@ -260,10 +255,6 @@ describe('electronAPI shim', () => {
       expect(native.invoke).not.toHaveBeenCalledWith('notify:show', expect.anything());
     });
 
-    // A rate-limit threshold belongs to no session. The daemon broadcasts it
-    // as a tab-less `claude-notification`; while the daemon dropped these
-    // (no display to show them on), crossing a threshold in remote mode was
-    // silent.
     it('raises a native banner for an app-wide notification that names no tab', async () => {
       const api = shim();
       const seen: unknown[] = [];
@@ -291,17 +282,12 @@ describe('electronAPI shim', () => {
 
       const web = createElectronApiShim({ client: f.client, native: null, storage });
       await expect(web.invoke('reveal_path_in_finder', { path: '/x' })).rejects.toThrow(/not available in the web client/);
-      // Boot-time and timer-driven native calls get a quiet, benign answer.
       expect(await web.invoke('tab_status_list')).toEqual([]);
       expect(await web.invoke('updater:check', {})).toBeNull();
-      // The page was served by one specific daemon build; that version is
-      // baked in, so the daemon popover can compare like with like.
       expect(await web.invoke('get_app_version')).toBe(APP_VERSION);
     });
 
     it('keeps the web page\'s own tab statuses, which the Mac app keeps natively', async () => {
-      // Without them the Sessions popover in a browser listed none of its
-      // own tabs: "0 sessions" with five chat tabs open.
       const web = createElectronApiShim({ client: f.client, native: null, storage });
       const changes: unknown[] = [];
       web.onEvent('tab-status:changed', (list) => { changes.push(list); });
@@ -318,8 +304,6 @@ describe('electronAPI shim', () => {
       expect(f.requests).toEqual([]);
     });
 
-    // Codex runs beside the daemon, so the daemon is what finds its binary —
-    // and an iPad asking gets the answer for the machine that will run it.
     it('asks the daemon for codex_binary_path, from either client', async () => {
       const api = shim();
       expect(await api.invoke('codex_binary_path', {})).toEqual({ rpc: 'codex_binary_path', params: {} });
@@ -355,8 +339,6 @@ describe('electronAPI shim', () => {
 
   describe('session_release', () => {
     it('asks the daemon to release the session and unmaps the tab, without killing it', async () => {
-      // A closed tab lets go of the session; the daemon decides whether
-      // anyone else still holds it.
       const api = shim();
       await api.invoke('session_start', { tabId: 'tab-A', projectPath: '/p', model: 'default', permissionMode: 'default' });
       await api.invoke('session_release', { tabId: 'tab-A' });
@@ -374,12 +356,6 @@ describe('electronAPI shim', () => {
   });
 
   describe('sending to a session the daemon no longer runs', () => {
-    // The incident: a daemon swap (an upgrade, a restart, or — before the
-    // launcher fix — `npm start`) leaves every persisted session with no live
-    // process. The tab is still mapped and still connected, so the next prompt
-    // went straight to turn.send and came back "has no live process; resume it
-    // first" — with no way to act on that advice short of restarting the
-    // daemon by hand. The shim takes the advice itself.
     const notRunning = () => {
       throw Object.assign(new Error('session sid-1 has no live process; resume it first'), {
         code: 'SESSION_NOT_RUNNING',
@@ -445,13 +421,6 @@ describe('electronAPI shim', () => {
     });
   });
 
-  // The launch path that lost three hours of answers: Electron's bootstrap
-  // `await client.connect()` BEFORE it builds the shim, and `onStateChange`
-  // does not replay the current state to a new listener. So the shim never
-  // sees the initial `connected` transition. A tab restored from the map
-  // therefore looked completely healthy — `sessionToTabs` populated, so
-  // `emitForSession` would have routed fine — while the daemon had no
-  // subscriber for it and fanned every event out to an empty set.
   describe('subscribing restored tabs at launch', () => {
     beforeEach(() => {
       f.responders['session.list'] = () => [summary('sid-1', { lastSeq: 40 })];
@@ -510,9 +479,6 @@ describe('electronAPI shim', () => {
     });
   });
 
-  // Connectivity is global — one socket per client — but the daemon fans a
-  // session out only to clients that subscribed to it. A status bar that read
-  // the socket alone would have shown green for the whole outage.
   describe('per-session delivery state', () => {
     it('is false until the session is actually subscribed, then true', async () => {
       const api = shim();
@@ -567,8 +533,6 @@ describe('electronAPI shim', () => {
       f.responders['session.resume'] = () => summary('sid-1', { lastSeq: 40 });
       f.responders['session.list'] = () => [];
       const api = shim();
-      // Construction subscribes the restored map on its own; this test is
-      // about what `rebind` adds on top, so start counting from there.
       await new Promise((r) => setTimeout(r, 0));
       await new Promise((r) => setTimeout(r, 0));
       f.requests.length = 0;
@@ -609,8 +573,6 @@ describe('electronAPI shim', () => {
       const caught: unknown[] = [];
       api.onEvent('remote-caught-up:tab-A', (p) => caught.push(p));
 
-      // The restored tab is subscribed at construction, with no state
-      // transition needed — that is the launch path Electron actually takes.
       await new Promise((r) => setTimeout(r, 0));
       await new Promise((r) => setTimeout(r, 0));
 
@@ -665,10 +627,8 @@ describe('electronAPI shim', () => {
       f.push({ type: 'event', sessionId: 'sid-1', seq: 7, kind: 'transcript', channel: 'agent-output', payload: { raw: {} } });
       f.requests.length = 0;
 
-      // Every connect resubscribes, the first one included. Gating this on
-      // "have I connected before?" is what left a restored tab subscribed to
-      // nothing: Electron connects before the shim exists, so the first
-      // transition is never seen here at all.
+      // Every connect resubscribes, the first included: the client can connect
+      // before the shim exists.
       f.setState('connected');
       await new Promise((r) => setTimeout(r, 0));
       await new Promise((r) => setTimeout(r, 0));
@@ -712,8 +672,7 @@ describe('electronAPI shim', () => {
     });
 
     it('drops every seq and reloads when the daemon restarted under it', async () => {
-      // A seq from the previous daemon run names a different event in this
-      // one; replaying "after 7" from a fresh ring would be silently wrong.
+      // A seq from the previous daemon run names a different event in this one.
       const api = shim();
       const resync: unknown[] = [];
       api.onEvent('remote-resync:tab-A', (p) => resync.push(p));

@@ -34,8 +34,6 @@ describe('cli lifecycle commands', () => {
     });
   });
 
-  // A KeepAlive job would respawn the daemon the app had just stopped, so the
-  // LaunchAgent and its commands are gone. Typed from habit, they are unknown.
   it('no longer knows install or uninstall', () => {
     expect(parseCliArgs(['install'])).toEqual({ command: 'help', flags: {}, unknown: 'install' });
     expect(parseCliArgs(['uninstall'])).toEqual({ command: 'help', flags: {}, unknown: 'uninstall' });
@@ -82,10 +80,7 @@ describe('cli lifecycle commands', () => {
 });
 
 describe('removePidFile', () => {
-  // A daemon slow to close can still be shutting down after the app has quit
-  // and relaunched; by then the new daemon has written its own pid. The old
-  // one's exit must not delete it, or the next quit's `stop` finds "not
-  // running" and the daemon survives the quit (review, 2026-11-18).
+  // A slow-closing daemon can still be exiting after its successor wrote its pid.
   const withState = (fn: (config: ServerConfig) => void) => {
     const dir = mkdtempSync(join(tmpdir(), 'omnifex-pid-'));
     try {

@@ -8,9 +8,7 @@ import {
 import type { BrainSourceSummary } from '@/lib/api';
 
 function row(over: Partial<BrainSourceSummary> = {}): BrainSourceSummary {
-  // `name` follows the item key unless a fixture sets it, mirroring the
-  // backend rule for sessions — otherwise a row overriding only `itemKey`
-  // would render under a name no real listing would ever produce.
+  // `name` follows the item key unless a fixture sets it, as the backend does.
   const base: BrainSourceSummary = {
     accountId: 1,
     sourceId: 'session',
@@ -48,14 +46,12 @@ const ROWS = [
   }),
 ];
 
-/** One row of each kind, newest first, for the Type-column tests. */
 const MIXED = [
   row({ itemKey: 'sess', sourceId: 'session', mtimeMs: Date.parse('2026-08-03T00:00:00Z') }),
   row({ itemKey: 'mem', sourceId: 'auto-memory', mtimeMs: Date.parse('2026-08-02T00:00:00Z') }),
   row({ itemKey: 'repo', sourceId: 'repo', mtimeMs: Date.parse('2026-08-01T00:00:00Z') }),
 ];
 
-/** Wraps the controlled selection so tests can drive it like the real pane. */
 function Harness({
   rows = ROWS,
   indexingItemKey = null,
@@ -76,13 +72,7 @@ function Harness({
   );
 }
 
-/**
- * Row order, by item key.
- *
- * Read off each row's select checkbox rather than a cell: the session id has
- * no column any more, and identifying rows by a rendered cell would couple
- * every ordering test to the column layout.
- */
+// Read off each row's checkbox: the session id has no column.
 function itemCells(): string[] {
   return screen
     .getAllByRole('row')
@@ -108,7 +98,6 @@ describe('BrainSourcesTable', () => {
 
   it('filters on free text across item key, project and type', () => {
     render(<Harness />);
-    // The key has no column, but pasting a session id must still find it.
     fireEvent.change(screen.getByLabelText(/filter sessions/i), { target: { value: 'ccc' } });
     expect(itemCells()).toEqual(['ccc']);
 
@@ -119,19 +108,12 @@ describe('BrainSourcesTable', () => {
     expect(itemCells()).toEqual(['bbb', 'ccc', 'aaa']);
   });
 
-  /**
-   * Auto-memory notes and repo instruction files are `.md` on disk, so without
-   * a Type column a Markdown file is indistinguishable from a conversation.
-   */
   it('names the kind of each row, so a .md file is not read as a session', () => {
     render(<Harness rows={MIXED} />);
     const types = screen.getAllByTestId('source-type').map((el) => el.textContent ?? '');
     expect(types).toEqual(['Session', 'Memory', 'Repo file']);
   });
 
-  // Supersedes an earlier "does not show the session id" rule. Hiding it made
-  // every row anonymous: the project column is shared by dozens of rows, so
-  // nothing on screen said WHICH conversation a row was.
   it('shows each row identity under a Name column', () => {
     render(<Harness />);
     expect(screen.getByRole('button', { name: /^Name/ })).toBeTruthy();
@@ -175,11 +157,6 @@ describe('BrainSourcesTable', () => {
     expect(itemCells()).toEqual(['ccc']);
   });
 
-  /**
-   * Re-indexing an unchanged item is a no-op the service already refuses
-   * ("unchanged since it was last indexed"), so offering it as a choice
-   * invites a press that spends nothing and does nothing.
-   */
   it('cannot select a row that is indexed and unchanged', () => {
     render(<Harness />);
     expect(screen.getByLabelText('Select ccc')).toHaveProperty('disabled', true);
@@ -206,11 +183,6 @@ describe('BrainSourcesTable', () => {
     expect(screen.getByTestId('count').textContent).toBe('0');
   });
 
-  /**
-   * The rule that would have prevented the original accident: a select-all
-   * that silently reaches past what is on screen is how a user indexes 158
-   * sessions having meant to index one.
-   */
   it('select-all covers only the filtered rows', () => {
     render(<Harness rows={[ROWS[0], ROWS[1], row({ itemKey: 'other', label: '/tmp/x' })]} />);
     fireEvent.click(screen.getByLabelText(/filter by project/i));
@@ -258,12 +230,6 @@ describe('BrainSourcesTable', () => {
     expect(cells).toContain('/private/tmp/brain-probe');
   });
 
-  /**
-   * Seven columns ran past the pane on any real vault, where labels are deep
-   * absolute paths. Project/Name and Size/Cost stack into one cell each,
-   * following the pattern SessionList already uses for its own size-over-cost
-   * cell, so the table fits without abridging a path.
-   */
   it('stacks the name under the project in one cell', () => {
     render(<Harness rows={[row({ itemKey: 'sess-x', label: '/Users/greg/Repos/personal/WIN' })]} />);
 
@@ -282,8 +248,6 @@ describe('BrainSourcesTable', () => {
 
   it('still sorts by name and by cost independently of their partner column', () => {
     render(<Harness />);
-    // Both halves of a stacked cell keep their own sort control, or merging
-    // the columns would quietly remove two orderings.
     fireEvent.click(screen.getByRole('button', { name: /^name/i }));
     expect(itemCells()).toEqual(['ccc', 'bbb', 'aaa']);
     fireEvent.click(screen.getByRole('button', { name: /^cost/i }));
@@ -291,13 +255,6 @@ describe('BrainSourcesTable', () => {
   });
 });
 
-/**
- * Which row is being worked on right now.
- *
- * The run banner says "3 of 20" but never which item, so the table could not
- * say which of its own rows the number referred to. `BrainRun.item` names it,
- * and the pane already has the run.
- */
 describe('BrainSourcesTable — the row being indexed', () => {
   it('marks the row in flight', () => {
     render(<Harness indexingItemKey="bbb" />);
@@ -320,11 +277,6 @@ describe('BrainSourcesTable — the row being indexed', () => {
     expect(statuses.some((s) => /indexing/i.test(s))).toBe(false);
   });
 
-  /**
-   * A never-indexed row shows the admission gate's reason rather than a
-   * status. While it is actually being worked on, what it is doing right now
-   * is the more useful answer.
-   */
   it('overrides the gate reason while the row is in flight', () => {
     render(
       <Harness
@@ -346,12 +298,6 @@ describe('BrainSourcesTable — the row being indexed', () => {
     expect(screen.getByTestId('source-status').textContent).toBe('indexed');
   });
 
-  /**
-   * A short session can now be indexed on purpose, past the gate. The gate's
-   * opinion is not the record of what happened, so a row with a note behind it
-   * must not go on reporting "fewer than 2 prompts" — that reads as a press
-   * that did nothing, which is the bug the force path exists to fix.
-   */
   it('reports an indexed row as indexed even when the gate would refuse it', () => {
     render(
       <Harness
@@ -380,7 +326,6 @@ describe('BrainSourcesTable — the row being indexed', () => {
     expect(screen.getByTestId('source-status').textContent).toBe('fewer than 2 prompts (1)');
   });
 
-  /** Indexed and unmoved: pressing again would spend on an identical result. */
   it('stops offering a forced row once it is indexed', () => {
     expect(isSettled(row({
       admitted: false, reason: 'fewer than 2 prompts (1)',
@@ -409,12 +354,7 @@ describe('BrainSourcesTable — the row being indexed', () => {
     expect(itemCells()).toEqual(['ccc', 'aaa', 'bbb']);
   });
 
-  /**
-   * Comparing paths as flat text lets a sibling land in the middle of a
-   * folder's subtree, which is what made the list read as unsorted. Segment-
-   * wise, `a` beats `a-x` at the segment that differs, so `/a`'s children stay
-   * contiguous and its parent leads them.
-   */
+  // Segment-wise, `a` beats `a-x`, so `/a`'s children stay contiguous.
   it('keeps a folder subtree contiguous, parent first', () => {
     expect(
       ['/a/b/z', '/a-x', '/a/b', '/a/b/c'].sort(comparePaths),
@@ -426,10 +366,6 @@ describe('BrainSourcesTable — the row being indexed', () => {
   });
 });
 
-// A row's identity was searchable but invisible: you could paste a session id
-// into the filter and find it, but nothing on screen told you which row was
-// which conversation. The Name column puts that back — the session id for a
-// session, the file name for anything file-backed.
 describe('BrainSourcesTable — Name column', () => {
   it('shows the backend-computed name for each row', () => {
     render(
@@ -447,7 +383,6 @@ describe('BrainSourcesTable — Name column', () => {
     );
     expect(screen.getByText('sess-1')).toBeTruthy();
     expect(screen.getByText('notes.md')).toBeTruthy();
-    // The encoded key is never what the user reads.
     expect(screen.queryByText('-Users-greg-x:notes.md')).toBeNull();
   });
 
@@ -471,9 +406,6 @@ describe('BrainSourcesTable — Name column', () => {
   });
 });
 
-// A session that is open is still being written to. Indexing it distils half a
-// conversation and records it as done — which is exactly what happened to
-// session 82ab1eb8 on 2026-08-13.
 describe('BrainSourcesTable — sessions in use', () => {
   it('marks an in-use row and refuses to let it be ticked', () => {
     render(
@@ -512,7 +444,6 @@ describe('BrainSourcesTable — sessions in use', () => {
   });
 
   it('still lets an in-use row be opened for preview', () => {
-    // Reading a live session is free and useful; only spending on it is not.
     const onOpen = vi.fn();
     render(
       <BrainSourcesTable
@@ -529,9 +460,6 @@ describe('BrainSourcesTable — sessions in use', () => {
   });
 });
 
-// Every indexing run's cost comes back in the CLI's own JSON envelope; the
-// runner used to discard it. Now that it is recorded, the row that was paid
-// for is where it belongs.
 describe('BrainSourcesTable — cost', () => {
   it('shows what a row cost, and nothing for one never indexed', () => {
     render(
@@ -548,8 +476,6 @@ describe('BrainSourcesTable — cost', () => {
       />,
     );
     const cells = screen.getAllByTestId('source-cost').map((c) => c.textContent);
-    // Sub-cent runs still have to read as money, not as "$0.02" rounded from
-    // nothing — and an unindexed row must not claim to have been free.
     expect(cells).toEqual(['$0.0203', '—']);
   });
 

@@ -61,9 +61,8 @@ describe('extractSessionUsage', () => {
     line({ type: 'assistant', requestId: req, timestamp: '2026-10-17T01:00:00Z', message: { id: `msg_${req}`, model: 'claude-opus-5-5', usage } });
 
   it('drops a fork transcript\'s copy of the parent request, keeping the main loop\'s', () => {
-    // A fork's agent-<id>.jsonl opens with a fork-context-ref and a copy of
-    // the parent's assistant record that made the Agent call — same
-    // requestId, full usage (CLI 2.1.302).
+    // A fork's agent-<id>.jsonl opens with a fork-context-ref and a copy of the
+    // parent's Agent-call record: same requestId, full usage (CLI 2.1.302).
     const main = [asst('req_parent', { output_tokens: 538, cache_read_input_tokens: 70507 })].join('\n');
     const fork = [
       line({ type: 'fork-context-ref', agentId: 'f1', parentSessionId: 's', parentLastUuid: 'u', contextLength: 69 }),

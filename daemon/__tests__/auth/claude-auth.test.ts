@@ -34,7 +34,6 @@ function makeDeps(overrides: Partial<Parameters<typeof createClaudeAuthService>[
   const exec = vi.fn(async () => ({ stdout: 'Successfully logged out', stderr: '' }));
   const resolveBinary = vi.fn(() => '/usr/local/bin/claude');
   return {
-    // The fake's mocks are looser than SignInEngine's generic signature.
     deps: { createEngine, exec, resolveBinary, ...overrides } as unknown as Parameters<typeof createClaudeAuthService>[0],
     createEngine,
     engines,

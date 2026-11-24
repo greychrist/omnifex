@@ -35,8 +35,6 @@ describe('ResizableSidePanel', () => {
       expect(screen.getByText('body')).toBeTruthy();
     });
 
-    // It must not run the full height of the chat body — the subagent bar and
-    // the composer below it have to stay visible.
     it('fills its container rather than the viewport', () => {
       setup();
       expect(panel().className).toContain('absolute');
@@ -44,8 +42,6 @@ describe('ResizableSidePanel', () => {
       expect(panel().className).toMatch(/\bright-0\b/);
     });
 
-    // A panel-wide action (Session context's Refresh) belongs beside the
-    // close button, not inside whichever section happens to own it.
     it('renders header actions before the close button', () => {
       setup({ onClose: vi.fn(), actions: <button type="button">Refresh</button> });
       const buttons = screen.getAllByRole('button');
@@ -55,7 +51,6 @@ describe('ResizableSidePanel', () => {
       expect(refresh).toBeLessThan(close);
     });
 
-    // The Lima page's two-zone look: a muted title band over a tinted body.
     it('sets its title band apart from its body', () => {
       setup();
       const header = screen.getByRole('heading', { name: 'Test panel' }).parentElement;
@@ -118,7 +113,6 @@ describe('ResizableSidePanel', () => {
       expect(panel().style.width).toBe(width);
     });
 
-    // Two panels sharing one key would resize each other.
     it('keys storage per panel', () => {
       const { unmount } = setup({ storageKey: 'omnifex.test.a' });
       drag(-100);

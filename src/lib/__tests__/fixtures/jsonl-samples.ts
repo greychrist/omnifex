@@ -1,7 +1,5 @@
-// Auto-generated fixtures sampled from real session JSONL files.
-// One representative line per (type/subtype) combination.
-// DO NOT manually edit — re-run the extraction script in Task 2 to refresh.
-// Sensitive content stripped from text blocks; structural fields preserved.
+// Sampled from real session JSONL, one line per (type/subtype). Sensitive text
+// stripped; structure preserved.
 
 export const JSONL_SAMPLES = {
   'ai-title': {

@@ -38,9 +38,7 @@ describe('stepTarget', () => {
     );
   });
 
-  // The whole point of the epsilon. Landing on a row parks the viewport a
-  // margin ABOVE that row's top, so without slack the row you just arrived at
-  // still counts as "below you" and every press re-selects it.
+  // Landing on a row parks the viewport a margin ABOVE its top.
   it('does not re-select the row it just landed on', () => {
     const first = stepTarget({ offsets: ROWS, scrollTop: 0, direction: 'next' });
     expect(first).not.toBeNull();
@@ -69,10 +67,8 @@ describe('stepTarget', () => {
     expect(stepTarget({ offsets: [], scrollTop: 0, direction: 'prev' })).toBeNull();
   });
 
-  // The first row sits at offset 0, so `offset - margin` is negative. Handing
-  // a negative scrollTop to scrollTo is silently clamped by the browser, but
-  // the round-trip tests above depend on the value being the one we can be
-  // scrolled back to.
+  // The first row at offset 0 makes `offset - margin` negative, which the
+  // browser clamps silently.
   it('never returns a negative scroll position', () => {
     expect(stepTarget({ offsets: ROWS, scrollTop: 400, direction: 'prev' })).toBe(0);
   });
@@ -87,8 +83,6 @@ describe('stepTarget', () => {
   });
 });
 
-// Prompt navigation runs the same stepping over a sparser offset list, so
-// there is no second algorithm — only a second selector at the call site.
 describe('stepTarget over prompts only', () => {
   const PROMPTS = [0, 900, 4200];
 
@@ -109,9 +103,6 @@ describe('stepTarget over prompts only', () => {
   });
 });
 
-// The stop set is "everything you can land on". A /compact summary is carved
-// out because it is machinery, not conversation — it is the one row the user
-// asked to be able to skip past.
 describe('isStepStop', () => {
   it('stops on an assistant message', () => {
     expect(isStepStop(assistant())).toBe(true);
@@ -147,9 +138,6 @@ describe('isMainPrompt', () => {
     expect(isMainPrompt(user('meta-skill'))).toBe(false);
   });
 
-  // A forwarded subagent prompt is a `user` prompt row, but it is the
-  // subagent's prompt, not Greg's — "jump to my last prompt" must not land
-  // on one. Same exclusion the turn-anchor derivations already make.
   it('rejects a forwarded subagent prompt', () => {
     expect(isMainPrompt(user('prompt', { parent_tool_use_id: 'toolu_123' }))).toBe(false);
   });

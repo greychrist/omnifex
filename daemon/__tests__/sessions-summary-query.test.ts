@@ -14,13 +14,6 @@ import { encodeProjectId } from '../services/project-paths';
 import type { RecordInternalSpend } from '../services/sessions/internal-spend';
 import type { CliRunResult } from '../services/sessions/summary-query';
 
-/**
- * A `claude -p` result carrying just the reply.
- *
- * The runner now returns the CLI's cost accounting alongside the text (the
- * Brain records what each indexing run cost). These suites are about the text,
- * so they wrap it here rather than restating five null fields per fixture.
- */
 function reply(text: string, cost: Partial<CliRunResult> = {}): CliRunResult {
   return {
     result: text,
@@ -40,12 +33,6 @@ vi.mock('node:child_process', async () => {
   return { ...actual, spawn: vi.fn() };
 });
 const mockedSpawn = vi.mocked(spawn);
-
-// These tests cover the one-shot summary runner that wraps a `claude -p`
-// subprocess invocation. Two hard requirements: the CLI's JSONL never lands
-// inside the user's real project directory, and it is never KEPT — but every
-// one of these calls is billed, so the runner records its spend before
-// deleting it, and leaves no `<configDir>/projects/<encoded-scratch>/` behind.
 
 describe('createSummaryQueryRunner', () => {
   let tmpRoot: string;
@@ -100,7 +87,6 @@ describe('createSummaryQueryRunner', () => {
     const run = createSummaryQueryRunner({ runPrompt, tmpRoot, recordSpend, resolveAccountName: () => 'Work' });
     const out = await run({ prompt: 'p', model: 'm', configDir, kind: 'session-summarization' });
 
-    // The reply now travels alongside the CLI's cost accounting.
     expect(out.result).toBe('hello world');
   });
 
@@ -145,11 +131,8 @@ describe('createSummaryQueryRunner', () => {
     expect(fs.existsSync(projectsDir)).toBe(false);
   });
 
-  // The CLI names its projects dir after the REALPATH of its cwd. On macOS
-  // os.tmpdir() is /var/folders/..., a symlink to /private/var/folders/..., so
-  // a runner that encodes the path it was handed cleans up a directory that
-  // never exists — every transcript from June to October 2026 stayed behind in
-  // the real projects dir, 2,500 of them across two accounts.
+  // The CLI names its projects dir after the REALPATH of its cwd, and macOS's
+  // os.tmpdir() is a /var symlink to /private/var.
   it('settles the realpath-encoded dir the CLI actually writes when tmpRoot is a symlink', async () => {
     const realRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-sumq-real-'));
     const linkRoot = path.join(tmpRoot, 'link');
@@ -173,9 +156,6 @@ describe('createSummaryQueryRunner', () => {
     }
   });
 
-  // Attribution comes from the config dir the run was launched with, never
-  // from resolve(). An account that cannot be resolved still has its spend
-  // recorded -- an unattributed figure beats a missing one.
   it('records an unresolvable account under a visible placeholder', async () => {
     const runPrompt: RunPromptFn = vi.fn(async (params) => {
       const dir = path.join(params.configDir, 'projects', encodeProjectId(fs.realpathSync(params.cwd)));
@@ -229,9 +209,7 @@ describe('createSummaryQueryRunner', () => {
   });
 
   it('encodeProjectId replaces every non-alphanumeric, not just the separator', () => {
-    // The CLI sanitizes with /[^a-zA-Z0-9]/g, so dots, underscores and spaces
-    // all collapse to '-'. Replacing only '/' pointed us at directories the
-    // CLI never wrote.
+    // The CLI sanitizes with /[^a-zA-Z0-9]/g.
     expect(encodeProjectId('/Users/foo/my_app.v2')).toBe('-Users-foo-my-app-v2');
     expect(encodeProjectId('/Users/foo/My Project')).toBe('-Users-foo-My-Project');
     expect(encodeProjectId('/Users/foo/a+b@c')).toBe('-Users-foo-a-b-c');
@@ -369,18 +347,8 @@ describe('runCliOnce (default RunPromptFn)', () => {
     await expect(pending).resolves.toMatchObject({ result: 'a short summary.' });
   });
 
-  // Measured, not assumed. A probe of `claude -p 'Reply with exactly: OK'`
-  // against the personal config dir: 5.4s wall / 11,456 cache-creation tokens
-  // / $0.047 as this runner invoked it, against 3.5s / 3,878 / $0.017 with the
-  // MCP config emptied — ~1.9s and ~7.6k prompt tokens per call, on a reply of
-  // four tokens. That is the account's plugin MCP servers being spawned and
-  // their tool schemas entering the prompt, for a call that already passes
-  // `--disallowed-tools '*'` and so can never invoke one of them.
-  //
-  // `--mcp-config` alone does not do it: both it and `--allowedTools` MERGE
-  // with what the account already configures (see brain/mcp-registration.ts,
-  // which relies on exactly that). `--strict-mcp-config` is what makes the
-  // empty set authoritative.
+  // Measured: the account's plugin MCP servers cost ~1.9s and ~7.6k prompt
+  // tokens per call.
   it('starts no MCP servers — they cost seconds and tokens a tool-less call cannot use', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
@@ -443,13 +411,7 @@ describe('runCliOnce (default RunPromptFn)', () => {
     fake.emit('exit', 0, null);
     await assertion;
   });
-  /**
-   * The cost half of the envelope. Every `claude -p` call already returns this;
-   * the runner parsed out `result` and dropped the rest, so the Brain could
-   * spend without ever being able to say what it spent.
-   *
-   * Field names verified against the CLI's own output on 2.1.229.
-   */
+  // Field names verified against CLI 2.1.229.
   it('lifts the CLI cost and usage out of the envelope', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
@@ -484,10 +446,8 @@ describe('runCliOnce (default RunPromptFn)', () => {
     });
   });
 
-  // Internal callers pass a family alias (`sonnet`, `opus`) so they track the
-  // newest model. The alias is what was ASKED for; the envelope's
-  // `modelUsage` names what actually ran and billed. Several keys appear when
-  // the CLI used a helper model, so the one that took the money wins.
+  // The alias is what was asked for; `modelUsage` names what billed. A helper
+  // model adds keys, so the one that took the money wins.
   it('names the model that ran, from the envelope modelUsage', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
@@ -511,8 +471,6 @@ describe('runCliOnce (default RunPromptFn)', () => {
   });
 
   it('reports an absent figure as unknown, never as free', async () => {
-    // A future CLI that stops emitting a field must not have that read as a
-    // confident zero — "$0.00" is a claim, and it would be a false one.
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
 

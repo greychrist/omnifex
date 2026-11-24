@@ -174,9 +174,8 @@ describe('findPendingPromptMatch', () => {
     expect(findPendingPromptMatch([withImage], cliPrompt('look at this'))).toBe(0);
   });
 
-  // The CLI rewrites a typed slash command into its own command envelope
-  // before persisting it, so the texts are never equal. Verified against
-  // real transcripts: `/omnifex-release` lands as
+  // The CLI rewrites a typed slash command into its own envelope before
+  // persisting it: `/omnifex-release` lands as
   // `<command-message>omnifex-release</command-message>\n<command-name>/omnifex-release</command-name>`.
   describe('slash commands', () => {
     it('matches a bare slash command against the CLI command envelope', () => {
@@ -211,9 +210,6 @@ describe('findPendingPromptMatch', () => {
     });
   });
 
-  // The cases above hand-build the incoming node as a 'prompt'. These run the
-  // real records through the classifier, which is what the JSONL tail does —
-  // hand-built nodes are how the two fixes drifted apart unnoticed.
   describe('slash commands, as the classifier sees them', () => {
     const classified = (content: string): JsonlNode =>
       classifyJsonlLine({
@@ -280,12 +276,8 @@ describe('reconcilePendingPrompt', () => {
 });
 
 describe('appendCliRecord — a queued prompt does not jump ahead of the answer before it', () => {
-  // The turn's final answer is written to the JSONL before the CLI emits
-  // `result` on stdout. `result` drains the queue at once, appending the next
-  // prompt's echo — but the answer's record only reaches the renderer on the
-  // tail's next poll, after the echo. Appended blindly it lands BELOW the
-  // prompt it preceded. Observed in session cc50c6f6 on 2026-10-02: answer
-  // written 19:25:48.199, queued prompt enqueued 19:25:48.477.
+  // The answer reaches the JSONL before `result` on stdout, but the renderer sees
+  // it only on the tail's next poll, after the next prompt's echo.
   const at = (node: JsonlNode, receivedAt: string): JsonlNode =>
     ({ ...node, receivedAt }) as JsonlNode;
   const echo = at(placeholder('next question'), '2026-09-15T10:00:05.000Z');
@@ -309,9 +301,6 @@ describe('appendCliRecord — a queued prompt does not jump ahead of the answer 
     expect(appendCliRecord([prior], answer)).toEqual([prior, answer]);
   });
 
-  // Only the CLI's persisted records are ordered by the file. A node without
-  // a uuid — a Codex event, a synthetic marker — has no file position to
-  // honour, and arrives in the order it happened.
   it('leaves nodes without a uuid where they arrive', () => {
     const marker = {
       kind: 'control-change',

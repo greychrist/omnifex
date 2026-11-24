@@ -1,8 +1,4 @@
 // @vitest-environment jsdom
-/**
- * General tab save behaviour: every control persists on change and reports
- * through the Settings save indicator — there is no Save button to wait for.
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 
@@ -21,8 +17,6 @@ vi.mock('@/lib/api', async (importOriginal) => {
   };
 });
 
-// The real selector lists installations over IPC; the test only needs its
-// `onSelect` contract.
 vi.mock('@/components/ClaudeVersionSelector', () => ({
   ClaudeVersionSelector: ({ onSelect, autoSelect }: { onSelect: (i: { path: string }) => void; autoSelect?: boolean }) => (
     <button
@@ -78,8 +72,6 @@ async function renderGeneral() {
 const status = () => screen.getByRole('status');
 
 describe('GeneralSettings saving', () => {
-  // Every pick saves, so the selector must not pick on its own: that showed
-  // "Saved" the moment Settings opened. See ClaudeVersionSelector.test.tsx.
   it('does not let the installation selector pick on the user\'s behalf', async () => {
     await renderGeneral();
     expect(screen.getByText('pick installation').getAttribute('data-auto-select')).toBe('false');
@@ -113,7 +105,6 @@ describe('GeneralSettings saving', () => {
     await waitFor(() => { expect(status().textContent).toMatch(/Couldn.t save: database is locked/); });
   });
 
-  // Mods' `$.ui.notify` banners: on unless turned off, saved as 'false'.
   it('turns notifications from mods off and back on', async () => {
     await renderGeneral();
     const toggle = screen.getByRole('switch', { name: /Notifications from mods/ });

@@ -5,10 +5,8 @@ import { join } from 'node:path';
 
 import { runCliOnce } from '../services/sessions/summary-query';
 
-// A transcript can carry a NUL byte (binary tool output), and argv cannot:
-// Node refused the spawn with "args[1] must be a string without null bytes",
-// so those sessions never got a summary and their Brain items never indexed.
-// A real spawn of a stand-in `claude`, since the failure is Node's own check.
+// argv cannot carry a NUL byte and Node refuses the spawn, so this spawns a
+// real stand-in.
 describe('runCliOnce with a NUL in the prompt', () => {
   let dir: string;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'omnifex-runcli-')); });

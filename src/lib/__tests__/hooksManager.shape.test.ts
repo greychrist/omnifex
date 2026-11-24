@@ -2,17 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { HooksManager } from '../hooksManager';
 import type { HooksConfiguration } from '@/types/hooks';
 
-/**
- * Every hook event uses the SAME nesting in settings.json:
- *
- *   "Event": [ { "matcher"?: string, "hooks": [ {type, command} ] } ]
- *
- * This holds for events that ignore the matcher too — verified against the
- * docs and against a real user config, where a working Stop hook is stored as
- * `[{"matcher": "", "hooks": [...]}]`. The editor used to model
- * Notification/Stop/SubagentStop as a FLAT array of command objects, which
- * both mis-read that config and wrote back a shape the CLI does not execute.
- */
+// Every hook event nests the same way in settings.json, even events that
+// ignore the matcher:
+//   "Event": [ { "matcher"?: string, "hooks": [ {type, command} ] } ]
 const REAL_STOP_HOOK: HooksConfiguration = {
   Stop: [
     {
@@ -32,8 +24,8 @@ describe('hooks config shape — always nested', () => {
   });
 
   it('rejects the legacy FLAT shape the editor used to write', async () => {
-    // `Stop: [{type:'command', command:'…'}]` has no `hooks` array, so the
-    // CLI never runs it. Silently accepting it is how the bug survived.
+    // `Stop: [{type:'command', command:'…'}]` has no `hooks` array, so the CLI
+    // never runs it.
     const flat = {
       Stop: [{ type: 'command', command: 'echo hi' }],
     } as unknown as HooksConfiguration;
@@ -50,8 +42,6 @@ describe('hooks config shape — always nested', () => {
       Stop: [{ matcher: '', hooks: [{ type: 'command', command: 'project.sh' }] }],
     };
     const merged = HooksManager.mergeConfigs(user, project, {});
-    // Same matcher key → project overrides user, one entry out. The old
-    // direct-event path concatenated instead, so both would have fired.
     expect(merged.Stop).toHaveLength(1);
     expect(merged.Stop?.[0].hooks[0].command).toBe('project.sh');
   });
@@ -68,7 +58,6 @@ describe('hooks config shape — always nested', () => {
   });
 
   it('round-trips a real config unchanged through merge', () => {
-    // Opening the editor and saving without edits must not rewrite the file.
     const merged = HooksManager.mergeConfigs(REAL_STOP_HOOK, {}, {});
     expect(merged).toEqual(REAL_STOP_HOOK);
   });

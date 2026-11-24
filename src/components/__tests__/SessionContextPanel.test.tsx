@@ -34,7 +34,6 @@ function renderPanel(props: Partial<React.ComponentProps<typeof SessionContextPa
 }
 
 const section = (name: RegExp) => screen.getByRole('region', { name });
-// Every section starts collapsed; the headers and counts are the overview.
 const openSection = (name: RegExp) => { fireEvent.click(screen.getByRole('button', { name })); };
 const openPlugins = () => { openSection(/^Plugins/); };
 const openMods = () => { openSection(/^Mods/); };
@@ -69,8 +68,6 @@ describe('SessionContextPanel', () => {
     expect(within(section(/^Plugins/)).getByText('superpowers')).toBeTruthy();
   });
 
-  // The capability that reaches past OmniFex's permission prompt is the
-  // reason this section exists.
   it('says what each mod can do', () => {
     renderPanel();
     openMods();
@@ -140,14 +137,12 @@ describe('SessionContextPanel', () => {
     expect(screen.queryByTestId('mcp-body')).toBeNull();
   });
 
-  // Refresh moved to the panel header, beside the close button.
   it('has no refresh button inside a section', () => {
     renderPanel();
     openPlugins();
     expect(screen.queryByRole('button', { name: /reload|refresh/i })).toBeNull();
   });
 
-  // The Instructions layout, used by every section: scope groups, then rows.
   it('groups mods under their scope, like plugins', () => {
     renderPanel();
     openMods();
@@ -162,8 +157,6 @@ describe('SessionContextPanel', () => {
     expect(within(plugins).queryByText('superpowers')).toBeNull();
   });
 
-  // Section headings must not look like the scope groups inside them: a
-  // header band, and the chat cards' up/down expander at the end, not a chevron.
   it('draws section headings as header bands with the chat cards\' expander', () => {
     renderPanel();
     const heading = screen.getByRole('button', { name: /^Plugins/ });

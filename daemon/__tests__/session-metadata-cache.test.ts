@@ -30,8 +30,6 @@ describe('session metadata cache', () => {
     });
   });
 
-  // The point of the cache: a transcript nobody wrote to since the last look
-  // is not read again.
   it('does not read a file that has not changed since it was last read', async () => {
     fs.writeFileSync(file, line({ type: 'user', timestamp: '2026-01-01T00:00:00.000Z' }));
     const cache = createSessionMetadataCache();
@@ -41,7 +39,6 @@ describe('session metadata cache', () => {
     expect(cache.bytesRead()).toBe(before);
   });
 
-  // Transcripts are append-only: a grown file costs only its new lines.
   it('reads only the appended bytes of a file that grew', async () => {
     const first = line({ type: 'user', timestamp: '2026-01-01T00:00:00.000Z' }) + line({ type: 'ai-title', aiTitle: 'Old' });
     fs.writeFileSync(file, first);
@@ -56,7 +53,6 @@ describe('session metadata cache', () => {
     expect(cache.bytesRead() - before).toBe(Buffer.byteLength(added));
   });
 
-  // A line caught half-written is read again once it is complete.
   it('picks up a line that was half-written at the last read', async () => {
     const whole = line({ type: 'custom-title', customTitle: 'Finished' });
     fs.writeFileSync(file, line({ type: 'user', timestamp: '2026-01-01T00:00:00.000Z' }) + whole.slice(0, 10));
@@ -105,8 +101,6 @@ describe('session metadata cache', () => {
 });
 
 describe('session metadata cache — concurrency', () => {
-  // Two visits racing on one file share a single read rather than both
-  // reading it and folding the same bytes twice.
   it('shares one read between overlapping requests for the same file', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-cache-race-'));
     const file = path.join(dir, 's.jsonl');
@@ -123,9 +117,6 @@ describe('session metadata cache — concurrency', () => {
 });
 
 describe('session metadata cache — persisted', () => {
-  // A daemon restart starts a new cache. With the SQLite store behind it, an
-  // unchanged transcript is still not read, and a grown one costs only its
-  // new lines.
   let dir: string;
   let file: string;
   let db: Database;

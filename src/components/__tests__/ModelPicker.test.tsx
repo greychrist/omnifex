@@ -29,11 +29,6 @@ function renderPicker(overrides: Partial<React.ComponentProps<typeof FormModelPi
 }
 
 describe("FormModelPicker", () => {
-  // Effort and permission pickers close their popover after a pick
-  // (ControlBar handleSelect → onOpenChange(false)). The model picker must
-  // match: selecting a model applied the change but left the dropdown open
-  // (symptom: "I click it, it changes, but it doesn't close"). Same code path
-  // in the session context popover and the account editor.
   it("applies the selection and closes the dropdown when a model is picked", () => {
     const { onSelect, onOpenChange } = renderPicker();
     fireEvent.click(screen.getByText("Sonnet"));
@@ -69,7 +64,6 @@ describe("ModelPickerDropdown — effort and more-models panels", () => {
   it("swaps to the effort list and pushes the pick through", () => {
     const { onEffortSelect } = renderDropdown();
     fireEvent.click(screen.getByRole("button", { name: /effort/i }));
-    // The model rows are gone — this is one panel, not a nested popover.
     expect(screen.queryByText("Sonnet")).toBeNull();
     // The row's accessible name starts with the level's short tag ("Hi"),
     // so match the label text and let the click bubble to the button.
@@ -149,8 +143,7 @@ describe("ModelPickerDropdown — the selected row and the tier colors", () => {
     expect(isHighlighted("Fable 5.1")).toBe(false);
   });
 
-  // A `[1m]` context opt-in is a request flag, not another model: the pick
-  // `claude-opus-5-5[1m]` is the row whose model is `claude-opus-5-5`.
+  // A `[1m]` context opt-in is a request flag, not another model.
   it("matches the pick to a row across a [1m] suffix", () => {
     render(<ModelPickerDropdown models={CATALOG} selectedModel="claude-haiku-5-5[1m]" onSelect={() => {}} />);
     expect(isHighlighted("Haiku 5.5")).toBe(true);
@@ -159,10 +152,6 @@ describe("ModelPickerDropdown — the selected row and the tier colors", () => {
     expect(isHighlighted("Opus 5.5 *")).toBe(true);
   });
 
-  // The icon wears the Cost Report's color for the model — its price tier,
-  // its version's shade — so a model looks the same here, in the chart and
-  // on a Modern model-change line. The merged default row takes the color
-  // of the model it stands for.
   it("colors each row's icon by tier, the default row by the model it stands for", () => {
     render(<ModelPickerDropdown models={CATALOG} selectedModel="mystery" onSelect={() => {}} />);
     const mode = screenChartMode();

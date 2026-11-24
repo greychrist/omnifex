@@ -103,7 +103,6 @@ describe('QueuedPromptsPanel', () => {
     expect(screen.getByText('first thing')).toBeTruthy();
   });
 
-  // An edit left open holds the queue; clicking away must not strand it.
   it('saves on blur so a forgotten edit never holds the queue', () => {
     const { props } = renderPanel();
     fireEvent.click(screen.getByText('first thing'));
@@ -124,7 +123,6 @@ describe('QueuedPromptsPanel', () => {
     expect(props.onSave).toHaveBeenCalledTimes(1);
   });
 
-  // An empty queued prompt would send an empty turn. Removing is ✕'s job.
   it('treats saving blank text as a cancel', () => {
     const { props } = renderPanel();
     fireEvent.click(screen.getByText('first thing'));

@@ -61,7 +61,6 @@ describe('remote project registry', () => {
     const p = registry.add(link);
     expect(p.path).toBe(realpathSync(repoA));
     expect(p.projectId).toBe(encodeProjectId(realpathSync(repoA)));
-    // Adding via the real path is the same project.
     expect(registry.add(repoA).projectId).toBe(p.projectId);
     expect(registry.list()).toHaveLength(1);
   });
@@ -79,7 +78,6 @@ describe('remote project registry', () => {
     expect(registry.list()[0]).toMatchObject({ accountId: null, configDir: null });
     resolved.set(realpathSync(repoA), { accountId: 2, configDir: '/Users/greg/.claude-work' });
     expect(registry.list()[0]).toMatchObject({ accountId: 2, configDir: '/Users/greg/.claude-work' });
-    // The file never holds account data — path rules can change under it.
     expect(readFileSync(file, 'utf8')).not.toContain('claude-work');
   });
 

@@ -1,15 +1,4 @@
 // @vitest-environment node
-//
-// The registry is the only place that knows which session UUIDs are open right
-// now. The Brain needs that set: a transcript whose session is still running is
-// still being written, so indexing it distils a partial conversation and marks
-// it done.
-//
-// The ordering test below is the load-bearing one. `stop()` deletes the handle
-// BEFORE it fires `onSessionClosed`, and auto-index-on-close (main.ts) enqueues
-// the closed session from inside that hook. If teardown is ever reordered so
-// the hook fires first, the just-closed session looks live to the Brain and
-// auto-indexing silently stops happening — with no error anywhere.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -104,9 +93,6 @@ describe('listActiveSessionIds', () => {
   });
 
   it('has already dropped the session by the time onSessionClosed fires', () => {
-    // Auto-index-on-close enqueues from inside this hook. If the session were
-    // still listed as live here, the Brain's live-session guard would refuse
-    // the very session that just closed, and nothing would ever index it.
     const seen: string[][] = [];
     let closedId: string | null = null;
     const sessions = createSessionsService(
@@ -132,8 +118,6 @@ describe('listActiveSessionIds', () => {
   });
 
   it('tells the close hook whether a tab closed or the process is shutting down', () => {
-    // A summary started during shutdown is killed by process.exit before it can
-    // write anything, so the hook needs to know which kind of close this is.
     const reasons: string[] = [];
     const sessions = createSessionsService(
       vi.fn(), null, null, null,

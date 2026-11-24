@@ -1,8 +1,4 @@
 // @vitest-environment jsdom
-/**
- * Appearance › Modern: the Modern chat format's own settings, beside a live
- * sample drawn by the real Modern components. It took the Terminal tab's place.
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
@@ -51,13 +47,11 @@ async function openModern() {
   return screen.findByTestId('modern-editor');
 }
 
-/** Messages › Text: Font and Answer size moved there from the Modern section. */
 function openText() {
   fireEvent.click(within(screen.getByRole('tree', { name: 'Message kinds' })).getByText('Text'));
   return screen.getByRole('region', { name: 'Text settings' });
 }
 
-/** A step in the list's Timeline steps group. */
 function openStep(label: string) {
   const expand = screen.queryByRole('button', { name: 'Expand all' });
   if (expand) fireEvent.click(expand);
@@ -66,7 +60,6 @@ function openStep(label: string) {
 }
 
 describe('AppearanceSettings — Modern', () => {
-  // A tab saved as Modern before the merge lands on Messages.
   it('opens the Modern settings on Messages, and has no Terminal tab', async () => {
     await openModern();
     expect(screen.getByRole('tab', { name: 'Messages' })).toHaveAttribute('aria-selected', 'true');
@@ -130,8 +123,6 @@ describe('AppearanceSettings — Modern', () => {
     await waitFor(() => { expect(savedModern().some((m) => m.answerCardColor === '#0ea5e9')).toBe(true); });
   });
 
-  // A visible "Reset to …" link on each colour once it is changed, so the
-  // way back to the built-in look reads as an action, not a caption.
   it('offers a reset to the built-in colour on each color once changed', async () => {
     const editor = await openModern();
     const fields: [string, string, string][] = [
@@ -171,12 +162,9 @@ describe('AppearanceSettings — Modern', () => {
       fireEvent.click(reset);
       await waitFor(() => { expect(savedModern().at(-1)?.[key]).toBe(100); });
     }
-    // The failed step is not a card: no sliders.
     expect(within(editor).queryByRole('slider', { name: /failed step/i })).toBeNull();
   });
 
-  // One "Colors" section, the three side by side, between Show thoughts and
-  // Step icons.
   it('sets the three colors on one row under a Colors heading, after Show thoughts', async () => {
     const editor = await openModern();
     const section = within(editor).getByRole('region', { name: 'Colors' });
@@ -184,7 +172,6 @@ describe('AppearanceSettings — Modern', () => {
     const grid = within(section).getByTestId('modern-colors');
     expect(grid.className).toMatch(/\bmd:grid-cols-3\b/);
     expect(grid.children).toHaveLength(3);
-    // The two cards first, then the failed step.
     const order = ['User prompt', 'Answer card', 'Failed step'];
     order.forEach((name, i) => {
       expect(within(grid.children[i] as HTMLElement).getByLabelText(`${name} color hex`)).toBeInTheDocument();
@@ -199,7 +186,6 @@ describe('AppearanceSettings — Modern', () => {
     expect(within(group).getByRole('radio', { name: 'Card' })).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(within(group).getByRole('radio', { name: 'Line' }));
     await waitFor(() => { expect(savedModern().at(-1)?.promptStyle).toBe('line'); });
-    // A line has no fill or shadow: only its color still applies.
     expect(within(editor).getByRole('switch', { name: 'User prompt drop shadow' })).toBeDisabled();
   });
 
@@ -209,7 +195,6 @@ describe('AppearanceSettings — Modern', () => {
     expect(within(group).getByRole('radio', { name: 'Card' })).toHaveAttribute('aria-checked', 'true');
     fireEvent.click(within(group).getByRole('radio', { name: 'Line' }));
     await waitFor(() => { expect(savedModern().at(-1)?.answerStyle).toBe('line'); });
-    // A line has no fill or shadow: only its color still applies.
     expect(within(editor).getByRole('switch', { name: 'Answer card drop shadow' })).toBeDisabled();
     expect(within(editor).getByRole('slider', { name: 'Answer card saturation' })).toBeDisabled();
     expect(within(editor).getByLabelText('Answer card color hex')).not.toBeDisabled();
@@ -226,7 +211,6 @@ describe('AppearanceSettings — Modern', () => {
     expect(within(editor).queryByRole('switch', { name: 'Failed step drop shadow' })).toBeNull();
   });
 
-  // Titled by name alone under the Colors heading; "colour" nowhere.
   it('titles each field by its name alone, and never spells it colour', async () => {
     const editor = await openModern();
     const section = within(editor).getByRole('region', { name: 'Colors' });
@@ -242,16 +226,13 @@ describe('AppearanceSettings — Modern', () => {
     for (const [name, key] of [['User prompt', 'promptColorEnabled'], ['Answer card', 'answerCardColorEnabled']] as const) {
       const box = within(editor).getByRole('checkbox', { name: `${name} color enabled` });
       expect(box).toBeChecked();
-      // Beside the title, in its row.
       expect(box.closest('div')?.querySelector('label')?.textContent).toBe(name);
       fireEvent.click(box);
       await waitFor(() => { expect(savedModern().at(-1)?.[key]).toBe(false); });
-      // Off: the color and its strength cannot be set.
       expect(within(editor).getByLabelText(`${name} color hex`)).toBeDisabled();
       expect(within(editor).getByLabelText(`${name} color picker`)).toBeDisabled();
       expect(within(editor).getByRole('slider', { name: `${name} saturation` })).toBeDisabled();
       expect(within(editor).getByRole('slider', { name: `${name} brightness` })).toBeDisabled();
-      // And its drop shadow, which keeps its setting for when color returns.
       const shadow = within(editor).getByRole('switch', { name: `${name} drop shadow` });
       expect(shadow).toBeDisabled();
       expect(shadow).toHaveAttribute('aria-checked', 'true');
@@ -259,8 +240,6 @@ describe('AppearanceSettings — Modern', () => {
     expect(within(editor).queryByRole('checkbox', { name: 'Failed step color enabled' })).toBeNull();
   });
 
-  // A rule between each pair of the four sections: Work timeline | Colors |
-  // Step icons | Text.
   it('separates the Work timeline and Colors sections with a line', async () => {
     const editor = await openModern();
     const seps = within(editor).getAllByRole('separator');

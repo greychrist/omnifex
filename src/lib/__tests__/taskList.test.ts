@@ -6,12 +6,8 @@ import {
   type TaskListEntry,
 } from '../taskList';
 
-// Build the live-stream shapes the renderer sees from the CLI. The
-// `taskCreateResultMsg` helper uses the LIVE wire format (content string
-// only, no envelope) so attribution + parsing are exercised against the
-// real shape end to end. Verified against
-// ~/.claude-personal/projects/-Users-gregorychristie-Repos-personal-WIN/
-// real session JSONL.
+// `taskCreateResultMsg` uses the LIVE wire format: content string only, no
+// envelope.
 
 function taskCreateMsg(
   blockId: string,
@@ -64,9 +60,6 @@ function taskUpdateMsg(
   } as unknown as JsonlNode;
 }
 
-/** A plain assistant text block — the kind of message that should get
- *  attributed to the task that is currently in_progress at the time it
- *  was emitted. */
 function assistantText(text: string): JsonlNode {
   return {
     kind: 'assistant', sessionId: '', receivedAt: '',
@@ -81,8 +74,6 @@ function assistantText(text: string): JsonlNode {
   } as unknown as JsonlNode;
 }
 
-/** An unrelated tool_use (e.g. Read) that should get attributed to the
- *  currently-in_progress task. */
 function readToolUse(blockId: string, file: string): JsonlNode {
   return {
     kind: 'assistant', sessionId: '', receivedAt: '',
@@ -159,12 +150,8 @@ describe('getTaskList', () => {
   });
 
   it('falls back to earliest non-terminal task when no task is in_progress', () => {
-    // Common real-world case: the agent skips the in_progress step and
-    // goes TaskCreate → do work → TaskUpdate(completed). Without a
-    // fallback every message would be unattributed; the CLI doesn't ship
-    // a "this work belongs to that task" signal, so we use the queue
-    // ordering: until task #1 completes, work belongs to #1; then to #2;
-    // and so on.
+    // The CLI has no "this work belongs to that task" signal, so attribution
+    // follows queue order.
     const work = assistantText('working on the fast task');
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'fast task' }),
@@ -177,8 +164,6 @@ describe('getTaskList', () => {
   });
 
   it('attributes batched-up-front work to the right task by queue order (no in_progress used)', () => {
-    // Realistic batched flow: agent creates A, B, C up front, then does
-    // work and completes them one by one with no in_progress updates.
     const a1 = assistantText('a-1');
     const a2 = readToolUse('r1', '/a');
     const b1 = assistantText('b-1');
@@ -203,29 +188,21 @@ describe('getTaskList', () => {
   });
 
   it('prefers an explicit in_progress task over the queue fallback', () => {
-    // If the agent DOES use in_progress, that overrides queue order
-    // even when the in_progress task is later in the queue.
     const work = assistantText('working out of order');
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'A' }),
       taskCreateResultMsg('tu1', '1'),
       taskCreateMsg('tu2', { subject: 'B' }),
       taskCreateResultMsg('tu2', '2'),
-      // B explicitly marked in_progress despite A being earlier in queue
       taskUpdateMsg('tu3', { taskId: '2', status: 'in_progress' }),
       work,
       taskUpdateMsg('tu4', { taskId: '2', status: 'completed' }),
     ]);
-    // Work should belong to B (in_progress override), not A (queue fallback).
     expect(result?.[0].messages).toEqual([]);          // A
     expect(result?.[1].messages).toEqual([work]);      // B
   });
 
   it('leaves an in_progress task as in_progress when a turn-level result arrives (no force-complete)', () => {
-    // The agent started a task but did not emit TaskUpdate(completed) before
-    // the turn ended. Previously the `result` event force-completed it, but
-    // that behavior broke multi-turn subagents. Now the task stays in_progress
-    // and the UI reflects the actual agent state rather than a synthetic guess.
     const work = assistantText('working on it');
     const resultMsg = {
       kind: 'unknown', sessionId: '', receivedAt: '',
@@ -242,11 +219,6 @@ describe('getTaskList', () => {
   });
 
   it('leaves a pending task as pending when a turn-level result arrives (no force-complete)', () => {
-    // Queue-fallback case: agent never used in_progress, just batched
-    // TaskCreates and TaskUpdate(completed)d one by one. Previously the
-    // `result` event force-completed any remaining tasks, but that broke
-    // multi-turn subagents. Now task B correctly stays pending — it reflects
-    // actual agent state rather than a synthetic guess.
     const work = assistantText('did the work for the last one');
     const resultMsg = { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: '' } } as unknown as JsonlNode;
     const result = getTaskList([
@@ -255,8 +227,6 @@ describe('getTaskList', () => {
       taskCreateMsg('tu2', { subject: 'B' }),
       taskCreateResultMsg('tu2', '2'),
       taskUpdateMsg('tu3', { taskId: '1', status: 'completed' }),
-      // B becomes the queue head, accumulates `work`, but never gets
-      // an explicit TaskUpdate(completed) before the turn ends.
       work,
       resultMsg,
     ]);
@@ -264,10 +234,6 @@ describe('getTaskList', () => {
   });
 
   it('leaves a never-touched pending task as pending when a turn-level result arrives', () => {
-    // Previously treated as abandoned-or-forgotten and force-completed, but
-    // that broke multi-turn subagents. A pending task stays pending — the
-    // summarizer's `running: true` correctly keeps the indicator lit, and
-    // subsequent turns' TaskUpdate(completed) are the canonical signal.
     const resultMsg = { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: '' } } as unknown as JsonlNode;
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'never touched' }),
@@ -278,11 +244,6 @@ describe('getTaskList', () => {
   });
 
   it('drops the prior batch and shows only the new post-result batch as mid-flight', () => {
-    // A previous turn ended (result fired) with one completed task,
-    // then the user sent another prompt and the agent created a fresh
-    // task. The new task hasn't been worked on yet — it should appear
-    // pending on its own, with the old batch cleared from the visible
-    // list (matches the "new list empties the old" epoch-boundary UX).
     const oldResult = { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: '' } } as unknown as JsonlNode;
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'finished long ago' }),
@@ -297,12 +258,6 @@ describe('getTaskList', () => {
   });
 
   it('does NOT epoch-reset when a result arrives with a pending task still in the batch', () => {
-    // Previously, the result force-completed "untouched" and then the next
-    // TaskCreate triggered an epoch-reset (seeing all-completed). Without
-    // force-completion, "untouched" stays pending, so the next TaskCreate
-    // is additive (not a reset) — both tasks appear in the final list.
-    // This is the CORRECT behavior: the pending task from the previous turn
-    // is still unfinished and should remain visible.
     const oldResult = { kind: 'unknown', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: '' } } as unknown as JsonlNode;
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'untouched' }),
@@ -317,7 +272,6 @@ describe('getTaskList', () => {
   });
 
   it('leaves in_progress tasks alone when no result message has fired yet', () => {
-    // Mid-turn — the agent is genuinely still working. No inference.
     const work = assistantText('still going');
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'in flight' }),
@@ -371,9 +325,6 @@ describe('getTaskList', () => {
   });
 
   it('does NOT attribute the TaskCreate / TaskUpdate tool_uses themselves to a task row', () => {
-    // The Task* tool_uses drive the state machine; rendering them as
-    // attributed messages would create noisy meta-rows about the system
-    // managing itself.
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'A' }),
       taskCreateResultMsg('tu1', '1'),
@@ -403,10 +354,6 @@ describe('getTaskList', () => {
   });
 
   it('starts a fresh list when a TaskCreate fires after all prior tasks are completed', () => {
-    // Matches the old TodoBar's UX: when the agent finishes a batch of
-    // todos and then starts a new batch, the new list replaces the old
-    // rather than appending. Detection: a TaskCreate that arrives when
-    // every existing task is in `completed`.
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'old A' }),
       taskCreateResultMsg('tu1', '1'),
@@ -420,8 +367,6 @@ describe('getTaskList', () => {
   });
 
   it('does NOT reset when a TaskCreate fires while another task is still in flight', () => {
-    // A pending or in_progress task means the agent isn't done with the
-    // current batch — a new TaskCreate is appended, not a fresh start.
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'A' }),
       taskCreateResultMsg('tu1', '1'),
@@ -429,7 +374,6 @@ describe('getTaskList', () => {
       taskCreateResultMsg('tu2', '2'),
       taskUpdateMsg('tu3', { taskId: '1', status: 'in_progress' }),
       taskUpdateMsg('tu4', { taskId: '1', status: 'completed' }),
-      // B is still pending → C is part of the same batch.
       taskCreateMsg('tu5', { subject: 'C' }),
       taskCreateResultMsg('tu5', '3'),
     ]);
@@ -437,7 +381,6 @@ describe('getTaskList', () => {
   });
 
   it('resets repeatedly across several completed-then-new batches', () => {
-    // Each fully-completed batch yields to the next TaskCreate that arrives.
     const result = getTaskList([
       taskCreateMsg('tu1', { subject: 'batch1.A' }),
       taskCreateResultMsg('tu1', '1'),
@@ -461,11 +404,6 @@ describe('getTaskList', () => {
   });
 
   it('does NOT force-complete pending tasks when a turn-level result event lands', () => {
-    // Constructed sequence mirroring real agent behavior:
-    //  - TaskCreate creates 3 tasks (T1, T2, T3) → pending
-    //  - TaskUpdate marks T1 completed
-    //  - A `result` message arrives (as cli-stream-result after Task 7 refactor)
-    //  - T2 and T3 should REMAIN pending (the agent hasn't done them yet)
     const messages = [
       taskCreateMsg('tu1', { subject: 'T1' }),
       taskCreateResultMsg('tu1', 'task-1'),
@@ -474,7 +412,6 @@ describe('getTaskList', () => {
       taskCreateMsg('tu3', { subject: 'T3' }),
       taskCreateResultMsg('tu3', 'task-3'),
       taskUpdateMsg('tu4', { taskId: 'task-1', status: 'completed' }),
-      // Turn-level result lands as cli-stream-result (engine-mode pipeline)
       { kind: 'cli-stream-result', sessionId: '', receivedAt: '', raw: { type: 'result', subtype: 'success', result: 'ok', is_error: false } } as unknown as JsonlNode,
     ];
 
@@ -527,12 +464,9 @@ describe('summarizeTaskList', () => {
   });
 });
 
-// CLI 2.1.328's task ticker: a small model marks TaskCreate items itself and
-// tells Claude not to call TaskUpdate. The only signal is a stdout frame,
-// `system/task_list_statuses`, which the classifier keeps as an `unknown`
-// node. Shape from the CLI's schema: {statuses:[{id, status}], uuid,
-// session_id}. "It sets the tasks it names; a task it leaves out keeps its
-// last status. A later TaskUpdate result that changes a status wins."
+// CLI 2.1.328's task ticker: a small model marks TaskCreate items, and the only
+// signal is a `system/task_list_statuses` frame:
+// {statuses:[{id, status}], uuid, session_id}.
 describe('getTaskList — task ticker statuses (CLI 2.1.328)', () => {
   function statusesMsg(statuses: { id: string; status: string }[]): JsonlNode {
     return {

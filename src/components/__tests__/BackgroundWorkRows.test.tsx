@@ -40,8 +40,6 @@ describe('SubagentRow meta', () => {
   });
 
   it('shows the subagent\'s own effort in the row meta', () => {
-    // A subagent dispatched with `effort: high` under a `medium` session is
-    // exactly the case the meta row exists to disambiguate.
     const { container } = render(
       <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'completed', model: 'claude-opus-4-8', effort: 'high' })} />,
     );
@@ -49,8 +47,6 @@ describe('SubagentRow meta', () => {
   });
 
   it('omits the effort bit entirely when the subagent reports none', () => {
-    // Most runs use the session default and carry no effort — a bare
-    // separator or an empty slot would be noise.
     const { container } = render(
       <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'completed', model: 'claude-opus-4-8' })} />,
     );
@@ -105,8 +101,6 @@ describe('SubagentRow run stats', () => {
     expect(stats).toContain('26s');
   });
 
-  // The bar shows the run's state, not context: on a 1M-window model a busy
-  // agent's context is 2–3%, so a context bar sat empty all run.
   it('sweeps the bar while the agent runs', () => {
     const { container } = render(
       <SubagentRow sub={makeSub({ toolUseId: 'a', taskId: 'a1', status: 'running' })} costs={costs} />,
@@ -126,9 +120,6 @@ describe('SubagentRow run stats', () => {
     expect(bar?.firstElementChild?.className).not.toContain('brain-indeterminate-bar');
   });
 
-  // While an agent runs, the CLI's own progress label (task_progress.summary)
-  // is the line under its purpose. There is no step count, so the bar is the
-  // running sweep.
   it("shows the CLI's latest progress summary under a running agent", () => {
     const { container } = render(
       <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', progressSummary: 'Reading runtime.ts' })} />,
@@ -185,8 +176,6 @@ describe('SubagentRow run stats', () => {
 });
 
 describe('SubagentRow purpose and brief', () => {
-  // The collapsed row's second line carries run stats now; what the agent is
-  // doing lives in the expanded log, which already showed it in full.
   it('heads the row with the dispatch purpose and keeps the progress line for the expanded log', () => {
     const { container } = render(
       <SubagentRow
@@ -206,8 +195,6 @@ describe('SubagentRow purpose and brief', () => {
   });
 
   it('keeps the purpose on its own line, apart from the meta', () => {
-    // The meta used to share the purpose's line and, being shrink-0,
-    // squeezed it to zero width on long rows.
     const { container } = render(
       <SubagentRow
         sub={makeSub({ toolUseId: 'a', status: 'running', description: 'Map the repo', model: 'claude-sonnet-5-5' })}
@@ -241,8 +228,8 @@ describe('SubagentRow purpose and brief', () => {
     const { container } = render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running' })} />);
     const row = container.querySelector('[data-subagent-row]')!;
     expect(row.className).toContain('border-b');
-    // A bare color utility loses to the unlayered `* { border-color }` rule
-    // in styles.css; only the important arbitrary property reaches the screen.
+    // A bare color utility loses to the unlayered `* { border-color }` rule in
+    // styles.css.
     expect(row.className).toContain('[border-bottom-color:');
   });
 
@@ -256,7 +243,7 @@ describe('SubagentRow purpose and brief', () => {
   });
 
   // The narrow/touch layout forces every <pre> to one unwrapped line
-  // (styles.css, unlayered), which clipped the brief mid-sentence.
+  // (styles.css).
   it('wraps the brief rather than setting it as preformatted text', () => {
     const { container } = render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', prompt: 'A long brief.' })} />);
     fireEvent.click(container.querySelector('button')!);
@@ -265,9 +252,6 @@ describe('SubagentRow purpose and brief', () => {
     expect(brief?.className).toContain('whitespace-pre-wrap');
   });
 
-  // A finished row with no log is a reloaded one: the log is built from live
-  // events, which are not saved. "Waiting for first progress event…" said
-  // something false about an agent that had already finished.
   it('says why a finished agent has no log', () => {
     const { container } = render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'completed', prompt: 'p' })} />);
     fireEvent.click(container.querySelector('button')!);
@@ -275,8 +259,6 @@ describe('SubagentRow purpose and brief', () => {
     expect(container.textContent).toContain('step log is kept only while the app is open');
   });
 
-  // A task_progress frame's own text is the agent's purpose, repeated. Where
-  // the CLI wrote a progress label on the frame, the log shows that instead.
   it("shows the CLI's summary in the log on the frames that carry one", () => {
     const { container } = render(
       <SubagentRow
@@ -317,8 +299,6 @@ describe('SubagentRow foreground / background', () => {
     expect(screen.queryByText('fg')).toBeNull();
   });
 
-  // Nested rows are synthesised from the sidecar and carry no flag. Saying
-  // nothing is honest; defaulting to fg would be a guess.
   it('shows no tag when the mode is unknown', () => {
     render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', parentToolUseId: 'p' })} />);
     expect(screen.queryByText('fg')).toBeNull();
@@ -340,7 +320,6 @@ describe('ShellRow', () => {
   }
   const openShell = () => document.querySelector('[data-shell-row] > button') as HTMLElement;
 
-  // The row is a one-line brief; the open row says it in full, wrapped.
   it('shows the full description and the output, wrapped, when opened', async () => {
     const long = 'Replay the dev daemon\'s event ring for the session and print every transcript event with its seq';
     const read = vi.fn(async () => tail('[exited with code 144]'));
@@ -351,8 +330,8 @@ describe('ShellRow', () => {
     expect(full?.textContent).toBe(long);
     const out = container.querySelector('[data-shell-output]');
     expect(out?.textContent).toBe('[exited with code 144]');
-    // Not a <pre>: the narrow/touch layout forces every <pre> to one
-    // unwrapped line (styles.css), which clipped this text.
+    // The narrow/touch layout forces every <pre> to one unwrapped line
+    // (styles.css).
     expect(out?.tagName).not.toBe('PRE');
     expect(out?.className).toContain('whitespace-pre-wrap');
   });

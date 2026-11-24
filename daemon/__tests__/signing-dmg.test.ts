@@ -47,7 +47,6 @@ describe('pickSigningIdentity', () => {
     expect(pickSigningIdentity(['only-one'], undefined)).toBe('only-one');
   });
 
-  // Same discipline as resolve(): don't guess between equally valid candidates.
   it('refuses to guess between multiple certs', () => {
     expect(() => pickSigningIdentity(['a', 'b'], undefined)).toThrow(/APPLE_SIGNING_IDENTITY/);
   });
@@ -109,9 +108,7 @@ describe('notarizeDmg', () => {
     expect(args).toContain('Forced Identity');
   });
 
-  // A failed staple must not be swallowed: an unstapled dmg still passes
-  // Gatekeeper online and fails offline, which is the worst kind of bug to
-  // discover from a user report.
+  // An unstapled dmg passes Gatekeeper online and fails offline.
   it('propagates a failure from any step', async () => {
     const d = deps();
     d.run.mockImplementation((cmd: string) => {
@@ -132,9 +129,8 @@ describe('notarizeApp', () => {
     return { run, log: vi.fn() };
   }
 
-  // notarytool takes an archive, not a bundle, and the ticket is stapled to
-  // the bundle itself — the zip the updater downloads is made AFTER this, so
-  // the app inside it carries its ticket offline.
+  // notarytool takes an archive, not a bundle; the ticket is stapled to the
+  // bundle before the updater zip is made.
   it('zips the app, waits on the notary verdict, and staples the app', async () => {
     const d = deps();
     await notarizeApp('/out/OmniFex.app', '/tmp/notarize.zip', { keychainProfile: 'omnifex-notary' }, d);

@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createModNoticeTracker, MAX_DELAY_MS } from '../services/sessions/mod-notifications';
 
-// The CLI's `system/ui_notify` and `ui_notify_cancel` frames (2.1.321), sent
-// only because OmniFex spawns with CLAUDE_CODE_NOTIFICATIONS_HOST. The host
-// raises the notification, holds a delayed one, replaces by (source, key) and
-// takes one back on cancel or when the person returns.
-
 const NOW = 1_800_000_000_000;
 
 function frame(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -42,7 +37,6 @@ describe('mod notices — notify', () => {
     const b = tr.notify(frame({ key: 'k', uuid: 'u-2' }));
     expect(a?.id).toBe('mod:sess-1:reminder@all-accounts:k');
     expect(b?.id).toBe(a?.id);
-    // Another mod's same key is a different notification.
     expect(tr.notify(frame({ key: 'k', source: 'other@x' }))?.id).not.toBe(a?.id);
   });
 
@@ -51,7 +45,6 @@ describe('mod notices — notify', () => {
     expect(tr.notify(frame({ delay_ms: 60_000 }))?.deliverAt).toBe(NOW + 60_000);
     expect(tr.notify(frame({ at: NOW + 5_000 }))?.deliverAt).toBe(NOW + 5_000);
     expect(tr.notify(frame({ delay_ms: MAX_DELAY_MS * 2 }))?.deliverAt).toBe(NOW + MAX_DELAY_MS);
-    // A moment already past is now.
     expect(tr.notify(frame({ at: NOW - 1 }))?.deliverAt).toBe(null);
     expect(tr.notify(frame({ delay_ms: 0 }))?.deliverAt).toBe(null);
   });
@@ -87,7 +80,6 @@ describe('mod notices — cancel', () => {
     const ids = tr.cancel({ source: 'reminder@all-accounts', session_id: 'sess-1' });
     expect(ids).toEqual([waiting?.id]);
     expect(ids).not.toContain(fired?.id);
-    // Gone once dropped.
     expect(tr.cancel({ source: 'reminder@all-accounts', session_id: 'sess-1' })).toEqual([]);
   });
 

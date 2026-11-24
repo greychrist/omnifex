@@ -10,8 +10,8 @@ describe('mapLimit', () => {
     expect(out).toEqual([30, 10, 20]);
   });
 
-  // The thread pool has four workers by default; flooding it with hundreds of
-  // reads starves every other fs call the daemon makes meanwhile.
+  // libuv's thread pool has four workers; flooding it starves every other fs
+  // call.
   it('never runs more than the limit at once', async () => {
     let running = 0;
     let peak = 0;

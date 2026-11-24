@@ -19,10 +19,8 @@ vi.mock('framer-motion', () => ({
   AnimatePresence: ({ children }: any) => children,
 }));
 
-// Radix Select relies on pointer-capture APIs jsdom doesn't implement, so
-// its dropdown never opens under fireEvent. Swap in a flat stand-in that
-// renders every item and calls onValueChange on click — this test is about
-// HooksEditor's behaviour, not Radix's.
+// Radix Select relies on pointer-capture APIs jsdom lacks, so its dropdown
+// never opens under fireEvent.
 vi.mock('@/components/ui/select', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.mock factory hoisted before module imports settle.
   const React = require('react');
@@ -62,11 +60,7 @@ let lastSaved: HooksConfiguration | null = null;
 
 import { HooksEditor } from '@/components/HooksEditor';
 
-/**
- * The exact shape a real Stop hook has on disk. The editor used to model
- * Stop as a FLAT `HookCommand[]`, so it read this as a command row with an
- * undefined `command` — the hook rendered blank and saving corrupted it.
- */
+// The real on-disk shape of a Stop hook: nested under `hooks`.
 const REAL_CONFIG: HooksConfiguration = {
   Stop: [
     {
@@ -101,12 +95,7 @@ describe('HooksEditor — nested shape (the Stop-hook regression)', () => {
   });
 
   it('saves an edited Stop hook back in the NESTED shape', async () => {
-    // The bug: the editor wrote `Stop: [{type:'command', command:'…'}]`,
-    // dropping the `hooks` nesting, which the CLI never executes. Editing
-    // must preserve the envelope — matcher included — and only change the
-    // command. (The no-edit round trip is covered at the pure-function level
-    // in hooksManager.shape.test.ts; driving it through a controlled
-    // textarea only tests React's change tracking.)
+    // The CLI never executes a Stop hook stripped of its `hooks` nesting.
     getHooksConfig.mockResolvedValue(REAL_CONFIG);
     renderEditor();
 
@@ -148,7 +137,6 @@ describe('HooksEditor — event coverage', () => {
     fireEvent.click(await screen.findByTestId('select-item-SessionStart'));
     fireEvent.click(screen.getByRole('button', { name: /add hook/i }));
 
-    // SessionStart matches on how the session started — not on tool names.
     expect(await screen.findByLabelText('How the session started')).toBeInTheDocument();
     expect(
       screen.getByPlaceholderText(/startup, resume, clear/),
@@ -156,8 +144,7 @@ describe('HooksEditor — event coverage', () => {
   });
 
   it('offers NO matcher field for an always-fire event', async () => {
-    // The CLI silently ignores `matcher` on Stop, so a filter box there
-    // would invite a rule that does nothing.
+    // The CLI silently ignores `matcher` on Stop.
     renderEditor();
     fireEvent.click(await screen.findByTestId('select-item-Stop'));
     fireEvent.click(screen.getByRole('button', { name: /add hook/i }));
@@ -210,8 +197,8 @@ describe('HooksEditor — onFailure (CLI 2.1.295)', () => {
   it('omits the key when switched back off — "continue" is the CLI default', async () => {
     renderEditor();
     await addSessionStartCommand();
-    // Re-query between clicks: the framer-motion mock remounts the subtree
-    // on every render, so a held element is detached after the first one.
+    // Re-query between clicks: the framer-motion mock remounts the subtree on
+    // every render.
     const toggle = () => screen.getByRole('switch', { name: /block on failure/i });
     fireEvent.click(toggle());
     expect(toggle()).toHaveAttribute('aria-checked', 'true');

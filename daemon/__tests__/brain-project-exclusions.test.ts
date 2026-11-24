@@ -5,14 +5,6 @@ import {
   parseDecisions,
 } from '../services/brain/exclusions';
 
-/**
- * Which projects the Brain may touch.
- *
- * A pure decision so the rule can be pinned without a database, a vault or a
- * discovery pass — and so the one predicate really is the one used at every
- * enforcement point.
- */
-
 describe('isTempProject', () => {
   it.each([
     '/private/tmp/brain-probe',
@@ -28,8 +20,6 @@ describe('isTempProject', () => {
     '/Users/greg/private/notes',
     '/Users/greg/tmp-ideas',
   ])('leaves %s alone', (path) => {
-    // The rule is a path PREFIX. A repo that merely has "tmp" or "private" in
-    // its name is someone's actual work.
     expect(isTempProject(path)).toBe(false);
   });
 });
@@ -43,7 +33,6 @@ describe('isExcludedProject', () => {
     expect(isExcludedProject('/Users/greg/Repos/personal/omnifex', {})).toBe(false);
   });
 
-  /** The default has to be overridable, or it is not a default. */
   it('lets an explicit include beat the scratch rule', () => {
     expect(isExcludedProject('/private/tmp/brain-probe', { '/private/tmp/brain-probe': false }))
       .toBe(false);
@@ -64,10 +53,6 @@ describe('parseDecisions', () => {
     expect(parseDecisions(null)).toEqual({});
   });
 
-  /**
-   * Fails OPEN on a mangled value. Failing closed would index nothing and look
-   * exactly like the Brain being broken.
-   */
   it.each(['not json', '[]', '"a string"', '{"/a":"yes"}'])(
     'reads %s as no decisions rather than throwing',
     (raw) => {

@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the api surface up-front so the helper picks up our stubs at import time.
 vi.mock('@/lib/api', () => ({
   api: {
     getSetting: vi.fn(),
@@ -32,13 +31,6 @@ beforeEach(() => {
 });
 
 describe('maybeAutoGenerateSummaryOnLeave', () => {
-  // The auto-on-leave gate must mirror the lifecycle hook in
-  // daemon/main.ts so the back-button path doesn't bypass the user's
-  // "Generate summaries automatically when leaving a session" toggle.
-  //
-  // Both flags must be 'true' for generation to fire. Anything else
-  // (including missing settings) skips. Manual refresh button stays
-  // ungated by going through api.summaryGenerate directly.
   it('calls summaryGenerate when both flags are "true"', async () => {
     stubSettings('true', 'true');
     await maybeAutoGenerateSummaryOnLeave(SESSION, PROJECT, CONFIG_DIR);
@@ -65,11 +57,6 @@ describe('maybeAutoGenerateSummaryOnLeave', () => {
   });
 
   it('skips when settings are unset (null)', async () => {
-    // Mirrors `db.getSetting(...) === 'true'` semantics in the lifecycle
-    // hook: anything that isn't the literal string 'true' is treated as
-    // off. Defaults are seeded to 'true' by ensureDefaultSettings on
-    // first launch, but a missing row should not silently turn the
-    // auto-trigger on.
     stubSettings(null, null);
     await maybeAutoGenerateSummaryOnLeave(SESSION, PROJECT, CONFIG_DIR);
     expect(api.summaryGenerate).not.toHaveBeenCalled();
@@ -84,15 +71,12 @@ describe('maybeAutoGenerateSummaryOnLeave', () => {
   it('swallows summaryGenerate rejections so callers can fire-and-forget', async () => {
     stubSettings('true', 'true');
     vi.mocked(api.summaryGenerate).mockRejectedValueOnce(new Error('boom'));
-    // Must not throw.
     await expect(
       maybeAutoGenerateSummaryOnLeave(SESSION, PROJECT, CONFIG_DIR),
     ).resolves.toBeUndefined();
   });
 
   it('swallows getSetting rejections and skips generation', async () => {
-    // If the IPC layer can't even read the toggles, treat it as
-    // gated-off and skip — never auto-generate on a failed read.
     vi.mocked(api.getSetting).mockRejectedValue(new Error('ipc dead'));
     await expect(
       maybeAutoGenerateSummaryOnLeave(SESSION, PROJECT, CONFIG_DIR),

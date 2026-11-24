@@ -64,7 +64,6 @@ describe('applyAssistantMeta', () => {
     };
     const out = applyAssistantMeta(payload, meta) as typeof payload;
     expect(out.message.stop_reason).toBe('end_turn');
-    // delta usage wins for output_tokens; pre-existing fields are preserved
     expect(out.message.usage).toMatchObject({
       input_tokens: 2,
       output_tokens: 1234,
@@ -89,9 +88,8 @@ describe('applyAssistantMeta', () => {
 });
 
 describe('createAssistantResolver', () => {
-  // Frame factories mirroring the real --include-partial-messages stream order:
-  // message_start → (content) → committed assistant → content_block_stop →
-  // message_delta (resolved stop_reason/usage) → message_stop.
+  // Frames in the real --include-partial-messages order: message_start →
+  // (content) → commit.
   const start = (id: string, parent: string | null = null) =>
     ({ type: 'stream_event', event: { type: 'message_start', message: { id, stop_reason: null } }, parent_tool_use_id: parent });
   const committed = (id: string, parent: string | null = null, stop: string | null = null, out = 4) =>
@@ -167,10 +165,10 @@ describe('createAssistantResolver', () => {
 
   it('keeps subagent and main chains separate (a subagent delta never resolves a main-chain assistant)', () => {
     const out = run([
-      start('A'), committed('A'),               // main message open, buffered
-      start('S', 't1'), committed('S', 't1'),   // subagent message open, buffered
-      delta('end_turn', 88, 't1'), stop('t1'),  // resolves S only
-      delta('tool_use', 10), stop(),            // resolves A only
+      start('A'), committed('A'),
+      start('S', 't1'), committed('S', 't1'),
+      delta('end_turn', 88, 't1'), stop('t1'),
+      delta('tool_use', 10), stop(),
     ]);
     const a = assistants(out);
     const A = a.find((f) => f.message.id === 'A');

@@ -3,10 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useNotifications } from '../useNotifications';
 
-// A turn's or agent's notification marks a background tab unread. A mod's
-// `$.ui.notify` (origin: 'mod') is the mod talking, often about a moment
-// still to come; it is not a result waiting in that tab.
-
 let handler: ((p: unknown) => void) | null = null;
 beforeEach(() => {
   handler = null;

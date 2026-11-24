@@ -25,7 +25,6 @@ const renderRow = (over: { ttlMs?: number | null; anchorMs?: number | null } = {
     />,
   );
 
-/** Advance the wall clock and let the row's interval fire. */
 const advance = (ms: number) => {
   act(() => {
     vi.advanceTimersByTime(ms);
@@ -79,8 +78,6 @@ describe('CacheTimerRow', () => {
     expect(row.className).not.toContain('amber');
   });
 
-  // The cost is already sunk at expiry, so a red alert would be nagging about
-  // the past. It goes neutral and stops.
   it('goes neutral and says expired at 100%', () => {
     renderRow();
     advance(300_000);
@@ -99,9 +96,6 @@ describe('CacheTimerRow', () => {
     clearSpy.mockRestore();
   });
 
-  // No "refreshing" state: the cache is written by each model call, not by the
-  // turn, so mid-turn the countdown runs from the newest assistant message —
-  // and visibly runs out while the turn waits on a permission prompt.
   it('restarts the countdown when a new assistant message moves the anchor', () => {
     const { rerender } = renderRow();
     advance(300_000);
@@ -113,8 +107,6 @@ describe('CacheTimerRow', () => {
     expect(screen.getByTestId('cache-timer').textContent).toContain('3:59');
   });
 
-  // The TTL is visible in the row itself, not just the tooltip, so a 1h → 5m
-  // drop is legible even if the change notice was missed.
   it('names the TTL inline', () => {
     renderRow({ ttlMs: CACHE_TTL_5M_MS });
     expect(screen.getByTestId('cache-timer').textContent).toContain('5m');

@@ -37,7 +37,6 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
     setup();
     expect(within(item('model')).getByText('model')).toBeTruthy();
     expect(within(item('model')).getByText('Sonnet')).toBeTruthy();
-    // Effort rides along in the same control, as `Sonnet High`.
     expect(within(item('model')).getByText('High')).toBeTruthy();
     expect(screen.queryByTestId('control-effort')).toBeNull();
     expect(within(item('perms')).getByText('perms')).toBeTruthy();
@@ -47,8 +46,6 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
   it('leads each readout with a glyph, like the rest of the bar', () => {
     setup();
     expect(item('model').querySelector('svg.lucide-zap')).toBeTruthy();
-    // One glyph that means "permissions", whatever the mode — not the
-    // mode's own, which would change under you and collide with Default's.
     for (const permissionMode of ['acceptEdits', 'plan', 'default', 'auto']) {
       cleanup();
       setup({ permissionMode });
@@ -66,9 +63,6 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
     }
   });
 
-  // The model's name wears the Cost Report's color for it — its price tier
-  // and version — as the picker rows do; the glyph and the `model` label
-  // stay the bar's own color, unlike the perms readout's whole-tint.
   it('colors the model name by tier, leaving the glyph and label alone', async () => {
     const { SHADES, screenChartMode } = await import('@/lib/costChartPalette');
     const rgb = (h: string) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ')})`;
@@ -82,7 +76,6 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
     setup({ model: 'sonnet' });
     expect(valueOf().style.color).toBe(rgb(SHADES[mode].sonnet[0]));
     cleanup();
-    // On default, the model that actually answered is what is named — and colored.
     setup({ model: 'default', activeDefaultModel: 'claude-opus-5-5' });
     expect(valueOf().style.color).toBe(rgb(SHADES[mode].opus[0]));
   });
@@ -129,8 +122,6 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
     expect(screen.getByText('* account default')).toBeTruthy();
   });
 
-  // `/model … and saved as your default` rewrote the account's settings.json
-  // pin; the picker re-reads it when told, so the `*` moves.
   it('re-reads the account\'s model pin when the catalog refresh key changes', async () => {
     const { api } = await import('@/lib/api');
     vi.mocked(api.getClaudeSettings).mockClear();
@@ -152,16 +143,13 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
   });
 
   it('folds the account default into the model it resolves to, marked', () => {
-    // The live session reports the concrete model behind "default"; the
-    // readout names that model rather than the word "Default".
     setup({ model: 'default', activeDefaultModel: 'claude-fable-5' });
     expect(within(item('model')).getByText(`Fable 5 ${ACCOUNT_DEFAULT_MARK}`)).toBeTruthy();
   });
 
   it('names the model readout after the model that actually ran', async () => {
-    // The CLI advertises `claude-opus-5[1m]` as "Opus 5 (1M context)" while
-    // the server resolves it to claude-opus-5-5, so the catalog label alone
-    // disagreed with the session card's own "opus 5.5" summary.
+    // The CLI advertises `claude-opus-5[1m]` as "Opus 5 (1M context)" while the
+    // server resolves it to claude-opus-5-5.
     const { api } = await import('@/lib/api');
     vi.mocked(api.listSupportedModels).mockResolvedValueOnce([
       { value: 'claude-opus-5[1m]', displayName: 'Opus 5 (1M context)', description: 'Best for everyday, complex tasks' },
@@ -184,9 +172,7 @@ describe('SessionControlPickers — status-bar readouts that open pickers', () =
 });
 
 describe('SessionControlPickers — Bypass on a session not launched in it', () => {
-  // The CLI refuses a mid-session switch to Bypass unless it was spawned in
-  // Bypass. Picking it would only produce an error, so the row says why and
-  // offers the one route that works: restarting the session in Bypass.
+  // The CLI refuses a mid-session switch to Bypass unless spawned in Bypass.
   const openPerms = () => { fireEvent.click(within(item('perms')).getByRole('button')); };
 
   it('does not switch to Bypass, and says why', () => {
@@ -223,11 +209,9 @@ describe('SessionControlPickers — Bypass on a session not launched in it', () 
 });
 
 describe('SessionControlPickers — vertical centring', () => {
-  // A popover readout's button must be block-level (`flex`), not `inline-flex`:
-  // inside the Popover's block trigger wrapper an inline box opens a line box
-  // sized by the inherited line-height, whose descender space sits under the
-  // button and lifts it ~1px above the bar's plain readouts. jsdom has no
-  // layout, so the display type is what can be pinned.
+  // A popover readout's button must be block-level: an inline-flex one opens a
+  // line box that lifts it ~1px. jsdom has no layout, so the display type is
+  // what can be pinned.
   it('makes each picker button block-level so it centres with the plain readouts', () => {
     setup();
     for (const id of ['model', 'perms']) {

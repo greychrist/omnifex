@@ -15,7 +15,6 @@ describe('rpc allowlist', () => {
     for (const ch of [...NATIVE_ONLY_CHANNELS, ...TYPED_SESSION_CHANNELS, ...RAW_DATABASE_CHANNELS]) {
       expect(allow.has(ch), ch).toBe(false);
     }
-    // A representative of each family that must still work remotely.
     for (const ch of ['list_accounts', 'list_projects', 'session_set_model', 'session_get_health', 'brain_search', 'session_cost_totals', 'storage_read_table']) {
       expect(allow.has(ch), ch).toBe(true);
     }
@@ -26,8 +25,6 @@ describe('rpc allowlist', () => {
   });
 
   it('every denied channel names something that actually exists — the lists cannot rot silently', () => {
-    // `remote:url` and `notify:show` are registered inline in main.ts and
-    // listed in channels.ts like the other Electron-native channels.
     for (const ch of [...NATIVE_ONLY_CHANNELS, ...TYPED_SESSION_CHANNELS, ...RAW_DATABASE_CHANNELS]) {
       expect(INVOKE_CHANNELS, ch).toContain(ch);
     }

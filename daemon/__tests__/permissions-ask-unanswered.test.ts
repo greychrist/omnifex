@@ -1,11 +1,6 @@
 // @vitest-environment node
-//
-// AskUserQuestion's `unanswered` annotation (CLI 2.1.312,
-// `ask_user_question_unanswered_v1`). A question the user closed, or talked
-// past in chat, is answered with the text the model should read plus
-// `annotations[question].unanswered`, so the transcript records how it ended
-// instead of a bare "User denied permission". The capability gate is
-// load-bearing: an older CLI on a strict host refuses the whole answer.
+// The capability gate is load-bearing: an older CLI on a strict host refuses
+// the whole answer.
 import { describe, it, expect, vi } from 'vitest';
 import {
   respondPermission,

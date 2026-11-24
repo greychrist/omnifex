@@ -15,9 +15,8 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
-  // New in CLI 2.1.317: the signed-in account and org that own the session,
-  // `last-wins` in the merge map and re-stamped on every metadata re-append,
-  // so it lands in every session a signed-in CLI writes.
+  // CLI 2.1.317: the account and org owning the session; `last-wins`, re-stamped
+  // on every metadata re-append.
   it('recognises session-owner', () => {
     expect(
       isCliSidechannelRecord({
@@ -29,8 +28,7 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
-  // New in CLI 2.1.318: whether the session runs in (experimental) Code
-  // Mode, re-appended with the session metadata. Not in the merge map.
+  // CLI 2.1.318: whether the session runs in Code Mode; not in the merge map.
   it('recognises repl-mode', () => {
     expect(
       isCliSidechannelRecord({
@@ -41,8 +39,8 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
-  // New in CLI 2.1.319: a checksum vouching for the transcript head a
-  // resume loaded (`boundary-cleared` in the merge map).
+  // CLI 2.1.319: a checksum vouching for the transcript head a resume loaded
+  // (`boundary-cleared`).
   it('recognises resume-head-vouch', () => {
     expect(
       isCliSidechannelRecord({
@@ -53,10 +51,8 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
-  // New in CLI 2.1.276: a latch recording whether memory was on or off at a
-  // point in the conversation. `accumulate` in the CLI's merge map, so it is a
-  // log, not a last-wins latch — several land per session once the user
-  // toggles memory, and nothing in OmniFex reads memory state.
+  // CLI 2.1.276: memory on/off at a point in the conversation. `accumulate`, so
+  // several land per session.
   it('recognises memory-mode', () => {
     expect(
       isCliSidechannelRecord({
@@ -69,12 +65,8 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
-  // New in CLI 2.1.282: request-replay records — the exact API request
-  // (`api-request`), its deduplicated system+tools shape and message blobs.
-  // `boundary-cleared` in the CLI's merge map. Written only while the
-  // `tengu_elegant_meadow` flag is on, one `api-request` per model call, so
-  // unlisted they would draw a card per API request. `api-request-blob`
-  // carries a `message`, but it is a request param, not a turn.
+  // CLI 2.1.282: request-replay records, one `api-request` per model call while
+  // `tengu_elegant_meadow` is on (`boundary-cleared`).
   it('recognises the 2.1.282 request-replay records', () => {
     for (const type of ['api-request', 'api-request-shape', 'api-request-blob']) {
       expect(isCliSidechannelRecord({ type, sessionId: 's' })).toBe(true);
@@ -89,11 +81,8 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
-  // New in CLI 2.1.328: `api-request-resumed`, the request-replay record for
-  // a paused request picked up again (messageId, pausedRequestId,
-  // resumedRequestId, plus the request params on the main thread). Same
-  // `boundary-cleared` merge strategy and the same CLAUDE_CODE_ELEGANT_MEADOW
-  // gate as `api-request`.
+  // CLI 2.1.328: `api-request-resumed`, same merge strategy and gate as
+  // `api-request`.
   it('recognises the 2.1.328 api-request-resumed record', () => {
     expect(
       isCliSidechannelRecord({
@@ -106,10 +95,8 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
-  // New in CLI 2.1.329: `hybrid-organization`, a latch naming the
-  // organization a "hybrid" sign-in (an org reached through another provider
-  // or a gateway) belongs to. Written with the session metadata, also into
-  // subagent files with an `agentId`; `last-wins` by the CLI's own fallback.
+  // CLI 2.1.329: `hybrid-organization`, written with the session metadata and
+  // into subagent files; `last-wins`.
   it('recognises the 2.1.329 hybrid-organization record', () => {
     expect(
       isCliSidechannelRecord({
@@ -120,10 +107,7 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
-  // New in CLI 2.1.330: `host-row`, written per Code Mode script call
-  // (`ranByToolUseId`), routed to the agent's file by `agentId`. The CLI's
-  // own merge maps it `boundary-cleared` / `ignored` and strips it on
-  // hydrate, like `repl-mode`.
+  // CLI 2.1.330: `host-row`, one per Code Mode script call, routed by `agentId`.
   it('recognises the 2.1.330 host-row record', () => {
     expect(
       isCliSidechannelRecord({
@@ -135,10 +119,7 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
-  // New in CLI 2.1.283: a latch naming the session's plugin "dev mods"
-  // folder (`<config>/dev-mods/<sessionId>`, hot-reloaded as a plugin dir).
-  // `last-wins` in the CLI's merge map; written when dev mods are enabled
-  // and re-emitted on branch writes, like every other latch.
+  // CLI 2.1.283: the session's dev-mods folder; `last-wins`.
   it('recognises dev-mods', () => {
     expect(
       isCliSidechannelRecord({
@@ -149,9 +130,7 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
-  // New in CLI 2.1.311: a latch naming every tool the conversation has called
-  // so far. `last-wins` in the CLI's merge map; re-written whenever the set
-  // grows, so a busy session lands one per new tool.
+  // CLI 2.1.311: every tool called so far, re-written whenever the set grows.
   it('recognises tools-used', () => {
     expect(
       isCliSidechannelRecord({
@@ -162,10 +141,8 @@ describe('isCliSidechannelRecord', () => {
     ).toBe(true);
   });
 
-  // New in CLI 2.1.323, behind `tengu_pewter_grebe` + `allow_data_flow`:
-  // data-flow provenance per tool call (`accumulate`) and the sessions this
-  // one was derived from (`last-wins`). The CLI strips all three on hydrate;
-  // none is a turn.
+  // CLI 2.1.323, behind `tengu_pewter_grebe` + `allow_data_flow`: data-flow
+  // provenance (`accumulate`) and derived-from sessions (`last-wins`).
   it('recognises the 2.1.323 data-flow records', () => {
     expect(
       isCliSidechannelRecord({ type: 'data-flow-records', v: 1, sessionId: 's', records: [] }),
@@ -187,8 +164,6 @@ describe('isCliSidechannelRecord', () => {
     }
   });
 
-  // These are bookkeeping to the CLI too, but the app reads every one of
-  // them. Listing one here would silently delete a feature.
   it('leaves the records OmniFex classifies for itself alone', () => {
     for (const type of [
       'queue-operation',
@@ -206,8 +181,6 @@ describe('isCliSidechannelRecord', () => {
     expect(isCliSidechannelRecord({ type: 'summary', summary: 'x', leafUuid: 'y' })).toBe(false);
   });
 
-  // An unfamiliar record is worth seeing once; that is what the catch-all
-  // card is for. This list only silences the ones we have identified.
   it('does not guess at a type it has never heard of', () => {
     expect(isCliSidechannelRecord({ type: 'some-future-record' })).toBe(false);
   });

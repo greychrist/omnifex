@@ -40,9 +40,7 @@ describe('brain orchestration schema (v18)', () => {
        VALUES (?, ?, ?, ?, ?, ?)`,
     );
     insert.run(ids[0], 'session', 'abc', 1, 'h', 'indexed');
-    // Same item under a DIFFERENT account is a distinct row, not a conflict.
     expect(() => insert.run(ids[1], 'session', 'abc', 1, 'h', 'indexed')).not.toThrow();
-    // Same item under the SAME account conflicts.
     expect(() => insert.run(ids[0], 'session', 'abc', 1, 'h', 'indexed')).toThrow();
   });
 

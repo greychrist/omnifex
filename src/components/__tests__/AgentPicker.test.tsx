@@ -10,7 +10,6 @@ describe('AgentPicker', () => {
     render(<AgentPicker value="claude" onChange={() => {}} />);
     const radios = screen.getAllByRole('radio');
     expect(radios).toHaveLength(2);
-    // Claude is selected; Codex isn't.
     const claude = screen.getByRole('radio', { name: 'Claude' });
     const codex = screen.getByRole('radio', { name: 'Codex' });
     expect(claude.getAttribute('aria-checked')).toBe('true');
@@ -26,7 +25,6 @@ describe('AgentPicker', () => {
   });
 
   it('does NOT fire onChange when the already-selected option is clicked', () => {
-    // Avoids no-op state churn when the user clicks the active pill.
     const onChange = vi.fn();
     render(<AgentPicker value="codex" onChange={onChange} />);
     fireEvent.click(screen.getByRole('radio', { name: 'Codex' }));

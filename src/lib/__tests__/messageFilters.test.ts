@@ -57,9 +57,6 @@ describe('filterDisplayableMessages', () => {
   });
 
   describe('hook lifecycle rows', () => {
-    // Hook rows are plumbing noise, but hiding them is their kinds' job
-    // (system.hook_* default to Never on Message Kinds), not a hard filter —
-    // the "Hide hook lifecycle" toggle that duplicated it was retired.
     const sysHook = (subtype: string): JsonlNode =>
       ({ kind: 'system', subtype, sessionId: '', receivedAt: '', raw: { type: 'system', subtype } }) as unknown as JsonlNode;
 
@@ -73,9 +70,6 @@ describe('filterDisplayableMessages', () => {
       ({ kind: 'system', subtype: 'status', sessionId: '', receivedAt: '', raw: { type: 'system', subtype: 'status', status } }) as unknown as JsonlNode;
 
     it('drops system:status — it is surfaced as the live activity label, never a transcript row', () => {
-      // These are transient per-turn phase pings (requesting / compacting).
-      // The reducer turns them into the live "Running…" activity label; they
-      // must never render as an empty side-line in the conversation history.
       const out = filterDisplayableMessages([sysStatus('requesting')]);
       expect(out).toHaveLength(0);
     });
@@ -103,11 +97,8 @@ describe('filterDisplayableMessages', () => {
   });
 
   describe('skill-injection isMeta exemption', () => {
-    // The Claude Code CLI persists skill-body injections with isMeta:true,
-    // which the CLI live-stream version emits as isSynthetic:true (no isMeta).
-    // The filter must keep skill bodies visible even when isMeta is set —
-    // otherwise the `Skill: <name>` card disappears after the renderer
-    // reloads the session from JSONL.
+    // The CLI persists skill bodies with isMeta:true; the live stream emits
+    // isSynthetic:true instead.
 
     const skillToolUse = (id: string, skillName: string): JsonlNode =>
       ({
@@ -133,9 +124,7 @@ describe('filterDisplayableMessages', () => {
         raw: {
           type: 'user',
           isMeta,
-          // The CLI names the originating Skill call on every companion
-          // record. Detection keys on this rather than on the record's
-          // position, so a re-invocation preamble can't displace the body.
+          // The CLI names the originating Skill call on every companion record.
           sourceToolUseID,
           message: { role: 'user', content: [{ type: 'text', text }] },
         },
@@ -149,7 +138,6 @@ describe('filterDisplayableMessages', () => {
       ];
       const out = filterDisplayableMessages(messages);
       expect(out).toHaveLength(3);
-      // The skill body must be the last one
       const last = out[out.length - 1] as unknown as { raw: { isMeta: boolean; message: { content: { text: string }[] } } };
       expect(last.raw.isMeta).toBe(true);
       expect(last.raw.message.content[0].text).toContain('# Merge to Main');
@@ -164,9 +152,6 @@ describe('filterDisplayableMessages', () => {
     });
 
     it('keeps a non-isMeta user message regardless of skill detection', () => {
-      // Backstop: the meta-noise filter is the only thing that drops user
-      // rows here, so anything without isMeta survives whatever skill
-      // detection concludes. Locks in that the two decisions stay separate.
       const messages = [
         skillToolUse('toolu_y', 'foo'),
         skillToolResult('toolu_y'),
@@ -181,8 +166,6 @@ describe('filterDisplayableMessages', () => {
 
 describe('unknown content-block visibility', () => {
   it('keeps a user message whose only block is an unrecognized type', () => {
-    // The renderer has a catch-all card for unknown blocks; dropping the
-    // whole message here would silently erase it one stage earlier.
     const node = {
       kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
       raw: {
@@ -234,8 +217,6 @@ describe('forwarded subagent assistant text (--forward-subagent-text)', () => {
     }) as unknown as JsonlNode;
 
   it('hides forwarded subagent assistant messages from the transcript', () => {
-    // Their content belongs to the subagent row, not the main transcript —
-    // interleaving subagent narration with the parent conversation is noise.
     const msgs = [parentTaskDispatch(), forwardedAssistant(), mainAssistant()];
     const out = filterDisplayableMessages(msgs);
     const texts = out.map((m) =>
@@ -252,10 +233,7 @@ describe('forwarded subagent assistant text (--forward-subagent-text)', () => {
     expect(out).toHaveLength(1);
   });
 
-  // Tool results for widget-backed tools are normally dropped, because the
-  // widget is assumed to render the payload. That assumption breaks for
-  // images: no widget renders them (MCPWidget discards `result` outright), so
-  // dropping the message loses the screenshot entirely.
+  // No widget renders images (MCPWidget discards `result`).
   describe('tool results carrying images', () => {
     const toolCall = (id: string, name: string): JsonlNode =>
       ({
@@ -317,8 +295,6 @@ describe('forwarded subagent assistant text (--forward-subagent-text)', () => {
       expect(out).toHaveLength(2);
     });
 
-    // The existing suppression must survive — only image-bearing results are
-    // rescued, or every widget tool starts double-rendering its payload.
     it('still drops a widget-backed tool result with no images', () => {
       const out = filterDisplayableMessages([
         toolCall('t3', 'mcp__chrome-devtools__list_pages'),
@@ -351,8 +327,7 @@ describe('forked skill kickoff prompt (CLI >= 2.1.265)', () => {
       },
     }) as unknown as JsonlNode;
 
-  // Live-stream only — the persisted transcript has no such line, so before
-  // this fix the same session rendered one way live and another on reload.
+  // Live-stream only: the persisted transcript has no such line.
   it('does not render the kickoff prompt as a user message', () => {
     const tu = skillToolUse('toolu_SKILL_1');
     const out = filterDisplayableMessages([tu, kickoff('toolu_SKILL_1')]);
@@ -361,9 +336,6 @@ describe('forked skill kickoff prompt (CLI >= 2.1.265)', () => {
   });
 });
 
-// The CLI writes its conversation latches into the same JSONL as messages.
-// Unclassified, each drew an orange "Unrecognized record" card — 379 of them
-// across twelve sessions, all saying `atis-latch`.
 describe('CLI sidechannel records', () => {
   const record = (raw: Record<string, unknown>): JsonlNode =>
     ({ kind: 'unknown', sessionId: '', receivedAt: null, raw }) as unknown as JsonlNode;
@@ -397,10 +369,7 @@ describe('CLI sidechannel records', () => {
   });
 });
 
-// The CLI re-appends `ai-title` after nearly every turn, title unchanged, and
-// keeps doing so after a rename — so the raw records repeat and alternate. A
-// title row is drawn only where the session's effective title (rename wins,
-// see pickSessionTitle) changes.
+// The CLI re-appends `ai-title` after nearly every turn, also after a rename.
 describe('filterDisplayableMessages — session titles', () => {
   const ai = (aiTitle: string): JsonlNode =>
     ({ kind: 'ai-title', sessionId: 's', raw: { type: 'ai-title', aiTitle, sessionId: 's' } }) as unknown as JsonlNode;
@@ -432,8 +401,6 @@ describe('filterDisplayableMessages — session titles', () => {
     expect(filterDisplayableMessages([ai('A'), prompt, ai('A')])).toEqual([ai('A'), prompt]);
   });
 
-  // Live entries arrive one at a time and the whole list is re-filtered each
-  // time; every intermediate result must agree with the final one.
   it('gives entries arriving one by one the same result as a loaded transcript', () => {
     const all = [ai('A'), ai('A'), custom('X'), ai('A'), ai('B'), custom('X'), custom('Y'), ai('B')];
     const final = titles(all);
@@ -445,9 +412,6 @@ describe('filterDisplayableMessages — session titles', () => {
   });
 });
 
-// An attachment the ledger has no one-line summary for renders nothing — and
-// an empty row still takes the row's padding, which opened blank gaps in the
-// transcript (session 5220766b, both view modes).
 describe('filterDisplayableMessages — context attachments', () => {
   const attachment = (attachment: Record<string, unknown>): JsonlNode =>
     ({ kind: 'attachment', sessionId: 's', raw: { type: 'attachment', attachment } }) as unknown as JsonlNode;

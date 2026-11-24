@@ -88,7 +88,6 @@ describe('mcp service', () => {
   it('add persists across service re-instantiation', () => {
     mcp.add({ name: 'persistent', command: 'node', args: ['x.js'], configDir });
 
-    // Re-create the service — settings live on disk in `configDir`.
     const mcp2 = createMCPService();
     const servers = mcp2.list(configDir);
     expect(servers.some(s => s.name === 'persistent')).toBe(true);
@@ -104,8 +103,6 @@ describe('mcp service', () => {
     const result = mcp.testConnection('conn-test', configDir);
     expect(typeof result).toBe('string');
   });
-
-  // ---- coverage-driven additions ----
 
   it('add throws when name is missing', () => {
     expect(() => mcp.add({ command: 'node', configDir })).toThrow(/name is required/);
@@ -207,7 +204,6 @@ describe('mcp service', () => {
     beforeEach(() => {
       accountA = fs.mkdtempSync(path.join(os.tmpdir(), 'greychrist-mcp-acctA-'));
       accountB = fs.mkdtempSync(path.join(os.tmpdir(), 'greychrist-mcp-acctB-'));
-      // Initialise both dirs with empty mcpServers
       fs.writeFileSync(path.join(accountA, '.claude.json'), JSON.stringify({ mcpServers: {} }), 'utf-8');
       fs.writeFileSync(path.join(accountB, '.claude.json'), JSON.stringify({ mcpServers: {} }), 'utf-8');
     });
@@ -218,7 +214,6 @@ describe('mcp service', () => {
     });
 
     it('list with per-call configDir reads the correct account config', () => {
-      // Add a server directly to accountA's user config
       fs.writeFileSync(
         path.join(accountA, '.claude.json'),
         JSON.stringify({ mcpServers: { 'acct-a-server': { command: 'node', args: [] } } }),
@@ -229,7 +224,6 @@ describe('mcp service', () => {
       expect(servers).toHaveLength(1);
       expect(servers[0].name).toBe('acct-a-server');
 
-      // accountB should remain empty
       expect(mcp.list(accountB)).toHaveLength(0);
     });
 
@@ -276,10 +270,6 @@ describe('mcp service', () => {
     });
 
     it('throws when configDir is omitted (no default-account fallback)', () => {
-      // The MCP service refuses to operate without an explicit configDir.
-      // Per CLAUDE.md "Multi-Account Rules", there is no silent fallback to
-      // a "default" account or to ~/.claude — the renderer must always pass
-      // the resolved account's config_dir.
       expect(() => mcp.list()).toThrow(/configDir is required/);
       expect(() => mcp.add({ name: 'x', command: 'node' })).toThrow(/configDir is required/);
       expect(() => mcp.get('x')).toThrow(/configDir is required/);
@@ -300,8 +290,7 @@ describe('mcp user-scope storage', () => {
   });
 
   it('writes servers into .claude.json, not settings.json', () => {
-    // Claude Code has never read an mcpServers key from settings.json.
-    // Writing there produced a config the CLI silently ignored.
+    // The CLI never reads mcpServers from settings.json.
     createMCPService().add({ name: 'omnifex-brain', command: '/bin/node', args: ['x.js'], configDir: dir });
 
     const claudeJson = JSON.parse(fs.readFileSync(path.join(dir, '.claude.json'), 'utf-8')) as {
@@ -325,8 +314,7 @@ describe('mcp user-scope storage', () => {
   });
 
   it('preserves unrelated keys when writing', () => {
-    // .claude.json also holds the OAuth session and per-project state. A
-    // whole-file rewrite that dropped them would sign the account out.
+    // .claude.json also holds the OAuth session and per-project state.
     fs.writeFileSync(
       path.join(dir, '.claude.json'),
       JSON.stringify({ oauthAccount: { uuid: 'x' }, projects: { '/p': {} } }),

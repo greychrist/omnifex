@@ -27,8 +27,6 @@ describe('PermissionsIOService', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  // ── getPermissions ─────────────────────────────────────────────────────────
-
   describe('getPermissions', () => {
     it('returns only user scope when projectPath is omitted', () => {
       const result = service.getPermissions(configDir);
@@ -111,8 +109,6 @@ describe('PermissionsIOService', () => {
     });
   });
 
-  // ── updatePermission ───────────────────────────────────────────────────────
-
   describe('updatePermission', () => {
     it('adds a rule to the user allow list and creates the file', () => {
       service.updatePermission({
@@ -167,7 +163,6 @@ describe('PermissionsIOService', () => {
     });
 
     it('removes a rule from the allow list', () => {
-      // Seed file with existing rules
       fs.writeFileSync(
         path.join(configDir, 'settings.json'),
         JSON.stringify({ permissions: { allow: ['Bash(*)', 'Read(*)'], deny: [] } }),
@@ -196,7 +191,6 @@ describe('PermissionsIOService', () => {
         'utf-8',
       );
 
-      // Should not throw
       expect(() =>
         service.updatePermission({
           configDir,
@@ -266,7 +260,6 @@ describe('PermissionsIOService', () => {
 
     it('creates intermediate directories for project scope when they do not exist', () => {
       const newProjectPath = path.join(tmpDir, 'new-project');
-      // Do NOT pre-create the .claude directory
 
       service.updatePermission({
         configDir,

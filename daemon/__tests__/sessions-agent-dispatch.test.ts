@@ -1,9 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
 
-// Shared stub engine factory so we can inspect call counts on each factory
-// independently. Both factories return the same shape — the only thing
-// under test here is which factory got picked.
 function makeStubEngine(kind: 'claude' | 'codex'): unknown {
   return {
     kind,
@@ -78,7 +75,6 @@ describe('sessions.start — engine factory dispatch on params.agent', () => {
     expect(createCodexCliEngine).toHaveBeenCalledTimes(1);
     expect(createClaudeCliEngine).not.toHaveBeenCalled();
     expect(vi.mocked(findSystemCodexBinary)).toHaveBeenCalled();
-    // Codex factory must receive the resolved binary path
     expect(vi.mocked(createCodexCliEngine)).toHaveBeenCalledWith(
       expect.objectContaining({
         tabId: 'tab-dispatch',

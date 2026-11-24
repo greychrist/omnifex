@@ -2,9 +2,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, fireEvent, within } from '@testing-library/react';
 
-// recharts needs a real layout box; jsdom gives it zero size and
-// ResponsiveContainer then renders nothing. The chart's data shaping is
-// covered by costChartPalette's tests, so stub the visual here.
+// recharts needs a real layout box; jsdom's is zero, so ResponsiveContainer
+// renders nothing.
 vi.mock('@/components/cost-report/CostChart', () => ({
   CostChart: ({ rows }: { rows: unknown[] }) => <div data-testid="chart">{rows.length} rows</div>,
   CostChartLegend: ({ models }: { models: string[] }) => <div data-testid="legend">{models.join(',')}</div>,
@@ -31,15 +30,10 @@ vi.mock('@/contexts/AccountsContext', () => ({
 
 vi.mock('@/hooks', () => ({ useTheme: () => ({ theme: 'gray' }) }));
 
-// vi.mock factories are hoisted above module-level consts, so the recorder
-// has to be created inside vi.hoisted to exist by the time the factory runs.
+// Hoisted: vi.mock factories run above module-level consts.
 const { calls, record, failing, facetProjects, recordFresh } = vi.hoisted(() => {
   const calls: Record<string, unknown[]> = {};
-  /** Mutable so a test can shrink the project facet the way selecting an
-   *  account does, and assert the page drops a now-unavailable selection. */
   const facetProjects: string[] = [];
-  /** Channels forced to reject, by recorder name. Lets a test simulate one
-   *  query failing while the rest succeed. */
   const failing = new Set<string>();
   const record = <T,>(name: string, value: T) => (params: unknown) => {
     (calls[name] ??= []).push(params);
@@ -59,8 +53,6 @@ const { calls, record, failing, facetProjects, recordFresh } = vi.hoisted(() => 
 
 vi.mock('@/lib/api', () => ({
   api: {
-    // The model_pricing delta layer. Empty here — these tests assert against
-    // the shipped labels and colors, so an override would only obscure them.
     modelPricingList: vi.fn(async () => []),
     sessionCostHistoryByModel: record('history', [
       { period: '2026-08-01', model: 'claude-opus-5', cost_usd: 800, request_count: 5000, session_count: 20, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, input_usd: 0, output_usd: 0, cache_read_usd: 0, cache_write_usd: 0, is_estimated: 0 },
@@ -108,8 +100,7 @@ describe('CostReportView', () => {
   beforeEach(() => {
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- resetting a hoisted recorder keyed by channel name; the const object must be emptied in place, not reassigned.
     for (const k of Object.keys(calls)) delete calls[k];
-    // The page persists its filters, so without this each test inherits the
-    // previous one's selection and a "toggle Work on" becomes "toggle it off".
+    // The page persists its filters across tests.
     window.localStorage.clear();
     failing.clear();
     facetProjects.length = 0;
@@ -119,20 +110,15 @@ describe('CostReportView', () => {
 
   it('states the component split as a sentence, not just a table', async () => {
     render(<CostReportView />);
-    // The reframing is the point: "we spend a lot on re-sending context" is a
-    // different and more fixable problem than "we spend a lot on AI".
     await waitFor(() => {
       expect(screen.getByText(/of spend is/)).toBeTruthy();
     });
-    // 85% also appears in the per-component share column, 15% likewise —
-    // assert on the sentence's own numbers rather than uniqueness.
+    // 85% and 15% also appear in the per-component share column.
     expect(screen.getAllByText('85%').length).toBeGreaterThan(0);
     expect(screen.getAllByText('15%').length).toBeGreaterThan(0);
   });
 
   it('warns that the auto-mode classifier is spend no transcript records', async () => {
-    // Reconciled against the Enterprise console, Sep 2026: ~$50 of Sonnet was
-    // the auto-mode classifier, absent from JSONL and from result.modelUsage.
     render(<CostReportView />);
     await waitFor(() => {
       expect(screen.getByText(/auto mode's permission classifier/)).toBeTruthy();
@@ -182,17 +168,13 @@ describe('CostReportView', () => {
     expect(screen.getAllByText('78%').length).toBeGreaterThan(0);
   });
 
-  // Ported from the (deleted) Usage dashboard: requests and sessions answer
-  // different questions and neither substitutes for the other.
   it('reports distinct session counts alongside requests', async () => {
     render(<CostReportView />);
     await waitFor(() => { expect(screen.getAllByText('Sessions').length).toBeGreaterThan(0); });
-    expect(screen.getByText('42')).toBeTruthy();     // distinct sessions
-    expect(screen.getByText('6,600')).toBeTruthy();  // requests
+    expect(screen.getByText('42')).toBeTruthy();
+    expect(screen.getByText('6,600')).toBeTruthy();
   });
 
-  // A Max plan is not billed per token, so its dollar figure is what the usage
-  // WOULD have cost. Printing it unqualified reads as money spent.
   it('marks the total as notional when a subscription account is in scope', async () => {
     render(<CostReportView />);
     await waitFor(() => { expect(screen.getByText('Total (notional)')).toBeTruthy(); });
@@ -226,23 +208,15 @@ describe('CostReportView', () => {
     await waitFor(() => {
       const last = calls.history[calls.history.length - 1] as Record<string, unknown>;
       expect(last.accountName).toEqual(['Work']);
-      // Range resets, so a stale absolute window can never strand the page.
       expect(String(last.startDate)).toMatch(/^\d{4}-\d{2}-01$/);
     });
   });
 
-  /**
-   * One query failing must not blank the page. This is exactly what happened
-   * in dev: the renderer hot-reloaded and started calling a channel the
-   * still-running main process had no handler for, and `Promise.all` turned
-   * one missing handler into eleven empty panels.
-   */
   describe('partial failure', () => {
     it('keeps every other panel when one query fails', async () => {
       failing.add('totals');
       render(<CostReportView />);
 
-      // The component split, ROI and subagent panels all still render.
       await waitFor(() => { expect(screen.getByText(/of spend is/)).toBeTruthy(); });
       expect(screen.getAllByText('40:1').length).toBeGreaterThan(0);
       expect(screen.getByText(/per request against/)).toBeTruthy();
@@ -285,15 +259,7 @@ describe('CostReportView', () => {
     expect(screen.queryByText(/billed at the fallback rate/)).toBeNull();
   });
 
-  // ── Filter layout ────────────────────────────────────────────────────────
-  //
-  // The filter bar was one long unlabelled flex-wrap row separated by bare
-  // `|` dividers: you had to already know what each control did. These tests
-  // pin the grouping so a later tidy-up can't quietly flatten it back.
   describe('print mode (PDF export)', () => {
-    /** Every panel heading, table column and KPI label the page renders. This
-     *  is the parity assertion's alphabet: if a future panel is added and
-     *  print mode drops it, the sets stop matching and this fails. */
     const contentLabels = (container: HTMLElement): string[] => {
       const texts = [...container.querySelectorAll('h3, th, dt')]
         .map((el) => el.textContent?.trim() ?? '')
@@ -302,9 +268,6 @@ describe('CostReportView', () => {
     };
 
     it('renders every panel, column and label the interactive report does', async () => {
-      // The feature was asked for as "shows all the information on that
-      // report", so that is what is tested — not a fixed list of panels that
-      // would silently stop covering a panel added later.
       const normal = render(<CostReportView />);
       await waitFor(() => { expect(screen.getByTestId('chart')).toBeTruthy(); });
       const expected = contentLabels(normal.container);
@@ -350,9 +313,6 @@ describe('CostReportView', () => {
     });
 
     it('opens on the filters it is given, not the ones this window persisted', async () => {
-      // The print window shares an origin with the visible one. Reading saved
-      // filters there would export a different report than the button was
-      // pressed on.
       window.localStorage.setItem(
         'omnifex.costReport.filters',
         JSON.stringify({ accounts: ['Personal'], models: [], projects: [], scope: 'main', groupBy: 'month' }),
@@ -366,8 +326,7 @@ describe('CostReportView', () => {
     });
 
     it('does not overwrite this window\'s saved filters', async () => {
-      // Both windows share localStorage, so a print window persisting what it
-      // was handed would silently rewrite what the user has selected.
+      // Both windows share localStorage.
       const saved = JSON.stringify({
         accounts: ['Personal'], models: [], projects: [], scope: 'main', groupBy: 'month',
       });
@@ -385,7 +344,6 @@ describe('CostReportView', () => {
       const onSettled = vi.fn();
       render(<CostReportView printMode onSettled={onSettled} />);
       await waitFor(() => { expect(onSettled).toHaveBeenCalled(); });
-      // A chart is expected here: the mocked history returns two periods.
       expect(onSettled).toHaveBeenCalledWith({ chartExpected: true });
     });
   });
@@ -415,7 +373,6 @@ describe('CostReportView', () => {
       const dates = screen.getByTestId('filter-date-range');
       const modelScope = screen.getByTestId('filter-model-scope');
 
-      // Projects sit with accounts, not with models — they are one question.
       expect(within(accountProject).getByRole('button', { name: /projects/i })).toBeTruthy();
       expect(within(dates).getByRole('button', { name: 'This month' })).toBeTruthy();
       expect(within(modelScope).getByRole('button', { name: 'Main loop' })).toBeTruthy();
@@ -440,8 +397,6 @@ describe('CostReportView', () => {
       expect(screen.queryByPlaceholderText('Search projects…')).toBeNull();
     });
 
-    // The project list narrows with the account, so a selection made under a
-    // different account would otherwise keep filtering invisibly.
     it('drops a selected project the account scope no longer offers', async () => {
       render(<CostReportView />);
       await waitFor(() => { expect(calls.byProject).toBeTruthy(); });
@@ -455,8 +410,6 @@ describe('CostReportView', () => {
         expect(last.projectPath).toEqual(['/Users/me/Repos/work/mango']);
       });
 
-      // Facets now come back without that project, as they would once an
-      // account that does not own it is selected.
       facetProjects.length = 0;
       facetProjects.push('/Users/me/Repos/personal/omnifex');
       fireEvent.click(within(card).getByTestId('account-picker-trigger'));
@@ -472,8 +425,6 @@ describe('CostReportView', () => {
       render(<CostReportView />);
       await waitFor(() => { expect(screen.getByTestId('chart')).toBeTruthy(); });
 
-      // It is a display control, not a filter, so it must not sit in the
-      // filter block — grouping by week does not change which rows are counted.
       const filters = screen.getByTestId('cost-filters');
       expect(within(filters).queryByTestId('group-by-week')).toBeNull();
 
@@ -483,9 +434,6 @@ describe('CostReportView', () => {
       expect(within(trend).getByTestId('group-by-month')).toBeTruthy();
     });
 
-    // The bars beneath it are labelled 8/1, 8/2 — spelling the same days out
-    // as 2026-08-01 in the sentence makes the reader translate between two
-    // formats to find the day being named.
     it('names the heaviest days in the same month/day form as the axis', async () => {
       render(<CostReportView />);
       const trend = await screen.findByTestId('trend-panel');

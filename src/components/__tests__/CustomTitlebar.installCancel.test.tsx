@@ -81,7 +81,6 @@ afterEach(() => {
 const installButton = () =>
   document.querySelector<HTMLButtonElement>('[data-app-update-install]');
 
-/** Available → downloaded on its own → the popover's Install button. */
 async function toReady() {
   vi.stubEnv('DEV', false);
   render(<CustomTitlebar />);
@@ -94,7 +93,6 @@ async function toReady() {
 describe('CustomTitlebar — install wait cancelled', () => {
   it('goes back to Install, not an error, when the wait is cancelled', async () => {
     await toReady();
-    // Main rejects the pending install once its wait loop sees the cancel.
     let rejectInstall: (e: Error) => void = () => {};
     installUpdate.mockImplementation(() => new Promise((_, rej) => { rejectInstall = rej; }));
 
@@ -103,8 +101,8 @@ describe('CustomTitlebar — install wait cancelled', () => {
     await screen.findByText(/Waiting for 2 sessions/);
     expect(screen.getByText('Install anyway')).toBeTruthy();
 
-    // Real order: the cancel IPC returns at once; main's wait loop only sees
-    // the token on its next 1s poll, so the install rejects after that.
+    // The cancel IPC returns at once; the wait loop sees the token on its next 1s
+    // poll.
     fireEvent.click(screen.getByText('Cancel'));
     await waitFor(() => { expect(installButton()).not.toBeNull(); });
     await act(async () => {
@@ -125,7 +123,6 @@ describe('CustomTitlebar — install wait cancelled', () => {
     fireEvent.click(installButton()!);
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
-    // The download already finished; a retry must not try to "download" a local path.
     expect(downloadUpdate).toHaveBeenCalledTimes(1);
     expect(installUpdate).toHaveBeenCalledTimes(2);
     expect(installUpdate.mock.calls[1][0]).toBe(ZIP);

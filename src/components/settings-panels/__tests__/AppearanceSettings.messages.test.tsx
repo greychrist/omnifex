@@ -1,8 +1,4 @@
 // @vitest-environment jsdom
-//
-// Settings › Chats after Standard and Expanded (2026-11-18): Messages (the
-// Modern settings plus the kinds list), Turn preview, Typography. Per kind:
-// icon, color, Show in Standard — nothing else.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, cleanup, within, waitFor, act } from '@testing-library/react';
@@ -73,8 +69,6 @@ describe('Settings › Chats', () => {
     expect(within(editor).queryByText(/Presentation|Alignment|Border style|Header label/)).toBeNull();
   });
 
-  // A kind's built-in default is what it draws with until you change it, so
-  // the editor shows that, not the category it would fall back to.
   it("shows a kind's built-in default, not its category's", () => {
     renderSettings();
     fireEvent.click(screen.getByRole('button', { name: 'Expand all' }));
@@ -109,8 +103,6 @@ describe('Settings › Chats', () => {
   it('previews in Standard and Expanded, following Show in Standard', () => {
     renderSettings();
     const preview = () => screen.getByRole('region', { name: 'Turn preview' });
-    // Two lines carry the title: the saved mode record (Permission mode) and
-    // the live mode change (its own kind).
     const modeLines = () => within(preview()).queryAllByText('Permission mode').length;
     fireEvent.click(screen.getByRole('tab', { name: 'Turn preview' }));
     const before = modeLines();
@@ -125,9 +117,6 @@ describe('Settings › Chats', () => {
   });
 });
 
-// A v5 Never on thinking or tool calls migrates to hidden in Standard. Those
-// kinds are not normally listed, so a hidden one is — or nothing could bring
-// it back (review, 2026-11-19).
 describe('MessageKindTree — a hidden item kind', () => {
   it('lists Thinking once it is hidden in Standard, so it can be shown again', async () => {
     const { MessageKindTree } = await import('@/components/settings-panels/appearance/MessageKindTree');
@@ -141,9 +130,6 @@ describe('MessageKindTree — a hidden item kind', () => {
   });
 });
 
-// Every control changes something visible. The chat text is set by CSS
-// variables for font, size and weight only; italic reached nothing once the
-// classic cards were gone (review, 2026-11-19).
 describe('Text', () => {
   it('offers the content typeface, size and weight, and no Italic', () => {
     renderSettings();
@@ -153,9 +139,6 @@ describe('Text', () => {
   });
 });
 
-// The preview is the sample transcript with a record of every kind, so
-// Expanded shows them all and Standard shows what the kinds list lets
-// through (Greg, 2026-11-19: the old preview showed far more than one turn).
 describe('Turn preview — every kind', () => {
   it('draws the sample transcript: every record in Expanded, the shown ones in Standard', () => {
     renderSettings();
@@ -170,8 +153,6 @@ describe('Turn preview — every kind', () => {
   });
 });
 
-// One list for everything the chat draws (Greg, 2026-11-19): timeline steps,
-// then the message kinds, then the text.
 describe('Messages — steps, kinds and text in one list', () => {
   it('lists timeline steps first and Text last', () => {
     renderSettings();
@@ -217,8 +198,6 @@ describe('Messages — steps, kinds and text in one list', () => {
   });
 });
 
-// The User prompt chip over a line-style prompt wears this kind's icon; its
-// color is Colors › User prompt, so the kind offers the icon alone.
 describe('Messages — User prompt kind', () => {
   it('lists User prompt with an icon, and no color or Show in Standard', () => {
     renderSettings();

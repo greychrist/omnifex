@@ -22,7 +22,6 @@ function status(over: Partial<BrainVaultStatus> = {}): BrainVaultStatus {
   };
 }
 
-/** A listing row. This hook only ever passes them through. */
 function noteMeta(relPath: string): BrainNoteMeta {
   return {
     relPath,
@@ -66,7 +65,6 @@ describe('useBrainVault', () => {
     );
 
     act(() => { result.current.setAccountId(2); });
-    // Account 1's notes must not be visible for even one frame under account 2.
     expect(result.current.notes).toEqual([]);
 
     await act(async () => { resolveSecond([noteMeta('Notes/C.md')]); });
@@ -86,7 +84,6 @@ describe('useBrainVault', () => {
     act(() => { result.current.setAccountId(2); });
     await waitFor(() => { expect(result.current.status?.accountId).toBe(2); });
 
-    // Account 1's response lands late. It must not overwrite account 2's.
     await act(async () => { resolveFirst(status({ accountId: 1, noteCount: 99 })); });
     expect(result.current.status?.accountId).toBe(2);
   });

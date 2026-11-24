@@ -18,14 +18,8 @@ afterEach(() => {
 });
 
 describe('model_pricing schema', () => {
-  /**
-   * PRICING_FIELDS is the one description of the rate columns — the service's
-   * SQL, the IPC adapter and the editor all derive from it. The migration's
-   * DDL is deliberately NOT derived (a migration must describe the schema as
-   * of its own version forever), so this is what keeps the two in step. Add a
-   * field to one and not the other and this fails loudly, instead of the value
-   * saving, reading back null, and quietly mispricing.
-   */
+  // The migration's DDL is deliberately not derived from PRICING_FIELDS, so this
+  // keeps the two in step.
   it('has exactly the rate columns PRICING_FIELDS describes', () => {
     const columns = (db.raw.prepare('PRAGMA table_info(model_pricing)').all() as { name: string }[])
       .map((c) => c.name);
@@ -37,7 +31,6 @@ describe('model_pricing schema', () => {
   });
 
   it('round-trips every field PRICING_FIELDS describes', () => {
-    // A column that saves but reads back null is the failure this catches.
     const svc = createModelPricingService(db);
     const input: Record<string, unknown> = { pattern: 'roundtrip-9', effectiveFrom: '2026-01-01' };
     PRICING_FIELDS.forEach((f, i) => { input[f.row] = i + 1; });
@@ -75,7 +68,6 @@ describe('model_pricing schema', () => {
     );
     ins.run('opus-9', '2026-01-01', 5);
     expect(() => ins.run('opus-9', '2026-01-01', 6)).toThrow();
-    // A different date for the same pattern is a rate change, and is allowed.
     expect(() => ins.run('opus-9', '2026-06-01', 6)).not.toThrow();
   });
 });
@@ -84,7 +76,6 @@ describe('createModelPricingService', () => {
   it('starts empty — the shipped table is the base layer, not seeded rows', () => {
     const svc = createModelPricingService(db);
     expect(svc.list()).toEqual([]);
-    // and costing still works off the shipped defaults
     expect(perM(resolveRates('claude-opus-5', svc.toOverrides()).rates.input)).toBe(5);
   });
 
@@ -104,14 +95,11 @@ describe('createModelPricingService', () => {
     expect(perM(rates.output)).toBe(35);
     expect(estimated).toBe(false);
     expect(modelLabel('claude-brandnew-9', o)).toBe('Brand New 9');
-    // A family the palette has no tier for draws in the neutral — a user row
-    // names a price and a label, not a color.
     expect(modelColor('claude-brandnew-9', 'light', o)).toBe(NEUTRAL);
   });
 
   it('lets one field be corrected without restating the rest', () => {
     const svc = createModelPricingService(db);
-    // The Fable 5.1 shape: only the cache-read rate is wrong.
     svc.upsert({ pattern: 'opus-5', effectiveFrom: '1970-01-01', cacheReadPerM: 0.4 });
     const { rates } = resolveRates('claude-opus-5', svc.toOverrides());
     expect(perM(rates.input)).toBe(5);
@@ -163,14 +151,12 @@ describe('createModelPricingService', () => {
     const fable51 = svc.shipped().find((r) => r.pattern === 'fable-5-1');
     expect(fable51).toMatchObject({ inputPerM: 10, outputPerM: 50, cacheReadPerM: 0.25 });
     expect(fable51?.label).toBe('Fable 5.1');
-    // Display-only shipped rows (no rate of their own) still surface.
     expect(svc.shipped().find((r) => r.pattern === 'sonnet-4-6')?.label).toBe('Sonnet 4.6');
   });
 });
 
 describe('migration 25 — folding the legacy pricing_overrides blob in', () => {
   it('imports an existing blob as editable rows and clears it', () => {
-    // Simulate an install that predates the table.
     db.raw.exec('DROP TABLE model_pricing');
     db.raw.prepare('DELETE FROM schema_version WHERE version >= 25').run();
     db.saveSetting(
@@ -190,8 +176,6 @@ describe('migration 25 — folding the legacy pricing_overrides blob in', () => 
     const rows = svc.list();
     expect(rows.filter((r) => r.pattern === 'opus-4-8')).toHaveLength(2);
     expect(rows.find((r) => r.pattern === 'fable-5-1')?.cacheReadPerM).toBe(0.25);
-    // The blob is the old mechanism; leaving it populated would mean two
-    // sources of truth disagreeing the moment either is edited.
     expect(db.getSetting('pricing_overrides')).toBeNull();
   });
 

@@ -3,12 +3,8 @@ import { getHandlerMap } from '../ipc/handlers';
 import { createDatabase, type Database } from '../services/database';
 import { createPermissionsIOService } from '../services/permissions-io';
 
-// ---------------------------------------------------------------------------
-// Helpers: build a `Services` object where every service method is a vi.fn
-// that returns a tagged value we can assert on later. Because the handlers
-// use `?? null`, we return non-null sentinels so we can tell them apart from
-// the "service was not called" / "handler dispatched wrong" case.
-// ---------------------------------------------------------------------------
+// Handlers use `?? null`, so non-null sentinels tell a dispatch apart from
+// "service not called".
 
 function mockService<T extends Record<string, any>>(
   shape: readonly (keyof T)[],
@@ -120,10 +116,6 @@ async function invoke(
   return fn(null, params);
 }
 
-// ---------------------------------------------------------------------------
-// Baseline structure
-// ---------------------------------------------------------------------------
-
 describe('ipc handlers — structure', () => {
   it('returns a map of channel names to handler functions', () => {
     const handlers = getHandlerMap();
@@ -143,7 +135,6 @@ describe('ipc handlers — structure', () => {
     const channels = new Set(Object.keys(handlers));
 
     const required = [
-      // Accounts
       'list_accounts',
       'create_account',
       'update_account',
@@ -156,7 +147,6 @@ describe('ipc handlers — structure', () => {
       'list_project_overrides',
       'discover_accounts',
       'explain_account_resolution',
-      // Claude
       'list_projects',
       'create_project',
       'get_project_sessions',
@@ -173,8 +163,8 @@ describe('ipc handlers — structure', () => {
       'update_hooks_config',
       'validate_hook_command',
       'get_merged_hooks_config',
-      // Sessions (start/send/respond/stop/interrupt are typed protocol
-      // methods, not handler-map channels — see TYPED_SESSION_CHANNELS)
+      // start/send/respond/stop/interrupt are typed protocol methods, not
+      // handler-map channels.
       'session_get_info',
       'session_set_effort',
       'session_mcp_server_status',
@@ -184,25 +174,17 @@ describe('ipc handlers — structure', () => {
       'session_plugins',
       'session_get_permissions',
       'session_update_permission',
-      // Usage
       'get_usage_stats',
-      // Binary
       'get_claude_binary_path',
-      // MCP
       'mcp_add',
       'mcp_list',
-      // Slash commands
       'slash_commands_list',
-      // Logging
       'log_write_batch',
-      // Storage
       'storage_list_tables',
       'storage_execute_sql',
       'get_setting',
       'save_setting',
-      // Proxy
       'get_proxy_settings',
-      // Git
       'get_git_branch',
       'start_session_git_watch',
       'stop_session_git_watch',
@@ -216,7 +198,6 @@ describe('ipc handlers — structure', () => {
 
   it('resolves to null for every channel when no services are provided', async () => {
     const handlers = getHandlerMap();
-    // Pick a few that take params and a few that don't to exercise both wrap paths
     const samples = [
       { channel: 'list_accounts' },
       { channel: 'create_account', params: { name: 'X' } },
@@ -231,10 +212,6 @@ describe('ipc handlers — structure', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Channel → service dispatch
-// ---------------------------------------------------------------------------
-
 describe('ipc handlers — dispatch to services', () => {
   let services: ReturnType<typeof buildMockServices>;
   let handlers: Record<string, any>;
@@ -243,8 +220,6 @@ describe('ipc handlers — dispatch to services', () => {
     services = buildMockServices();
     handlers = getHandlerMap(services as any);
   });
-
-  // ── Accounts ────────────────────────────────────────────────────────────
 
   it('list_accounts → accounts.list()', async () => {
     const result = await invoke(handlers, 'list_accounts');
@@ -319,8 +294,6 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.accounts.create).toHaveBeenCalledWith(params);
   });
 
-  // ── Codex auth (per-configDir) ────────────────────────────────────────────
-
   it('codex_auth_status forwards configDir (both case styles) to the service', async () => {
     await invoke(handlers, 'codex_auth_status', { configDir: '/tmp/.codex-a' });
     await invoke(handlers, 'codex_auth_status', { config_dir: '/tmp/.codex-b' });
@@ -337,8 +310,6 @@ describe('ipc handlers — dispatch to services', () => {
     await invoke(handlers, 'codex_auth_start_login', { configDir: '/tmp/.codex-a' });
     expect(services.codexAuth.startLoginFlow).toHaveBeenCalledWith({ configDir: '/tmp/.codex-a' });
   });
-
-  // ── Claude auth (per-configDir) ───────────────────────────────────────────
 
   it('claude_auth_begin forwards configDir (both case styles)', async () => {
     await invoke(handlers, 'claude_auth_begin', { configDir: '/tmp/.claude-a' });
@@ -375,8 +346,6 @@ describe('ipc handlers — dispatch to services', () => {
     await expect(invoke(handlers, 'claude_auth_logout', {})).rejects.toThrow(/configDir is required/);
     expect(services.claudeAuth.logout).not.toHaveBeenCalled();
   });
-
-  // ── Claude ──────────────────────────────────────────────────────────────
 
   it('list_projects passes config_dir through', async () => {
     await invoke(handlers, 'list_projects', { config_dir: '/home/me/.claude' });
@@ -427,16 +396,11 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.claude.saveSystemPrompt).toHaveBeenNthCalledWith(2, 'B', undefined);
   });
 
-  // ── Sessions ────────────────────────────────────────────────────────────
-
   it('session_get_info normalizes the tab id', async () => {
     await invoke(handlers, 'session_get_info', { session_id: 'b' });
     expect(services.sessions.getInfo).toHaveBeenCalledWith('b');
   });
 
-  // The typed session channels belong to the protocol: the renderer's shim
-  // turns them into session.create / turn.send / ..., and the rpc allowlist
-  // denies them. A handler-map entry for one would be unreachable.
   it('serves none of the typed session channels', () => {
     for (const ch of ['session_start', 'session_rebind', 'session_send_message', 'session_send_structured_message', 'session_respond_permission', 'session_stop', 'session_interrupt']) {
       expect(handlers[ch]).toBeUndefined();
@@ -450,8 +414,6 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.sessions.setEffort).toHaveBeenNthCalledWith(2, 's2', 'low');
   });
 
-  // ── Session Permissions (file-based) ────────────────────────────────────
-
   it('session_get_permissions reads from user, project, and local settings files', async () => {
     const fs = await import('node:fs');
     const path = await import('node:path');
@@ -460,11 +422,8 @@ describe('ipc handlers — dispatch to services', () => {
     const projDir = path.join(tmpDir, 'project');
     fs.mkdirSync(path.join(projDir, '.claude'), { recursive: true });
 
-    // Write user settings
     fs.writeFileSync(path.join(tmpDir, 'settings.json'), JSON.stringify({ permissions: { allow: ['Bash(*)'], deny: ['Write(/etc/*)'] } }));
-    // Write project settings
     fs.writeFileSync(path.join(projDir, '.claude', 'settings.json'), JSON.stringify({ permissions: { allow: ['Read(*)'] } }));
-    // Write local settings
     fs.writeFileSync(path.join(projDir, '.claude', 'settings.local.json'), JSON.stringify({ permissions: { allow: ['Edit(*)'], deny: [] } }));
 
     const result = await invoke(handlers, 'session_get_permissions', { configDir: tmpDir, projectPath: projDir }) as any[];
@@ -512,7 +471,6 @@ describe('ipc handlers — dispatch to services', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-perm-push-'));
     const projDir = path.join(tmpDir, 'project');
     fs.mkdirSync(path.join(projDir, '.claude'), { recursive: true });
-    // Pre-existing local rule, plus a user rule to prove we send the union.
     fs.writeFileSync(
       path.join(projDir, '.claude', 'settings.local.json'),
       JSON.stringify({ permissions: { allow: ['Edit(/.claude/commands/*)'] } }),
@@ -535,7 +493,6 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.sessions.applyPermissions).toHaveBeenCalledTimes(1);
     const [tabId, perms] = services.sessions.applyPermissions.mock.calls[0];
     expect(tabId).toBe('tab-live');
-    // Allow list = union of user + local (post-write), deduped.
     expect((perms).allow.sort()).toEqual(
       ['Bash(git:*)', 'Bash(npm:*)', 'Edit(/.claude/commands/*)'].sort(),
     );
@@ -613,8 +570,6 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.claude.createProject).toHaveBeenCalled();
   });
 
-  // ── Usage ───────────────────────────────────────────────────────────────
-
   it('usage channels forward the param object', async () => {
     await invoke(handlers, 'get_usage_stats', { days: 7 });
     await invoke(handlers, 'get_usage_by_date_range', {
@@ -633,8 +588,6 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.usage.getDetails).toHaveBeenCalledWith({ limit: 10 });
   });
 
-  // ── Claude binary ───────────────────────────────────────────────────────
-
   it('claude binary channels route through the service', async () => {
     await invoke(handlers, 'get_claude_binary_path');
     await invoke(handlers, 'set_claude_binary_path', { path: '/usr/bin/claude' });
@@ -644,8 +597,6 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.claudeBinary.setPath).toHaveBeenCalledWith('/usr/bin/claude');
     expect(services.claudeBinary.listInstallations).toHaveBeenCalledTimes(1);
   });
-
-  // ── MCP ─────────────────────────────────────────────────────────────────
 
   it('mcp channels route through the service', async () => {
     await invoke(handlers, 'mcp_add', { name: 'srv' });
@@ -675,8 +626,6 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.mcp.saveProjectConfig).toHaveBeenCalled();
   });
 
-  // ── Slash commands ──────────────────────────────────────────────────────
-
   it('slash command channels normalize commandId', async () => {
     await invoke(handlers, 'slash_commands_list');
     await invoke(handlers, 'slash_command_get', { commandId: 'x' });
@@ -691,8 +640,6 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.slashCommands.delete).toHaveBeenCalledWith('x', undefined, undefined);
   });
 
-  // ── Logging ─────────────────────────────────────────────────────────────
-
   it('log_write_batch pulls entries off the params', async () => {
     const entries = [{ level: 'info', message: 'hi' }];
     await invoke(handlers, 'log_write_batch', { entries });
@@ -704,8 +651,6 @@ describe('ipc handlers — dispatch to services', () => {
     await invoke(handlers, 'log_query', params);
     expect(services.logging.query).toHaveBeenCalledWith(params);
   });
-
-  // ── Git Branch ──────────────────────────────────────────────────────────
 
   it('get_git_branch returns the current branch for a git repo', async () => {
     const result = await invoke(handlers, 'get_git_branch', { projectPath: process.cwd() }) as string | null;
@@ -729,8 +674,6 @@ describe('ipc handlers — dispatch to services', () => {
     expect(result).toBeNull();
   });
 
-  // ── Proxy ───────────────────────────────────────────────────────────────
-
   it('proxy channels route through the service', async () => {
     await invoke(handlers, 'get_proxy_settings');
     await invoke(handlers, 'save_proxy_settings', { enabled: true });
@@ -738,8 +681,6 @@ describe('ipc handlers — dispatch to services', () => {
     expect(services.proxy.getSettings).toHaveBeenCalledTimes(1);
     expect(services.proxy.saveSettings).toHaveBeenCalledWith({ enabled: true });
   });
-
-  // ── Git watcher ─────────────────────────────────────────────────────────
 
   it('start_session_git_watch forwards the project path and returns the service result', async () => {
     const snap = { project: { path: '/tmp/x', branch: 'main', changed: 0, untracked: 0, error: null }, worktrees: [] };
@@ -816,10 +757,6 @@ describe('ipc handlers — dispatch to services', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Error wrapping — wrap / wrapWith rethrow errors as Error instances
-// ---------------------------------------------------------------------------
-
 describe('ipc handlers — error propagation', () => {
   it('wraps thrown Error objects and preserves the message', async () => {
     const services = buildMockServices();
@@ -856,10 +793,7 @@ describe('ipc handlers — error propagation', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Storage channels — these use the real `database` dependency rather than a
-// mocked service because the handler contains all the SQL inline.
-// ---------------------------------------------------------------------------
+// The real database, not a mock: the handler holds its SQL inline.
 
 describe('ipc handlers — storage channels', () => {
   let db: Database;
@@ -867,7 +801,6 @@ describe('ipc handlers — storage channels', () => {
 
   beforeEach(() => {
     db = createDatabase(':memory:');
-    // Seed a simple table
     db.raw.exec(`
       CREATE TABLE items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -922,7 +855,6 @@ describe('ipc handlers — storage channels', () => {
       tableName: 'items',
       searchQuery: 'alpha',
     })) as any;
-    // Should match both "alpha" and "alphabet"
     expect(result.total_rows).toBe(2);
   });
 
@@ -982,13 +914,10 @@ describe('ipc handlers — storage channels', () => {
   });
 
   it('storage_execute_sql is disabled in packaged builds (allowRawSql falsy)', async () => {
-    // Production default: the arbitrary-SQL admin channel must be inert so a
-    // compromised renderer (rendered tool/MCP output) cannot run raw SQL.
     const prod = getHandlerMap({ database: db });
     await expect(
       invoke(prod, 'storage_execute_sql', { query: 'SELECT name FROM items' }),
     ).rejects.toThrow(/disabled/i);
-    // The table is untouched.
     const count = db.raw.prepare('SELECT COUNT(*) AS c FROM items').get() as { c: number };
     expect(count.c).toBe(3);
   });
@@ -998,7 +927,6 @@ describe('ipc handlers — storage channels', () => {
       tableName: 'items"; DROP TABLE items;--',
     })) as any;
     expect(typeof result.error).toBe('string');
-    // The injection did not run — items still exists with all rows.
     const count = db.raw.prepare('SELECT COUNT(*) AS c FROM items').get() as { c: number };
     expect(count.c).toBe(3);
   });
@@ -1102,10 +1030,6 @@ describe('ipc handlers — storage channels', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Logging handlers — count + prune (previously uncovered)
-// ---------------------------------------------------------------------------
-
 describe('logging handlers', () => {
   it('log_count forwards params to logging.count', async () => {
     const logging = mockService(['writeBatch', 'query', 'count', 'prune'] as const);
@@ -1138,10 +1062,6 @@ describe('logging handlers', () => {
     await expect(invoke(handlers, 'log_prune', { olderThan: 'x' })).resolves.toBeNull();
   });
 });
-
-// ---------------------------------------------------------------------------
-// Branch colors handlers
-// ---------------------------------------------------------------------------
 
 describe('branch colors handlers', () => {
   function makeBranchColors() {
@@ -1219,10 +1139,6 @@ describe('branch colors handlers', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Git branches handler
-// ---------------------------------------------------------------------------
-
 describe('git_list_branches handler', () => {
   it('forwards projectPath to gitBranches.list', async () => {
     const gitBranches = { list: vi.fn().mockResolvedValue(['main', 'dev']) };
@@ -1244,8 +1160,6 @@ describe('git_list_branches handler', () => {
     await expect(invoke(handlers, 'git_list_branches', { projectPath: '/p' })).resolves.toEqual([]);
   });
 });
-
-// ---------------------------------------------------------------------------
 
 describe('git diff handlers', () => {
   it('forwards projectPath to gitDiff.listChangedFiles', async () => {
@@ -1351,9 +1265,6 @@ describe('git diff handlers', () => {
   });
 
   it('returns an empty patch rather than rejecting when the read throws', async () => {
-    // readFileDiff throws for a path that escapes the project. The panel is
-    // auxiliary UI — a refused path must not surface as an unhandled IPC
-    // rejection in the renderer.
     const gitDiff = {
       listChangedFiles: vi.fn().mockResolvedValue([]),
       readFileDiff: vi.fn().mockRejectedValue(new Error('outside the project')),
@@ -1364,10 +1275,6 @@ describe('git diff handlers', () => {
     ).resolves.toBe('');
   });
 });
-
-// ---------------------------------------------------------------------------
-// Lima handlers
-// ---------------------------------------------------------------------------
 
 describe('lima handlers', () => {
   function makeLima() {
@@ -1495,17 +1402,12 @@ describe('lima handlers', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Task 3 (jsonl-as-rendered): conversationStatus removed from IPC contract
-// ---------------------------------------------------------------------------
-
 describe('ipc handlers — conversationStatus removed from IPC contract (Task 3)', () => {
   let services: ReturnType<typeof buildMockServices>;
   let handlers: Record<string, any>;
 
   beforeEach(() => {
     services = buildMockServices();
-    // Override getHealth to return the new shape (no conversationStatus)
     services.sessions.getHealth = vi.fn().mockReturnValue({
       alive: true,
       sessionId: 'sess-1',
@@ -1541,10 +1443,6 @@ describe('ipc handlers — conversationStatus removed from IPC contract (Task 3)
     expect(result).not.toHaveProperty('conversationStatus');
   });
 });
-
-// ---------------------------------------------------------------------------
-// Project repos handlers
-// ---------------------------------------------------------------------------
 
 describe('project repos handlers', () => {
   function makeProjectRepos() {
@@ -1590,10 +1488,6 @@ describe('project repos handlers', () => {
     await expect(invoke(getHandlerMap({}), 'get_project_repos', { projectPath: '/p' })).resolves.toBeNull();
   });
 });
-
-// ---------------------------------------------------------------------------
-// Repo alias handlers
-// ---------------------------------------------------------------------------
 
 describe('repo alias handlers', () => {
   function makeAliases() {

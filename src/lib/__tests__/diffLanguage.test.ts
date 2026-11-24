@@ -48,7 +48,6 @@ describe('languageForPath', () => {
     });
 
     it('does not treat a dotfile name as an extension', () => {
-      // `.gitignore` has no extension — the leading dot starts the name.
       expect(languageForPath('.gitignore')).toBe('text');
     });
 

@@ -26,9 +26,6 @@ describe('resolveEntityPath', () => {
   });
 
   it('reuses a note when the new name matches one of its aliases', () => {
-    // The observed failure: two sessions produced 'Brain memory vault' and
-    // 'omnifex-brain-vault' for one subsystem, and merge dedups by PATH, so
-    // the second became a second note instead of an update.
     expect(
       resolveEntityPath({ name: 'omnifex-brain-vault', aliases: [] }, existing, fallback),
     ).toBe('Subsystems/Brain memory vault.md');
@@ -45,18 +42,12 @@ describe('resolveEntityPath', () => {
   });
 
   it('matches case-insensitively and ignores separators', () => {
-    // 'brain-memory-vault' vs 'Brain memory vault' is the same entity spelled
-    // by a model twice. Hyphen/space/case differences are the overwhelmingly
-    // common way that happens.
     expect(
       resolveEntityPath({ name: 'brain-memory-vault', aliases: [] }, existing, fallback),
     ).toBe('Subsystems/Brain memory vault.md');
   });
 
   it('does not match on a shared substring', () => {
-    // 'Brain' must NOT collapse into 'Brain memory vault'. Over-matching
-    // merges genuinely distinct entities, which is worse than a duplicate —
-    // a duplicate is visible and fixable, a bad merge silently loses one.
     expect(resolveEntityPath({ name: 'Brain', aliases: [] }, existing, fallback)).toBe(
       'Subsystems/Brain.md',
     );
@@ -67,8 +58,6 @@ describe('resolveEntityPath', () => {
       { path: 'Topics/Alpha.md', title: 'Alpha', aliases: ['Beta'] },
       { path: 'Topics/Beta.md', title: 'Beta', aliases: [] },
     ];
-    // Deterministic, and the more specific signal wins: a title is what the
-    // note IS, an alias is only something it is also called.
     expect(resolveEntityPath({ name: 'Beta', aliases: [] }, ambiguous, fallback)).toBe(
       'Topics/Beta.md',
     );
@@ -79,8 +68,6 @@ describe('resolveEntityPath', () => {
       { path: 'Topics/B.md', title: 'Thing', aliases: [] },
       { path: 'Topics/A.md', title: 'Thing', aliases: [] },
     ];
-    // Sorted by path, so re-indexing cannot ping-pong an entity between two
-    // notes and rewrite both on every run.
     expect(resolveEntityPath({ name: 'Thing', aliases: [] }, dupes, fallback)).toBe(
       'Topics/A.md',
     );

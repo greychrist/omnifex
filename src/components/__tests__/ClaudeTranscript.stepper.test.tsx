@@ -6,9 +6,6 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { JsonlNode } from '@/types/jsonl';
 import { STEP_MARGIN_PX } from '@/lib/transcriptStepper';
 
-// The transcript's contexts all read app_settings over IPC and the message
-// bodies are irrelevant here — this file is about which rows become
-// navigation anchors, so everything below the row wrapper is stubbed out.
 vi.mock('@/contexts/MessageRenderingContext', async () => {
   const { createDefaultConfig } = await import('@/lib/messageRenderingConfig');
   const config = createDefaultConfig();
@@ -95,12 +92,8 @@ function renderTranscript(messages: JsonlNode[]) {
   return render(transcriptElement(messages));
 }
 
-/**
- * Fake layout: jsdom reports every rect as zero, so row positions are
- * supplied here as offsets into the scrolled content. The stub subtracts
- * the live `scrollTop` the way a real rect does — returning a fixed viewport
- * top instead makes every offset drift by however far the test scrolled.
- */
+// jsdom reports every rect as zero. The stub subtracts the live scrollTop as a
+// real rect does; a fixed viewport top would drift.
 function fakeLayout(container: HTMLElement, rowOffsets: number[]) {
   const scrollEl = container.querySelector('[data-transcript-scroll]') as HTMLElement;
   scrollEl.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
@@ -124,7 +117,6 @@ describe('ClaudeTranscript — navigation anchors', () => {
     expect(container.querySelectorAll('[data-transcript-step]')).toHaveLength(2);
   });
 
-  // The row Greg asked to step past: it is machinery, and it is long.
   it('does not mark a compact summary as a step stop', () => {
     const { container } = renderTranscript([prompt(), compactSummary(), assistant()]);
     expect(container.querySelectorAll('[data-transcript-step]')).toHaveLength(2);
@@ -159,8 +151,6 @@ describe('ClaudeTranscript — stepping', () => {
     expect(scrollTo).toHaveBeenCalledWith({ top: 500 - STEP_MARGIN_PX, behavior: 'smooth' });
   });
 
-  // The end-to-end version of the skip: the summary sits between two stops,
-  // and one press must clear it rather than land on it.
   it('steps over a compact summary', () => {
     const { container } = renderTranscript([prompt(), compactSummary(), assistant()]);
     const { scrollTo } = fakeLayout(container, [0, 500, 900]);
@@ -168,8 +158,7 @@ describe('ClaudeTranscript — stepping', () => {
     expect(scrollTo).toHaveBeenCalledWith({ top: 900 - STEP_MARGIN_PX, behavior: 'smooth' });
   });
 
-  // Smooth scrolling is async, so `scrollTop` still reads 0 on the second
-  // press. Without the pending-target ref both presses resolve to row two.
+  // Smooth scrolling is async, so `scrollTop` still reads 0 on the second press.
   it('advances a row per press even before the scroll lands', () => {
     const { container } = renderTranscript([prompt(), assistant(), assistant()]);
     const { scrollTo } = fakeLayout(container, [0, 500, 900]);
@@ -191,9 +180,7 @@ describe('ClaudeTranscript — stepping', () => {
 });
 
 describe('ClaudeTranscript — stepping between prompts', () => {
-  // Four rows, prompts at index 0 and 2. The assistant row at 500 sits
-  // between them and must be passed over — that is the whole difference
-  // from the message stepper above.
+  // Four rows, prompts at index 0 and 2.
   const transcript = () => [prompt(), assistant(), prompt(), assistant()];
 
   it('skips straight to the next prompt', () => {
@@ -219,8 +206,6 @@ describe('ClaudeTranscript — stepping between prompts', () => {
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
-  // The two pairs share one pending target — they move the same viewport,
-  // so a message step must not be stepped over by a stale prompt position.
   it('picks up from wherever the message stepper left off', () => {
     const { container } = renderTranscript(transcript());
     const { scrollTo } = fakeLayout(container, [0, 500, 900, 1400]);
@@ -238,9 +223,6 @@ describe('ClaudeTranscript — stepping between prompts', () => {
 });
 
 describe('stepper button icons', () => {
-  // Six buttons stacked in a 32px-wide column: without a subject icon the
-  // message steppers and the prompt steppers are two pairs of near-identical
-  // up/down glyphs, and you have to hover each one to find out which is which.
   const iconNames = (el: HTMLElement) =>
     Array.from(el.querySelectorAll('svg')).map((svg) => svg.getAttribute('class') ?? '');
 
@@ -285,13 +267,10 @@ describe('stepper button icons', () => {
     for (const label of ['Scroll to top', 'Scroll to bottom']) {
       expect(getByLabelText(label).closest('[role="group"]')).toBeNull();
     }
-    // Groups replace the hairline separators between the pairs.
     expect(document.querySelectorAll('[data-testid="gutter-bottom"] > [aria-hidden="true"]')).toHaveLength(0);
   });
 
   it('leaves the jump-to-end buttons as a single glyph', () => {
-    // These two aren't about a subject — they go to an end of the transcript,
-    // so a subject icon would be noise.
     const { getByLabelText } = renderTranscript([prompt(), assistant()]);
     expect(iconNames(getByLabelText('Scroll to top'))).toHaveLength(1);
     expect(iconNames(getByLabelText('Scroll to bottom'))).toHaveLength(1);
@@ -299,8 +278,7 @@ describe('stepper button icons', () => {
 });
 
 describe('ClaudeTranscript — jumping to a message', () => {
-  // One array, rendered twice: rows are keyed by record identity, so a fresh
-  // copy on rerender would remount every row and drop the faked layout.
+  // Rows are keyed by record identity, so a fresh copy would remount every row.
   let messages: JsonlNode[];
   beforeEach(() => { messages = [prompt('p1'), assistant(), prompt('p2'), assistant()]; });
   const transcript = () => messages;
@@ -320,7 +298,6 @@ describe('ClaudeTranscript — jumping to a message', () => {
     expect(row).toHaveAttribute('data-jump-target');
   });
 
-  // Otherwise the next stream tick's auto-scroll yanks the view back down.
   it('stops following the tail', () => {
     const isNearBottomRef = { current: true };
     const { container, rerender } = render(transcriptElement(transcript(), { isNearBottomRef }));

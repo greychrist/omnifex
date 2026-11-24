@@ -54,17 +54,11 @@ describe('changeSessionModel', () => {
   });
 
   it('refreshes context usage after the CLI confirms the switch, so the stale live model cannot win in the header summary', async () => {
-    // Regression: changing model mid-session updated the picker but left
-    // contextUsage.model at the init-time model — sessionControlSummary
-    // prefers the live signal, so the header kept naming the old model
-    // until the next turn's result. The set_model → get_context_usage
-    // round-trip returns the new model immediately (verified against
-    // CLI 2.1.217), so a refresh on confirm fixes the summary.
+    // set_model → get_context_usage returns the new model at once (CLI 2.1.217).
     const { deps, calls } = makeDeps();
     await changeSessionModel('claude-fable-5[1m]', deps);
     expect(deps.api.sessionSetModel).toHaveBeenCalledWith('tab-1', 'claude-fable-5[1m]');
     expect(deps.setContextUsage).toHaveBeenCalledWith(USAGE_FABLE);
-    // Refresh must come after the CLI applied the model, not race it.
     expect(calls).toEqual(['setModel', 'contextUsage']);
   });
 
@@ -99,8 +93,6 @@ describe('changeSessionModel', () => {
     expect(deps.setContextUsage).not.toHaveBeenCalled();
   });
 
-  // A refused switch used to leave the picker on the model the CLI turned
-  // down, and drop a "Model → X" marker for a change that never happened.
   it('restores the previous model and drops no marker when the CLI refuses', async () => {
     const { deps } = makeDeps({ setModelError: new Error('model not available') });
     await changeSessionModel('sonnet', deps);
@@ -108,8 +100,7 @@ describe('changeSessionModel', () => {
     expect(deps.appendMessage).not.toHaveBeenCalled();
   });
 
-  // Since 2.1.307 `claude -p` answers set_model with the id the next turn
-  // runs as. An alias reads better with what it resolved to beside it.
+  // Since 2.1.307 `claude -p` answers set_model with the id the next turn runs as.
   it('names the resolved model in the marker when the CLI reports one', async () => {
     const { deps } = makeDeps({ resolvedModel: 'claude-opus-5-5' });
     await changeSessionModel('opus', deps);

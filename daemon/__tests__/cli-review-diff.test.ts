@@ -24,7 +24,6 @@ function extractor(name: string) {
   return e;
 }
 
-/** A minimal stand-in for a CLI bundle: just the literals the checks read. */
 function fakeBundle(extra = ''): string {
   return [
     // Bare keys where the minifier allows them, quoted where hyphenated — as
@@ -34,8 +33,7 @@ function fakeBundle(extra = ''): string {
     'x={hook_event_name:"PreToolUse"};x={hook_event_name:"Stop"};',
     'y={type:"control_request"};y={type:"control_response"};',
     'this.request({subtype:"interrupt"});this.request({subtype:"set_model"});',
-    // Control-request schemas, the SDK's public methods and @internal ones
-    // alike (2.1.326's prompt_draft_activity never went through this.request).
+    // Includes @internal schemas, which never go through this.request.
     'P=m(()=>u({subtype:T("prompt_draft_activity")}));Q=m(()=>Z({subtype:Y("interrupt")}));',
     'z.option("--resume <id>");z.option("-p, --print");',
     'q.describe("A host wrapping keyboard input must stamp it");',
@@ -94,9 +92,8 @@ describe('EXTRACTORS', () => {
 });
 
 describe('can_use_tool payload keys', () => {
-  // 2.1.329's main emitter spreads `...r.mcpInfo&&{mcp_server:…}` before most
-  // of its keys. A capture that stopped at the first `}` read three keys and
-  // missed the new `auto_modes_check_raised` entirely.
+  // 2.1.329 spreads `...r.mcpInfo&&{…}` before most keys, so a capture cannot
+  // stop at the first `}`.
   it('reads past nested objects and calls to every top-level key', () => {
     const t = 'x={type:"control_request",request:{subtype:"can_use_tool",tool_name:r.name,'
       + '...r.mcpInfo&&{mcp_server:W(r.mcpInfo)},input:q,'
@@ -118,9 +115,7 @@ describe('can_use_tool payload keys', () => {
 });
 
 describe('.describe() strings', () => {
-  // 2.1.312 announced `ask_user_question_unanswered_v1` inside the init
-  // `capabilities` description, a ~2,000-character string. An 800-character
-  // cap dropped it, so the host obligation never reached the review.
+  // 2.1.312 put `ask_user_question_unanswered_v1` in a ~2,000-character string.
   it('keeps a long description whole', () => {
     const long = `Protocol capabilities. ${'x'.repeat(2500)} send it only to a session that advertises this.`;
     expect(extractor('.describe() strings').extract(`a.describe("${long}")`)).toEqual([long]);
@@ -134,9 +129,6 @@ describe('diffSets', () => {
 });
 
 describe('USAGE_ANCHORS', () => {
-  // The list is the script's copy of what the /usage scraper keys on. If the
-  // parser stops using an anchor, the review would count a string nobody
-  // reads; this keeps the copy honest.
   it('is drawn from strings the /usage parser actually contains', () => {
     const parser = fs.readFileSync(path.join(REPO, 'daemon/services/usage-runner/parser.ts'), 'utf8');
     for (const a of USAGE_ANCHORS) expect(parser).toContain(a);
@@ -174,8 +166,6 @@ describe('UNDRAWN_SYSTEM_SUBTYPES', () => {
 describe('loadInventory (bound to the real code)', () => {
   it('finds what OmniFex sends and passes, wherever it is sent from', async () => {
     const inv = await loadInventory(REPO);
-    // queries.ts, lifecycle.ts, models.ts and the engine all send; a pointer
-    // at one file is how the old prompt under-counted.
     for (const s of ['side_question', 'rename_session', 'apply_flag_settings', 'initialize',
       'generate_session_title', 'interrupt', 'mcp_toggle']) {
       expect(inv.controlSubtypesSent).toContain(s);
@@ -200,32 +190,21 @@ describe('coverage', () => {
     const text = fakeBundle('x={hook_event_name:"BrandNewHook"};').replace(
       '"ai-title":"latest"', '"ai-title":"latest","brand-new-record":"latest"');
     const findings = Object.fromEntries(coverage(text, inv).map((f) => [f.check, f.items]));
-    // Only the new bookkeeping type: the four transcript types are the
-    // classifier's own cases, whatever a fieldless probe of them returns.
     expect(findings['record types OmniFex would draw as Unrecognized']).toEqual(['brand-new-record']);
     expect(findings['hook events missing from HOOK_EVENTS']).toContain('BrandNewHook');
-    // The fake bundle knows neither, so both must surface as possibly broken.
     expect(findings['control subtypes we send that the binary lacks']).toContain('side_question');
     expect(findings['CLI flags we pass that the binary lacks']).toContain('--permission-prompt-tool');
-    // `set_model` is catalogued; a request the catalog has never classified
-    // is what a review must decide on.
     expect(findings['SDK control requests not in the catalog']).toEqual([]);
-    // A new system subtype is flagged; a baselined or classified one is not.
     const sys = coverage(`${text}\ns={type:"system",subtype:"brand_new_subtype"};s={type:"system",subtype:"compact_boundary"};s={type:"system",subtype:"agents_killed"};`, inv);
     expect(sys.find((f) => f.check === 'system subtypes OmniFex would draw as Unrecognized')?.items)
       .toEqual(['brand_new_subtype']);
-    // A baseline entry the binary dropped is stale.
     expect(sys.find((f) => f.check === 'undrawn-subtype baseline entries the binary no longer has')?.items)
       .not.toContain('agents_killed');
     expect(sys.find((f) => f.check === 'undrawn-subtype baseline entries the binary no longer has')?.items)
       .toContain('api_retry');
-    // A session-metadata record appended with a sessionId but absent from
-    // the merge map (`repl-mode`, 2.1.318) must still be asked about.
     const meta = coverage(`${text}\nY.push({type:"metadata-only",replMode:r,sessionId:y});Y.push({type:"atis-latch",sessionId:y});`, inv);
     expect(meta.find((f) => f.check === 'record types OmniFex would draw as Unrecognized')?.items)
       .toEqual(['brand-new-record', 'metadata-only']);
-    // A catalogued request the CLI offers only as an @internal schema
-    // (prompt_draft_activity, 2.1.326) is still offered.
     expect(findings['catalog entries the SDK no longer offers']).not.toContain('prompt_draft_activity');
     const withNew = coverage(`${text}\nthis.request({subtype:"brand_new_request"});`, inv);
     expect(withNew.find((f) => f.check === 'SDK control requests not in the catalog')?.items)
@@ -264,9 +243,8 @@ describe('runReview', () => {
   });
 
   it('flags a /usage anchor whose count dropped, even when it is not zero', async () => {
-    // 2.1.312 reworded the contributing header; the old string survived only
-    // in the binary's embedded changelog, so the count went 3 -> 1 and the
-    // "0 means blind" rule never fired.
+    // 2.1.312 reworded the header; the old string survives only in the binary's
+    // embedded changelog.
     const old = "What's contributing to your limits usage";
     const dir = tmpVersions({
       '1.0.0': fakeBundle(`a="${old}?";b="${old}?";`),

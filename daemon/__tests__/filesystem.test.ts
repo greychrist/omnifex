@@ -4,18 +4,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createFilesystemService } from '../services/filesystem';
 
-// The filesystem service powers the FilePicker's `@`-mention navigation:
-//   - listDirectoryContents(path)  → one level, sorted (dirs first, then
-//                                    files, alpha within each), dotfiles
-//                                    hidden by default.
-//   - searchFiles(basePath, query) → recursive substring search, case-
-//                                    insensitive, capped to prevent
-//                                    runaway walks in deep monorepos.
-//
-// Both must surface a clean Error on missing / non-directory paths so the
-// FilePicker can render the "Failed to load directory" state instead of
-// hanging.
-
 describe('createFilesystemService — listDirectoryContents', () => {
   let tmp: string;
 
@@ -167,7 +155,6 @@ describe('createFilesystemService — searchFiles', () => {
   });
 
   it('caps results so deep monorepos can\'t produce runaway responses', async () => {
-    // Drop 250 matching files into a single subdir.
     fs.mkdirSync(path.join(tmp, 'bulk'));
     for (let i = 0; i < 250; i++) {
       fs.writeFileSync(path.join(tmp, 'bulk', `match-${i}.json`), '');
@@ -178,12 +165,6 @@ describe('createFilesystemService — searchFiles', () => {
   });
 });
 
-// createDirectory backs the Projects page's New Project button: the renderer
-// shows a native save dialog (parent folder + name) and this makes the folder.
-// An existing FOLDER is returned as-is: the save dialog offers "Replace?" for
-// one, and a retry after a cancelled account picker names the folder the first
-// attempt already made — both mean "open that folder", never "wipe it". It
-// never conjures missing parents from a typo'd path.
 describe('createFilesystemService — createDirectory', () => {
   let tmp: string;
 
@@ -232,10 +213,6 @@ describe('createFilesystemService — createDirectory', () => {
   });
 });
 
-// A file dropped onto the chat with no path behind it (dragged from a browser,
-// a screenshot thumbnail, the iPad) is saved as a copy and the prompt names
-// the copy. Each drop gets its own folder so two `image.png`s never collide,
-// and the file keeps its own name so Claude sees what it was called.
 describe('createFilesystemService — saveDroppedFile', () => {
   let tmp: string;
 

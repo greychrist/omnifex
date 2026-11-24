@@ -36,10 +36,8 @@ describe('FindBar', () => {
     expect(screen.getByTestId('find-count').textContent).toBe('3/5');
   });
 
-  // RTL's getByTestId returns HTMLElement by default. Use the generic
-  // overload to narrow to HTMLButtonElement so .disabled type-checks
-  // (and so eslint's no-unnecessary-type-assertion doesn't try to
-  // strip a trailing `as HTMLButtonElement` cast).
+  // The generic overload narrows to HTMLButtonElement, so `.disabled`
+  // type-checks without a cast.
   it('disables prev/next when count is zero', () => {
     render(<FindBar {...baseProps} count={0} />);
     expect(screen.getByTestId<HTMLButtonElement>('find-next').disabled).toBe(true);

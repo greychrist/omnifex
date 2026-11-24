@@ -6,16 +6,9 @@ import { collectSubagentFiles, type CostFs } from '../services/cost/transcript-u
 import { rangeReader } from './fixtures/cost/range-reader';
 import type { SessionCostDailyRow } from '../services/cost/session-cost-core';
 
-/**
- * The CLI writes subagent transcripts at two depths:
- *   <session>/subagents/agent-<id>.jsonl                    — plain Task subagents
- *   <session>/subagents/workflows/wf_<id>/agent-<id>.jsonl  — Workflow subagents
- *
- * A non-recursive listing of `subagents/` sees only the first, silently
- * dropping every workflow agent's cost. Measured on ~/.claude-work for
- * 2026-08 that was 16 files and $37.41 — see
- * docs/superpowers/specs/2026-08-26-cost-report-page-design.md §1.1.
- */
+// The CLI writes subagent transcripts at two depths:
+//   <session>/subagents/agent-<id>.jsonl
+//   <session>/subagents/workflows/wf_<id>/agent-<id>.jsonl
 
 const CFG = '/cfg';
 const PROJ_DIR = path.join(CFG, 'projects', '-Users-me-proj');
@@ -98,8 +91,6 @@ describe('subagent transcript discovery', () => {
     expect((await svc.backfill([{ name: 'Work', config_dir: CFG }])).sessionsScanned).toBe(1);
     expect((await svc.backfill([{ name: 'Work', config_dir: CFG }])).sessionsScanned).toBe(0);
 
-    // A workflow spawns another agent: same main file, same flat subagent,
-    // one more file two levels down.
     files[path.join(WF_DIR, 'agent-wf3.jsonl')] = assistantLine('m-wf3', 'claude-opus-4-8', 16_000);
     dirs[WF_DIR].push({ name: 'agent-wf3.jsonl', isDirectory: false });
 

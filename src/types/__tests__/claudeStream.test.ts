@@ -7,10 +7,8 @@ import {
   isUserMessage,
 } from '../claudeStream';
 
-// Test factories. The cast widens through `unknown` because the real
-// CliAssistantMessage / CliUserMessage / CliResultMessage / CliSystemMessage
-// types require `uuid`, `session_id`, etc., which the runtime guards never
-// depend on — these helpers only branch on `type` / `subtype`.
+// The cast widens through `unknown`: the real Cli*Message types require fields
+// the guards never read.
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- API surface stability — generic param documents intent.
 const make = <T extends ClaudeStreamMessage['type']>(
   partial: Record<string, unknown> & { type: T },
@@ -34,7 +32,6 @@ describe('ClaudeStreamMessage guards', () => {
 
   describe('isUserMessage', () => {
     it('narrows live user messages and JSONL-replay user messages identically', () => {
-      // Both CliUserMessage and CliUserMessageReplay carry type: 'user'.
       const live = make({ type: 'user', message: { content: 'hi' } });
       const replay = make({ type: 'user', message: { content: 'hi' }, isReplay: true });
       expect(isUserMessage(live)).toBe(true);

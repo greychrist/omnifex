@@ -7,10 +7,8 @@ import {
   WIKILINK_SCHEME,
 } from '@/lib/brainWikilinks';
 
-// These nine cases are deliberately identical to
-// daemon/__tests__/brain-links.test.ts. The two implementations are twins
-// across the process boundary; if one grammar drifts, one of these suites
-// should go red.
+// Deliberately identical to daemon/__tests__/brain-links.test.ts: the two
+// implementations are twins.
 describe('parseWikilinks', () => {
   it('finds a bare link', () => {
     expect(parseWikilinks('see [[Permission decider]] for detail')).toEqual(['Permission decider']);
@@ -79,8 +77,6 @@ describe('resolveWikilink', () => {
   });
 
   it('returns null when a bare title is ambiguous', () => {
-    // Two notes are titled Sessions; guessing one would silently open a
-    // different note than the link's author meant.
     expect(resolveWikilink('Sessions', notes)).toBeNull();
   });
 

@@ -5,11 +5,8 @@ import { renderHook, act, cleanup, waitFor } from '@testing-library/react';
 import { TabProvider, useTabContext } from '../TabContext';
 import { useTabState } from '@/hooks/useTabState';
 
-// Persistence + remote services: stub at the module boundary so tests
-// don't touch localStorage and don't need IPC. Each test starts with an
-// empty saved-tabs snapshot; the Provider's mount effect then constructs
-// a default tab (`projects` when listAccounts returns ≥1, `settings`
-// when it returns []).
+// Stubbed at the module boundary. The mount effect builds a default tab:
+// `projects` with at least one account, `settings` with none.
 vi.mock('@/services/tabPersistence', () => ({
   TabPersistenceService: {
     migrateFromOldFormat: vi.fn(),
@@ -37,7 +34,6 @@ vi.mock('@/lib/api', () => ({
 
 import { api } from '@/lib/api';
 
-// window.electronAPI.onEvent — used for the notification-clicked listener.
 beforeEach(() => {
   (globalThis as any).window.electronAPI = {
     onEvent: vi.fn(() => () => {}),
@@ -54,8 +50,6 @@ function wrapper({ children }: { children: React.ReactNode }) {
 }
 
 async function flushInitialMount() {
-  // The Provider's mount effect kicks off an async listAccounts() call.
-  // Wait for the default tab to land before each test starts asserting.
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
@@ -72,12 +66,6 @@ describe('TabContext — initialization', () => {
 
 describe('TabContext — agent field', () => {
   it('addTab stores the agent identity on the new tab record', async () => {
-    // Codex tabs must round-trip the agent kind so the session-start API
-    // can dispatch the right engine; without it every tab would default
-    // to Claude regardless of what the user picked in the new-session
-    // form. Task 11 ships the field; this guards against future code
-    // accidentally erasing it (e.g. constructing tab objects without
-    // spreading the input).
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
 
@@ -96,12 +84,6 @@ describe('TabContext — agent field', () => {
   });
 
   it('the default mount tab is constructed with agent: "claude"', async () => {
-    // The Provider's mount effect builds the initial tab itself (not via
-    // addTab) when there's no saved state. The Tab interface marks
-    // `agent` as required, so any construction site that forgets it
-    // would either fail typecheck or — worse — assign `undefined` at
-    // runtime. Pin the actual runtime value here so the default-tab
-    // construction stays honest about the contract.
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
     expect(result.current.tabs[0].agent).toBe('claude');
@@ -171,19 +153,15 @@ describe('TabContext — addTab / removeTab', () => {
       bId = result.current.addTab({ type: 'chat', title: 'B', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
       cId = result.current.addTab({ type: 'chat', title: 'C', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
     });
-    // active = cId. Close it; active should land on the new last-tab (b).
     act(() => { result.current.removeTab(cId); });
     expect(result.current.activeTabId).toBe(bId);
     expect(result.current.tabs.map((t) => t.id)).toEqual([
       result.current.tabs[0].id, aId, bId,
     ]);
-    // Order reassigned 0..n-1.
     expect(result.current.tabs.map((t) => t.order)).toEqual([0, 1, 2]);
   });
 
   it('removeTab on the last tab replaces it with a fresh, active Projects tab', async () => {
-    // There is no empty state: closing the last tab lands on the Projects
-    // page, the same place a cold start with no saved tabs does.
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
     let chatId = '';
@@ -260,13 +238,6 @@ describe('TabContext — updateTab / setActiveTab / reorderTabs', () => {
   });
 
   it('updateTab is a no-op when every update field already equals the tab value', async () => {
-    // Regression guard: a misbehaving caller (e.g. an unstable callback
-    // prop fired by a useEffect dep change) used to drive an infinite
-    // render loop because updateTab always allocated a new tabs array
-    // and a new `updatedAt: new Date()`, even when nothing actually
-    // changed. Identical updates must now preserve identity so the loop
-    // cannot self-sustain even if a future callback slips through
-    // unprotected.
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
     const id = result.current.tabs[0].id;
@@ -289,9 +260,6 @@ describe('TabContext — updateTab / setActiveTab / reorderTabs', () => {
   });
 
   it('updateTab still applies when a single field genuinely changes', async () => {
-    // Companion to the no-op idempotency test: when even one field
-    // differs, the tab object identity must update and updatedAt must
-    // move forward so consumers reliably observe the change.
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
     const id = result.current.tabs[0].id;
@@ -322,8 +290,6 @@ describe('TabContext — updateTab / setActiveTab / reorderTabs', () => {
         hasUnreadResult: true,
       });
     });
-    // Newly added tabs auto-activate — switch away then back to exercise the
-    // unread-clearing branch explicitly.
     act(() => { result.current.setActiveTab(result.current.tabs[0].id); });
     expect(result.current.tabs.find((t) => t.id === unreadId)?.hasUnreadResult).toBe(true);
 
@@ -348,18 +314,12 @@ describe('TabContext — updateTab / setActiveTab / reorderTabs', () => {
       result.current.addTab({ type: 'chat', title: 'B', agent: 'claude', status: 'idle', hasUnsavedChanges: false });
     });
     const ids = result.current.tabs.map((t) => t.id);
-    // Move position 0 (the default tab) to position 2.
     act(() => { result.current.reorderTabs(0, 2); });
     const after = result.current.tabs.map((t) => t.id);
     expect(after).toEqual([ids[1], ids[2], ids[0]]);
     expect(result.current.tabs.map((t) => t.order)).toEqual([0, 1, 2]);
   });
 
-  // A drag fires reorderTabs once per neighbour crossed. Rebuilding every tab
-  // object each time changes the props of every mounted TabPanel, which
-  // defeats its React.memo and re-renders every open session's transcript
-  // mid-drag — the measured cause of the drag hiccup. Only the tabs whose
-  // position actually moved may be re-created.
   it('reorderTabs preserves object identity for tabs whose order did not change', async () => {
     const { result } = renderHook(() => useTabContext(), { wrapper });
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
@@ -371,17 +331,13 @@ describe('TabContext — updateTab / setActiveTab / reorderTabs', () => {
     const before = result.current.tabs;
     expect(before).toHaveLength(4);
 
-    // Swap the first two — the single-neighbour crossing a drag produces.
     act(() => { result.current.reorderTabs(0, 1); });
     const after = result.current.tabs;
 
-    // The two that swapped are new objects with corrected order fields...
     expect(after[0].id).toBe(before[1].id);
     expect(after[1].id).toBe(before[0].id);
     expect(after.map((t) => t.order)).toEqual([0, 1, 2, 3]);
 
-    // ...and the two that never moved are the SAME objects, so their panels
-    // bail out of re-rendering entirely.
     expect(after[2]).toBe(before[2]);
     expect(after[3]).toBe(before[3]);
   });
@@ -490,7 +446,6 @@ describe('useTabState — operation wrappers', () => {
       result.current.createChatTab(undefined, 'A');
       result.current.createChatTab(undefined, 'B');
     });
-    // Active = last (just-added 'B'); switch to next → wraps to first.
     const firstId = result.current.tabs[0].id;
     const lastId = result.current.tabs[result.current.tabs.length - 1].id;
     expect(result.current.activeTabId).toBe(lastId);
@@ -531,7 +486,6 @@ describe('useTabState — operation wrappers', () => {
     await waitFor(() => { expect(result.current.tabs.length).toBe(1); });
     let chatId = '';
     act(() => { chatId = result.current.createChatTab('proj-x', 'Hi'); });
-    // updateTab to attach a sessionId so findTabBySessionId can find it.
     act(() => { result.current.updateTab(chatId, { sessionId: 'sess-1' }); });
     expect(result.current.findTabBySessionId('sess-1')?.id).toBe(chatId);
     expect(result.current.findTabBySessionId('missing')).toBeUndefined();
@@ -553,8 +507,7 @@ describe('useTabState — operation wrappers', () => {
 
 describe('useTabContext — thrown without provider', () => {
   it('throws when used outside of a TabProvider', () => {
-    // React logs the boundary error twice (dev double-render) before
-    // re-throwing — suppress so test output stays clean.
+    // React logs the boundary error twice (dev double-render).
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       expect(() => renderHook(() => useTabContext())).toThrow(
@@ -568,10 +521,6 @@ describe('useTabContext — thrown without provider', () => {
 
 describe('TabContext — addTab ordering', () => {
   it('numbers tabs added in the same render from the array, not a stale snapshot', () => {
-    // `order: tabs.length` read a render-time snapshot, so two adds batched
-    // into one render both claimed the same index and `order` stopped
-    // agreeing with the array it indexes. Persistence sorts by that field on
-    // reload, so the tabs came back in the wrong order.
     const { result } = renderHook(() => useTabContext(), { wrapper });
     act(() => {
       for (const title of ['A', 'B', 'C']) {

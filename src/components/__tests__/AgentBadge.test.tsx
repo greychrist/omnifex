@@ -6,19 +6,12 @@ import { TooltipProvider } from '../ui/tooltip-modern';
 
 afterEach(() => { cleanup(); });
 
-// The badge uses `TooltipSimple` for the hover label, which requires a
-// surrounding `TooltipProvider`. Wrap every render with one so the radix
-// context is available — matches the production setup, where the
-// session header sits inside `<TooltipProvider>` (see AgentSession.tsx).
+// TooltipSimple needs a surrounding TooltipProvider.
 function renderBadge(node: React.ReactElement) {
   return render(<TooltipProvider>{node}</TooltipProvider>);
 }
 
 describe('AgentBadge', () => {
-  // The badge is now icon-only — the brand name lives in the aria-label
-  // (for screen readers) and the tooltip (on hover) rather than as
-  // visible text. Tests assert on the aria-label.
-
   it('exposes a "Claude" brand icon (role=img) when agent=claude', () => {
     renderBadge(<AgentBadge agent="claude" />);
     expect(screen.getByRole('img', { name: 'Claude' })).toBeTruthy();
@@ -52,8 +45,6 @@ describe('AgentBadge', () => {
   });
 
   it('renders a non-interactive element (no button role) when onClick is absent', () => {
-    // Codex tabs use the badge as informational only — no click target,
-    // no button semantics. The brand icon is still present.
     renderBadge(<AgentBadge agent="codex" />);
     expect(screen.queryByRole('button')).toBeNull();
     expect(screen.getByRole('img', { name: 'OpenAI Codex' })).toBeTruthy();

@@ -170,7 +170,6 @@ describe('SessionMCPStatus row actions', () => {
     openMenu('atlassian');
     fireEvent.click(screen.getByRole('menuitem', { name: 'Authenticate' }));
     expect(await screen.findByText('Still waiting — reopen the panel after signing in')).toBeTruthy();
-    // The row returns to its normal state: the menu works again.
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Actions for atlassian' }).disabled).toBe(false);
   });
 
@@ -187,8 +186,6 @@ describe('SessionMCPStatus row actions', () => {
     expect(sessionMcpAuthenticate).toHaveBeenCalledTimes(1);
   });
 
-  // The web client finishes sign-in by pasting the redirect URL
-  // (mcp_oauth_callback_url), so it gets the same items as the desktop.
   it('offers auth items in the web client too', () => {
     mockPlatform.isDesktop = false;
     renderStatus([atlassian]);
@@ -203,8 +200,6 @@ describe('SessionMCPStatus row actions', () => {
     expect(trigger.parentElement?.closest('button')).toBeNull();
   });
 
-  // Drives the action's predicate through a status sequence, like the real
-  // watch: true at the first tick it holds, false (timeout) if it never does.
   const feeding = (statuses: SessionMcpServerStatus['status'][]) => {
     const seen: boolean[] = [];
     const watchUntil = vi.fn<WatchUntil>((name, done) => {

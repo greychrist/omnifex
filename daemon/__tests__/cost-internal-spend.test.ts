@@ -4,14 +4,6 @@ import { createCostHistoryService } from '../services/cost/cost-history';
 import type { CostFs } from '../services/cost/transcript-usage';
 import { rangeReader } from './fixtures/cost/range-reader';
 
-/**
- * OmniFex's own CLI runs (summaries, Brain) are priced the moment they finish
- * and their transcripts are deleted — only the spend is kept. The transcript is
- * ordinary CLI JSONL, so it goes through the same parser and the same rates;
- * what differs is attribution: the project path is a display label for the
- * activity, never the scratch cwd the CLI ran in.
- */
-
 /** One deduped assistant record: 1M output tokens of Sonnet 5 = $10.00. */
 function transcript(sessionId: string, date: string): string {
   return JSON.stringify({
@@ -29,7 +21,6 @@ function transcript(sessionId: string, date: string): string {
   });
 }
 
-/** In-memory CostFs over a flat path -> contents map. */
 function fakeFs(files: Record<string, string>): CostFs {
   const dirsOf = (dir: string) => {
     const prefix = dir.endsWith('/') ? dir : `${dir}/`;
@@ -79,9 +70,6 @@ describe('internal spend in the cost table', () => {
     }]);
   });
 
-  // The 2,500 transcripts stranded between June and October were already
-  // priced under the scratch path. Recording them replaces those rows by
-  // session id; it must not add a second copy.
   it('replaces rows an earlier pass wrote under the scratch path', async () => {
     const scratch = '/cfg/work/projects/-private-var-folders-x-T-omnifex-summary-scratch';
     const svc = createCostHistoryService(db, fakeFs({}));
@@ -104,9 +92,6 @@ describe('internal spend in the cost table', () => {
     })]);
   });
 
-  // The runner prices and deletes its own transcript. If the sweep priced it
-  // too while it existed, it would land under the scratch path — the
-  // mislabelling this replaces.
   it('never prices the scratch dir in the projects walk', async () => {
     const svc = createCostHistoryService(db, fakeFs({
       '/cfg/work/projects/-private-var-folders-x-T-omnifex-summary-scratch/abc.jsonl': transcript('abc', '2026-08-26'),

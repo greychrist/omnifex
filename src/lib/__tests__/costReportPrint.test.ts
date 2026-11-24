@@ -13,11 +13,6 @@ function filters(over: Partial<CostFilterState> = {}): CostFilterState {
 }
 
 describe('print hash round-trip', () => {
-  // The print window is a second renderer loading the same index.html. The
-  // hash is the only channel that carries "which report" into it, so a lossy
-  // round-trip means the PDF silently shows a different range than the page
-  // the user pressed the button on.
-
   it('round-trips a default filter state', () => {
     const f = filters();
     expect(parsePrintHash(buildPrintHash(f))).toEqual(f);
@@ -38,8 +33,6 @@ describe('print hash round-trip', () => {
   });
 
   it('round-trips values containing the separators it encodes with', () => {
-    // A project path is arbitrary text. Commas and ampersands in one would
-    // otherwise split into extra filter entries.
     const f = filters({ projects: ['/Users/alice/a,b&c=d', '/Users/alice/#x'] });
     expect(parsePrintHash(buildPrintHash(f))).toEqual(f);
   });
@@ -58,9 +51,6 @@ describe('print hash round-trip', () => {
   });
 
   it('falls back to defaults for a malformed value rather than throwing', () => {
-    // A hand-edited or truncated hash must not crash the print window; it
-    // renders the default report instead, which is visibly wrong rather than
-    // invisibly blank.
     const parsed = parsePrintHash('#print=cost-report&scope=nonsense&groupBy=nonsense');
     expect(parsed).not.toBeNull();
     expect(parsed?.scope).toBe('all');
@@ -69,9 +59,8 @@ describe('print hash round-trip', () => {
 });
 
 describe('pdfPageSize', () => {
-  // printToPDF takes pageSize in INCHES (Electron 41 typings) while the
-  // renderer measures CSS pixels, at 96 per inch. Getting that conversion
-  // wrong yields a PDF that is comically the wrong size, so it is pinned.
+  // The PDF page size is in inches; the renderer measures CSS pixels at 96 per
+  // inch.
 
   it('converts CSS pixels to inches at 96 per inch', () => {
     const { pageSize, scale } = pdfPageSize({ widthPx: 1152, heightPx: 4800 });
@@ -86,15 +75,12 @@ describe('pdfPageSize', () => {
   });
 
   it('scales an over-long report down instead of truncating it', () => {
-    // "One tall page" plus a hard 200in PDF page limit means a very long
-    // report has to shrink to fit. Cutting it off would drop panels, which
-    // is the one thing this feature exists to avoid.
+    // A PDF page is capped at 200in.
     const heightPx = MAX_PDF_INCHES * 96 * 2;
     const { pageSize, scale } = pdfPageSize({ widthPx: 1152, heightPx });
     expect(scale).toBeCloseTo(0.5, 6);
     expect(pageSize.height).toBeLessThanOrEqual(MAX_PDF_INCHES);
     expect(pageSize.height).toBeCloseTo(MAX_PDF_INCHES, 6);
-    // Width shrinks with it, so the aspect ratio — and the layout — is intact.
     expect(pageSize.width).toBeCloseTo(6, 6);
   });
 

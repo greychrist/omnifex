@@ -1,7 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
 
-// Stub the engine so start() doesn't actually spawn a Claude subprocess.
 vi.mock('../services/agents/claude-cli-engine', () => ({
   createClaudeCliEngine: vi.fn(() => ({
     kind: 'claude',
@@ -23,7 +22,6 @@ vi.mock('../services/agents/claude-cli-engine', () => ({
   })),
 }));
 
-// Avoid actual binary resolution.
 vi.mock('../services/sessions/binary', () => ({
   findSystemClaudeBinary: vi.fn(() => '/usr/local/bin/claude'),
 }));
@@ -41,11 +39,11 @@ describe('sessions.start — account re-resolution', () => {
   it('cold-start re-resolves configDir via the injected resolver (renderer-supplied configDir is treated as stale)', () => {
     const resolveAccountConfigDir = vi.fn(() => '/fresh-config-from-resolver');
     const sessions = createSessionsService(
-      vi.fn(),     // sendToRenderer
-      null,        // logging
-      null,        // persistPermissionRule
-      null,        // rateLimitHook
-      null,        // onSessionClosed
+      vi.fn(),
+      null,
+      null,
+      null,
+      null,
       resolveAccountConfigDir,
     );
 
@@ -77,8 +75,6 @@ describe('sessions.start — account re-resolution', () => {
 
   it('resume (resumeSessionId present) trusts the renderer-supplied configDir even without manualAccountOverride', () => {
     // The original session's JSONL lives under that account's configDir.
-    // Re-resolving could route us to a different account and orphan the
-    // saved transcript.
     const resolveAccountConfigDir = vi.fn(() => '/different-account');
     const sessions = createSessionsService(
       vi.fn(), null, null, null, null,
@@ -105,11 +101,6 @@ describe('sessions.start — account re-resolution', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Secondary confirmation: is the resolved config dir actually authenticated as
-// the account we think it is? Never blocks — the session starts either way.
-// ---------------------------------------------------------------------------
-
 describe('sessions.start — account identity verification', () => {
   const baseParams = {
     tabId: 'tab-v',
@@ -125,13 +116,13 @@ describe('sessions.start — account identity verification', () => {
   ) {
     return createSessionsService(
       sendToRenderer,
-      null,                    // logging
-      null,                    // persistPermissionRule
-      null,                    // rateLimitHook
-      null,                    // onSessionClosed
-      resolveAccountConfigDir, // resolveAccountConfigDir
-      null,                    // modelCatalogSink
-      verify as never,         // verifyAccountIdentity
+      null,
+      null,
+      null,
+      null,
+      resolveAccountConfigDir,
+      null,
+      verify as never,
     );
   }
 
@@ -157,7 +148,6 @@ describe('sessions.start — account identity verification', () => {
       configDir: '/tmp/.claude-personal',
       source: 'oauth-file',
     });
-    // The warning is informational — it must not gate the launch.
     expect(sessions.getConfigDir('tab-v')).toBe('/tmp/.claude-personal');
   });
 
@@ -189,8 +179,6 @@ describe('sessions.start — account identity verification', () => {
 
     void sessions.start({ ...baseParams, configDir: '/tmp/.claude-personal' });
 
-    // Checking the renderer-supplied dir would verify the wrong account
-    // exactly when a path rule has just changed.
     expect(seen).toEqual(['/tmp/.claude-work']);
   });
 

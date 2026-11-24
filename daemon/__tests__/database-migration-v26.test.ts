@@ -1,10 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, runMigrations, type Database } from '../services/database';
 
-/**
- * v26 gives the user's model rows a context window, so the gauge's pre-live
- * fallback is data a user can correct rather than a "[1m]" suffix guess.
- */
 describe('model_pricing.context_window (v26)', () => {
   let db: Database;
 

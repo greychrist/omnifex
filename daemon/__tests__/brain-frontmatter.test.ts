@@ -40,7 +40,6 @@ describe('parseNote', () => {
   });
 
   it('does not bleed the next line into an empty field', () => {
-    // The exact bug Rowboat's regex-based extractField had to be patched for.
     const note = parseNote('---\ntype: Topic\nproject:\ncreated: 2026-01-01\nupdated: 2026-01-01\n---\n# T\n');
     expect(note.frontmatter.project).toBeUndefined();
   });

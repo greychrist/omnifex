@@ -66,9 +66,6 @@ describe('vault index', () => {
     expect(index.search('can_use_tool')).toHaveLength(1);
   });
 
-  // Regression: terms used to be ANDed, so a query naming more than one thing
-  // found nothing unless a single note held every word. Measured across real
-  // sessions that was a 0% hit rate at four terms.
   it('finds notes matching only some of the query terms', () => {
     index.upsert('Subsystems/ops.md', 'ops', note({}, 'the encompass ops backend handles rbac'));
     expect(index.search('encompass docker compose lima')).toHaveLength(1);
@@ -148,7 +145,6 @@ describe('vault index', () => {
     const vault = createVault(join(dir, 'vault'));
     vault.ensureLayout();
     vault.writeNote('Subsystems/Good.md', note({}, 'stdio'));
-    // Bypass writeNote so the file is deliberately malformed.
     writeFileSync(join(dir, 'vault', 'Topics', 'Bad.md'), 'no fence\n');
 
     expect(index.rebuild(vault)).toBe(1);
@@ -221,7 +217,6 @@ describe('vault index', () => {
       raw.close();
 
       const migrated = createVaultIndex(path);
-      // The derived rows are discarded; the caller rebuilds from the vault.
       expect(migrated.search('stale')).toEqual([]);
       migrated.upsert('New.md', 'New', note({ project: '[[Projects/x]]' }, 'fresh'));
       expect(migrated.search('fresh', { project: '[[Projects/x]]' })).toHaveLength(1);
@@ -323,7 +318,6 @@ describe('projectCounts', () => {
     writer.close();
 
     const reader = openVaultIndexReadOnly(path);
-    // Sorted so the assertion does not depend on SQLite's group ordering.
     const rows = reader.projectCounts().sort((x, y) => (x.project + x.type).localeCompare(y.project + y.type));
     reader.close();
 
@@ -335,8 +329,6 @@ describe('projectCounts', () => {
   });
 
   it('reports unattributed notes under the empty project rather than dropping them', () => {
-    // The instructions use the total to say "the vault holds N for this
-    // account". Silently omitting unattributed notes would understate it.
     const path = join(dir, 'index.db');
     const writer = createVaultIndex(path);
     writer.upsert('Notes/Loose.md', 'Loose', note({ type: 'Note' }, 'loose'));

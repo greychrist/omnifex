@@ -1,19 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, migrations, runMigrations, type Database } from '../services/database';
 
-/**
- * v24 repairs the history the sweep left behind.
- *
- * Before transcripts were retained, OmniFex's internal runs were deleted the
- * moment the call returned — but the cost watcher sometimes got there first,
- * so `session_cost_daily` holds a NON-DETERMINISTIC fraction of that spend
- * under the scratch project path. That is not data; it is whatever won a race.
- *
- * Those rows are dropped and replaced with the Brain's own ledger, which
- * recorded every indexing and curation run exactly. Pre-change session
- * summarization is NOT recoverable — those transcripts are gone and nothing
- * else recorded them — and this migration does not invent a figure for it.
- */
 describe('historical internal spend reconciliation (v24)', () => {
   let db: Database;
 
@@ -46,13 +33,9 @@ describe('historical internal spend reconciliation (v24)', () => {
   }
 
   function rerun(): void {
-    // `>=`, not `= 24`: runMigrations gates on MAX(version), so clearing only
-    // this row leaves the max at the newest migration and 24 never re-runs.
-    // The `=` form silently stopped testing anything the moment a later
-    // migration was added.
+    // `>=`: runMigrations gates on MAX(version).
     db.raw.prepare('DELETE FROM schema_version WHERE version >= 24').run();
-    // Stops at 29: v30 deletes the ledger rows v24 inserts, because the
-    // transcripts v24 believed lost had survived and been priced again.
+    // Stops at 29: v30 deletes the ledger rows v24 inserts.
     runMigrations(db.raw, { migrationsOverride: migrations.filter((m) => m.version <= 29) });
   }
 

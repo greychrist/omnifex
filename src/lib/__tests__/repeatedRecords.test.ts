@@ -21,10 +21,7 @@ const echo = (text: string): JsonlNode => ({
 });
 
 // CLI 2.1.300 re-appends an earlier compacted segment just before a later
-// compact_boundary: same uuids, new cwd/gitBranch/slug. Seen on three
-// sessions 2026-10-12..16 (823–938 records each); the copies streamed into
-// the tab as a day-old block, stalled the window, and on reload sat above the
-// compaction, pushing that day's messages out of sight.
+// compact_boundary: same uuids, new cwd/gitBranch/slug.
 describe('withoutRepeatedRecords', () => {
   it('keeps the first copy of a record, in its original place', () => {
     const a = rec('a', '2026-10-15T00:43:00Z');
@@ -60,10 +57,8 @@ describe('isRepeatedRecord', () => {
   });
 });
 
-// After /compact the CLI writes the last reply in again: a new uuid, but the
-// same message id and every usage field 0 (session 57dcbf21, lines 1425 and
-// 1443, 2026-11-18). It rendered as a second copy of the reply, took the
-// turn's "Answer" label from the original, and gave the context rail a "0".
+// After /compact the CLI writes the last reply again: new uuid, same message id,
+// every usage field 0.
 describe('the reply the CLI re-writes after /compact', () => {
   const ZERO = { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 };
   const reply = (uuid: string, usage: Record<string, number>, id = 'msg_1'): JsonlNode =>
@@ -81,8 +76,7 @@ describe('the reply the CLI re-writes after /compact', () => {
     expect(isRepeatedRecord([original], copy)).toBe(true);
   });
 
-  // Another record of the same message — the CLI writes one per content
-  // block — carries real usage, and stays.
+  // The CLI writes one record per content block.
   it('keeps a second record of the same message that has real usage', () => {
     const block = reply('e001', { ...ZERO, cache_read_input_tokens: 420_000 });
     expect(withoutRepeatedRecords([original, block])).toEqual([original, block]);

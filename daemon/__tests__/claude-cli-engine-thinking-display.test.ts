@@ -1,10 +1,6 @@
 // @vitest-environment node
-//
-// Sessions ask the CLI for summarized thinking. Under its default ("updates")
-// the stream carries only token counts — thinking_delta.thinking is always
-// "" — so a chat cannot show a thought being typed out. "summarized" streams
-// the thought's text as thinking_delta and writes it to the record. Verified
-// against CLI 2.1.312, Opus and Sonnet, 2026-10-28.
+// Under the CLI's default thinking display ("updates") thinking_delta.thinking
+// is always ""; "summarized" streams the text (CLI 2.1.312).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
@@ -40,7 +36,6 @@ describe('ClaudeCliEngine — thinking display', () => {
     const i = sent.findIndex((l) => l.type === 'control_request' && l.request?.subtype === 'set_max_thinking_tokens');
     expect(i).toBeGreaterThanOrEqual(0);
     expect(sent[i].request).toEqual({ subtype: 'set_max_thinking_tokens', thinking_display: 'summarized' });
-    // Display only: the budget key is absent, so the CLI leaves the budget alone.
     expect('max_thinking_tokens' in sent[i].request).toBe(false);
     expect(i).toBeLessThan(sent.findIndex((l) => l.type === 'user'));
   });

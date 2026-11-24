@@ -19,7 +19,6 @@ describe('NewSessionButton', () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
-  // The back button's styled tooltip, not the browser's native title.
   it('shows a tooltip like the back button\'s', async () => {
     renderIn(<NewSessionButton onClick={vi.fn()} />);
     expect(button().hasAttribute('title')).toBe(false);
@@ -36,7 +35,7 @@ describe('NewSessionButton', () => {
   });
 
   // A disabled button fires no pointer events, so the tooltip hangs off a
-  // wrapper — or the reason it is disabled could never be read.
+  // wrapper.
   it('keeps its tooltip reachable while disabled', async () => {
     renderIn(<NewSessionButton onClick={vi.fn()} disabled reason="Wait for the current turn to finish" />);
     const trigger = button().parentElement!;
@@ -46,7 +45,6 @@ describe('NewSessionButton', () => {
     expect((await screen.findByRole('tooltip')).textContent).toBe('Wait for the current turn to finish');
   });
 
-  // It sits beside the back button, so it takes that button's size.
   it('matches the back button\'s size', () => {
     renderIn(<NewSessionButton onClick={vi.fn()} />);
     expect(button().className).toMatch(/(^|\s)h-7(\s|$)/);

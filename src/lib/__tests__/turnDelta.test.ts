@@ -3,7 +3,6 @@ import type { JsonlNode } from '@/types/jsonl';
 import { classifyJsonlLine } from '../jsonlClassifier';
 import { DEFAULT_CONTEXT_JUMP_TOKENS, turnContextTotal, turnDeltaSeries } from '../turnDelta';
 
-/** An assistant turn whose four usage components sum to `total`. */
 const assistant = (total: number, receivedAt = '2026-07-30T10:00:00Z'): JsonlNode =>
   ({
     kind: 'assistant',
@@ -24,7 +23,6 @@ const assistant = (total: number, receivedAt = '2026-07-30T10:00:00Z'): JsonlNod
     },
   }) as unknown as JsonlNode;
 
-/** A prompt the human actually typed — the anchor for a turn. */
 const prompt = (uuid = 'p1'): JsonlNode =>
   ({
     kind: 'user',
@@ -34,7 +32,6 @@ const prompt = (uuid = 'p1'): JsonlNode =>
     raw: { type: 'user', uuid, message: { role: 'user', content: 'hi' } },
   }) as unknown as JsonlNode;
 
-/** A tool_result the harness wrote back. Not a turn boundary. */
 const toolResult = (): JsonlNode =>
   ({
     kind: 'user',
@@ -44,14 +41,12 @@ const toolResult = (): JsonlNode =>
     raw: { type: 'user', message: { role: 'user', content: [] } },
   }) as unknown as JsonlNode;
 
-/** A subagent's assistant message. Its usage describes ITS context, not ours. */
 const sidechain = (total: number): JsonlNode => {
   const node = assistant(total) as unknown as { raw: Record<string, unknown> };
   node.raw.isSidechain = true;
   return node as unknown as JsonlNode;
 };
 
-/** A live-forwarded subagent message (--forward-subagent-text). Same exclusion. */
 const forwarded = (total: number): JsonlNode => {
   const node = assistant(total) as unknown as { raw: Record<string, unknown> };
   node.raw.parent_tool_use_id = 'toolu_123';
@@ -67,12 +62,8 @@ const compactBoundary = (): JsonlNode =>
     raw: { type: 'system', subtype: 'compact_boundary' },
   }) as unknown as JsonlNode;
 
-/**
- * The /compact summary. A `user` record, but nothing the human typed. Built
- * through the real classifier rather than hand-stamped, so this stays a
- * regression test: if classifyUser stops recognising the record it goes back
- * to `userKind: 'prompt'` and these expectations break.
- */
+// Built through the real classifier, not hand-stamped, so a classifyUser
+// regression breaks these.
 const compactSummary = (): JsonlNode =>
   classifyJsonlLine({
     type: 'user',
@@ -93,17 +84,12 @@ describe('turnContextTotal', () => {
     expect(turnContextTotal(prompt())).toBeNull();
   });
 
-  // A subagent's usage describes the subagent's own context window. Counting
-  // it as main-thread context invents jumps that never happened.
   it('is null for subagent messages', () => {
     expect(turnContextTotal(sidechain(900_000))).toBeNull();
     expect(turnContextTotal(forwarded(900_000))).toBeNull();
   });
 
   // After /compact the CLI re-writes the last reply with every usage field 0.
-  // No real request reads an empty context, so a zero is no reading at all —
-  // counted, it drew a "0" badge and a "−421k" drop on the turn before the
-  // compaction (Greg, 2026-11-18).
   it('is null when every usage field is zero', () => {
     const node = assistant(477_456) as unknown as { raw: { message: { usage: Record<string, number> } } };
     node.raw.message.usage = {
@@ -113,10 +99,8 @@ describe('turnContextTotal', () => {
   });
 });
 
-// CLI 2.1.265: a forked skill's kickoff prompt streams as a user envelope
-// carrying `parent_tool_use_id`. It classifies as userKind 'prompt', so
-// without an exclusion it anchored the turn — splitting one real turn in two
-// and measuring the delta from the middle of it.
+// CLI 2.1.265: a forked skill's kickoff prompt carries `parent_tool_use_id` and
+// classifies as a prompt.
 describe('forked subagent / skill kickoff prompts are not turn anchors', () => {
   const forwardedPrompt = (): JsonlNode =>
     ({
@@ -136,8 +120,7 @@ describe('forked subagent / skill kickoff prompts are not turn anchors', () => {
     const messages = [assistant(100_000), prompt('p1'), assistant(120_000), forwardedPrompt(), assistant(130_000)];
     const series = turnDeltaSeries(messages);
 
-    // One turn, not two: 130_000 - 100_000. Anchoring at the fork would split
-    // the turn in half and report 10_000 for its second piece.
+    // One turn, not two: 130_000 - 100_000.
     expect(series).toHaveLength(1);
     expect(series[0].deltaTokens).toBe(30_000);
     expect(series[0].prevTotal).toBe(100_000);
@@ -149,9 +132,6 @@ describe('forked subagent / skill kickoff prompts are not turn anchors', () => {
 });
 
 describe('turnDeltaSeries', () => {
-  // The popover's "Recent events" is a per-turn log, so unlike lastTurnDelta
-  // this keeps the entries that one deliberately suppresses: shrinks and
-  // compactions are exactly what a history is for.
   it('emits one entry per prompt-anchored turn', () => {
     const messages = [
       assistant(100_000),
@@ -216,8 +196,6 @@ describe('turnDeltaSeries — subagent isolation', () => {
   });
 });
 
-// Compact summaries used to classify as 'prompt', which made the summary the
-// turn anchor and reported the entire rebuilt context as a jump every time.
 describe('turnDeltaSeries — compact summaries are not prompts', () => {
   it('anchors on the human prompt, not the summary that follows a compaction', () => {
     const msgs = [
@@ -241,9 +219,6 @@ describe('turnDeltaSeries — compact summaries are not prompts', () => {
 });
 
 describe('turnDeltaSeries — the jump threshold', () => {
-  // The threshold no longer gates whether anything is reported; it decides
-  // whether a row is colored as a jump. DEFAULT_CONTEXT_JUMP_TOKENS is still
-  // the number, and still 50k.
   it('defaults to 50k', () => {
     expect(DEFAULT_CONTEXT_JUMP_TOKENS).toBe(50_000);
   });

@@ -17,8 +17,6 @@ describe("accentStyle", () => {
 
     it("returns undefined when the accent is not a hex", () => {
       const cfg = createDefaultConfig();
-      // mergeConfig would have converted or stripped this; set directly to
-      // verify the helper's tolerance.
       cfg.categories.user.accentColor = "neon";
       expect(swatchFor(cfg, "user.prompt")).toBeUndefined();
       expect(accentStyleFor(cfg, "user.prompt")).toBeUndefined();

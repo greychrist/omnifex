@@ -5,10 +5,6 @@ import os from 'node:os';
 import { createUsageService } from '../services/usage';
 import type { AccountsService, Account } from '../services/accounts';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function makeTmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'usage-test-'));
 }
@@ -83,10 +79,6 @@ function makeAccountsService(configDirs: string[]): AccountsService {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Fixtures: build a temp Claude config dir with JSONL session files
-// ---------------------------------------------------------------------------
-
 function buildConfigDir(configDir: string, projects: { name: string; sessions: object[][] }[]): void {
   const projectsDir = path.join(configDir, 'projects');
   fs.mkdirSync(projectsDir, { recursive: true });
@@ -102,16 +94,11 @@ function buildConfigDir(configDir: string, projects: { name: string; sessions: o
   }
 }
 
-// ---------------------------------------------------------------------------
-// Fake LoggingService — collects writeBatch calls for assertions
-// ---------------------------------------------------------------------------
-
 interface FakeLogger {
   writeBatch: (entries: unknown[]) => void;
   query: () => never;
   count: () => never;
   prune: () => never;
-  /** Test-only: the entries the service under test passed to writeBatch. */
   getEntries: () => any[];
 }
 
@@ -125,10 +112,6 @@ function makeFakeLogger(): FakeLogger {
     getEntries: () => collected,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe('usage service', () => {
   let tmpDirs: string[] = [];
@@ -150,23 +133,16 @@ describe('usage service', () => {
     tmpDirs = [];
   });
 
-  // -------------------------------------------------------------------------
-  // 0. Error logging — IO failures surface via LoggingService, not silently swallowed
-  // -------------------------------------------------------------------------
-
   describe('IO error logging', () => {
     it('logs a warn entry when an account configDir is missing/unreadable', () => {
-      // Point the account at a path that doesn't exist so the projects/ readdirSync throws.
       const accounts = makeAccountsService(['/this/path/definitely/does/not/exist']);
       const logger = makeFakeLogger();
       const service = createUsageService(accounts, logger);
 
       const stats = service.getUsageStats();
 
-      // Still returns cleanly — missing configDir isn't a crashy error.
       expect(stats.total_sessions).toBe(0);
 
-      // But the failure should have been logged.
       const entries = logger.getEntries();
       expect(entries.length).toBeGreaterThan(0);
       const match = entries.find((e) => String(e.source) === 'usage');
@@ -177,10 +153,7 @@ describe('usage service', () => {
 
     it('logs when a project session dir is unreadable', () => {
       const configDir = makeTmp();
-      // Create projects/ with one entry that is a file, not a dir — the outer
-      // readdir succeeds, but the inner iteration skips non-dir entries. That's
-      // fine; to actually trigger the inner catch we create a dir then chmod 0
-      // so readdirSync on it throws EACCES. Skip on non-POSIX (Windows CI).
+      // chmod 0 makes readdirSync throw EACCES on POSIX.
       const projectsDir = path.join(configDir, 'projects');
       const lockedProject = path.join(projectsDir, '-Users-greg-locked');
       fs.mkdirSync(lockedProject, { recursive: true });
@@ -212,10 +185,6 @@ describe('usage service', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 1. getUsageStats — correct totals from JSONL files
-  // -------------------------------------------------------------------------
-
   describe('getUsageStats()', () => {
     it('caches parsed sessions by mtime — a second query does not re-read unchanged files', () => {
       const configDir = makeTmp();
@@ -234,8 +203,6 @@ describe('usage service', () => {
       expect(readsAfterFirst).toBeGreaterThan(0);
 
       const second = service.getUsageStats();
-      // No additional JSONL reads: the file's mtime is unchanged so the cache
-      // serves the parsed rows.
       expect(spy.mock.calls.length).toBe(readsAfterFirst);
       expect(second.total_tokens).toBe(first.total_tokens);
 
@@ -414,11 +381,7 @@ describe('usage service', () => {
       expect(proj2!.total_tokens).toBe(400);
     });
 
-    // Regression for the dashed-project-name bug: the encoded dir
-    // `-Users-greg-Repos-work-pi-tuitive-fe` naively decodes to
-    // `/Users/greg/Repos/work/pi/tuitive/fe`, which is wrong. The real
-    // cwd is recoverable from any JSONL entry's `cwd` field; usage
-    // should use that for the breakdown's project_path.
+    // The encoding is lossy: only a JSONL `cwd` recovers a dashed folder name.
     it('recovers a project_path with literal dashes from the JSONL cwd field', () => {
       const configDir = makeTmp();
       buildConfigDir(configDir, [
@@ -440,10 +403,7 @@ describe('usage service', () => {
       expect(stats.by_project[0].project_path).toBe('/Users/greg/Repos/work/pi-tuitive-fe');
     });
 
-    // Regression: when a project folder is renamed, older JSONLs in the same
-    // encoded project-id dir still carry the pre-rename cwd. The recovered
-    // path must reflect the CURRENT name — i.e. the newest JSONL's cwd wins,
-    // not whichever file happens to sort first by name.
+    // After a rename, older JSONLs in the same dir still carry the old cwd.
     it('prefers the newest JSONL cwd so a renamed project shows under its current path', () => {
       const configDir = makeTmp();
       const projectId = '-Users-greg-Repos-personal-omnifex';
@@ -453,7 +413,6 @@ describe('usage service', () => {
       const projectDir = path.join(configDir, 'projects', projectId);
       fs.mkdirSync(projectDir, { recursive: true });
 
-      // Older session (alphabetically first) carries the stale pre-rename cwd.
       const olderFile = path.join(projectDir, '00000000-old.jsonl');
       writeJsonl(olderFile, [
         { ...assistantMessage({ input: 10, output: 5 }), cwd: oldPath },
@@ -461,7 +420,6 @@ describe('usage service', () => {
       const olderTime = new Date('2026-01-01T00:00:00Z');
       fs.utimesSync(olderFile, olderTime, olderTime);
 
-      // Newer session (alphabetically last) carries the post-rename cwd.
       const newerFile = path.join(projectDir, 'ffffffff-new.jsonl');
       writeJsonl(newerFile, [
         { ...assistantMessage({ input: 20, output: 10 }), cwd: newPath },
@@ -473,16 +431,10 @@ describe('usage service', () => {
       const service = createUsageService(accounts);
       const stats = service.getUsageStats();
 
-      // All entries from this project (regardless of which JSONL they came from)
-      // collapse to the current cwd. No leakage of the stale name.
       expect(stats.by_project.length).toBe(1);
       expect(stats.by_project[0].project_path).toBe(newPath);
     });
   });
-
-  // -------------------------------------------------------------------------
-  // 2. getUsageStats — returns zeros when no data
-  // -------------------------------------------------------------------------
 
   describe('getUsageStats() with no data', () => {
     it('returns zeros when no accounts', () => {
@@ -504,7 +456,6 @@ describe('usage service', () => {
 
     it('returns zeros when config dir has no projects dir', () => {
       const configDir = makeTmp();
-      // intentionally don't create projects/ subdirectory
 
       const accounts = makeAccountsService([configDir]);
       const service = createUsageService(accounts);
@@ -552,7 +503,6 @@ describe('usage service', () => {
       const projectDir = path.join(configDir, 'projects', '-Users-greg-proj');
       fs.mkdirSync(projectDir, { recursive: true });
 
-      // Mix of valid and invalid lines
       fs.writeFileSync(
         path.join(projectDir, 'session.jsonl'),
         [
@@ -568,15 +518,10 @@ describe('usage service', () => {
       const service = createUsageService(accounts);
       const stats = service.getUsageStats();
 
-      // Only the valid assistant message should count
       expect(stats.total_input_tokens).toBe(100);
       expect(stats.total_output_tokens).toBe(50);
     });
   });
-
-  // -------------------------------------------------------------------------
-  // 3. getUsageByDateRange — filters by date
-  // -------------------------------------------------------------------------
 
   describe('getUsageByDateRange()', () => {
     let configDir: string;
@@ -626,10 +571,6 @@ describe('usage service', () => {
       expect(stats.total_output_tokens).toBe(350); // 50 + 80 + 100 + 120
     });
   });
-
-  // -------------------------------------------------------------------------
-  // 4. getSessionStats — per-project breakdown
-  // -------------------------------------------------------------------------
 
   describe('getSessionStats()', () => {
     it('returns per-project breakdown', () => {
@@ -696,10 +637,6 @@ describe('usage service', () => {
       expect(stats).toEqual([]);
     });
   });
-
-  // -------------------------------------------------------------------------
-  // 5. getUsageDetails — individual entries with limit
-  // -------------------------------------------------------------------------
 
   describe('getUsageDetails()', () => {
     it('returns individual usage entries', () => {
@@ -804,10 +741,6 @@ describe('usage service', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Cost calculation
-  // -------------------------------------------------------------------------
-
   describe('cost calculation', () => {
     it('uses opus pricing for opus model', () => {
       const configDir = makeTmp();
@@ -870,10 +803,6 @@ describe('usage service', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Current model rates, cache-token pricing, and per-request dedup
-  // -------------------------------------------------------------------------
-
   describe('current model rates, cache pricing, and per-request dedup', () => {
     it('prices opus 4.8 at current rates including cache tokens', () => {
       const configDir = makeTmp();
@@ -907,9 +836,7 @@ describe('usage service', () => {
 
     it('counts a multi-line message (same requestId) exactly once', () => {
       const configDir = makeTmp();
-      // Two JSONL lines sharing requestId 'req_1' with identical usage — the CLI
-      // writes one line per content block for a single billed request, so
-      // summing raw lines would double count. Only the last should be kept.
+      // The CLI writes one line per content block for a single billed request.
       const line = { ...assistantMessage({ input: 200, output: 100 }), requestId: 'req_1' };
       buildConfigDir(configDir, [
         {
@@ -925,10 +852,6 @@ describe('usage service', () => {
       expect(stats.total_tokens).toBe(300); // 200 + 100, counted once
     });
   });
-
-  // -------------------------------------------------------------------------
-  // Project path decoding
-  // -------------------------------------------------------------------------
 
   describe('project path decoding', () => {
     it('decodes directory name to project path', () => {
@@ -958,14 +881,12 @@ describe('usage service', () => {
       const dir1 = makeTmpDir();
       const dir2 = makeTmpDir();
 
-      // Account 1 has one project with one session
       const projDir1 = path.join(dir1, 'projects', '-Users-alice-foo');
       fs.mkdirSync(projDir1, { recursive: true });
       writeJsonl(path.join(projDir1, 'session-a.jsonl'), [
         assistantMessage({ model: 'claude-sonnet-4-5-20250514', input: 200, output: 100, timestamp: '2026-04-10T10:00:00Z' }),
       ]);
 
-      // Account 2 has one project with one session
       const projDir2 = path.join(dir2, 'projects', '-Users-bob-bar');
       fs.mkdirSync(projDir2, { recursive: true });
       writeJsonl(path.join(projDir2, 'session-b.jsonl'), [
@@ -1042,7 +963,6 @@ describe('usage service', () => {
         scanForNewAccounts: async () => [],
       });
 
-      // Only include April 9-15
       const result = svc.getStatsByAccount('2026-04-09', '2026-04-15');
       expect(result).toHaveLength(1);
       expect(result[0].stats.total_tokens).toBe(300); // only the April 10 entry
@@ -1050,10 +970,6 @@ describe('usage service', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     });
   });
-
-  // -------------------------------------------------------------------------
-  // Scrape logging — info entries emitted when usage data is collected
-  // -------------------------------------------------------------------------
 
   describe('scrape logging', () => {
     it('logs an info entry for each account after scanning', () => {
@@ -1079,8 +995,6 @@ describe('usage service', () => {
       const scanEntry = infoEntries.find((e) => /scrape/i.test(String(e.message)));
       expect(scanEntry).toBeDefined();
       const metadata = JSON.parse(scanEntry.metadata);
-      // The scrape log records the entry COUNT, not the full parsed-entry array.
-      // Logging the whole array bloated app_logs on every Usage-tab query.
       expect(metadata.entry_count).toBe(1);
       expect(metadata).not.toHaveProperty('entries');
     });

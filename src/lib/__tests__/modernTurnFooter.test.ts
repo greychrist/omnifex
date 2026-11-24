@@ -64,9 +64,7 @@ describe('modernTurnFooters', () => {
     expect(footers.size).toBe(0);
   });
 
-  // /compact writes its marker before the command's prompt, so the answer
-  // that ended the turn was followed by the compaction, not a prompt, and
-  // lost its mark (session 57dcbf21, 2026-11-18).
+  // /compact writes its marker before the command's prompt.
   it('marks an answer followed by a compaction and then a prompt', () => {
     const boundary = {
       kind: 'system', subtype: 'compact_boundary', sessionId: '', receivedAt: at(5),
@@ -77,8 +75,7 @@ describe('modernTurnFooters', () => {
     expect(footers.has(items[1].key)).toBe(true);
   });
 
-  // An auto-compaction can land mid-turn; the work after it means the
-  // answer before it did not end the turn.
+  // An auto-compaction can land mid-turn.
   it('does not mark an answer when the turn goes on after a compaction', () => {
     const boundary = {
       kind: 'system', subtype: 'compact_boundary', sessionId: '', receivedAt: at(5),

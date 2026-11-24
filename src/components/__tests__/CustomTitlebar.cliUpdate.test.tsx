@@ -65,7 +65,7 @@ const openUpdates = () => {
   fireEvent.click(document.querySelector<HTMLButtonElement>('[data-updates-trigger]')!);
 };
 
-/** See the sibling cliReview suite: both waits must outlast MIN_CHECK_SPIN_MS. */
+// Both waits must outlast MIN_CHECK_SPIN_MS.
 async function renderSettled() {
   const result = render(<CustomTitlebar />);
   await vi.advanceTimersByTimeAsync(1000);
@@ -97,7 +97,6 @@ describe('CustomTitlebar — forced Claude CLI update', () => {
   });
 
   it('hides the button when the CLI is already current', async () => {
-    // Nothing to force. A live button here would run a 200MB no-op download.
     getClaudeCliReviewStatus.mockResolvedValue(
       status({ latest_version: '2.1.252', upgrade_available: false }),
     );
@@ -108,8 +107,6 @@ describe('CustomTitlebar — forced Claude CLI update', () => {
   });
 
   it('hides the button when the registry could not be reached', async () => {
-    // latest_version null means "unknown", never "up to date" — and an unknown
-    // target is not something to offer a forced upgrade to.
     getClaudeCliReviewStatus.mockResolvedValue(
       status({ latest_version: null, upgrade_available: false }),
     );
@@ -128,7 +125,6 @@ describe('CustomTitlebar — forced Claude CLI update', () => {
       upgraded: true,
       accounts: [{ account: 'Personal', ok: true, message: 'ok' }],
     });
-    // The post-update re-read reports the moved version.
     getClaudeCliReviewStatus.mockResolvedValue(
       status({
         installed_version: '2.1.257',
@@ -143,8 +139,6 @@ describe('CustomTitlebar — forced Claude CLI update', () => {
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(updateClaudeCli).toHaveBeenCalledTimes(1);
-    // Re-read happened, so the offer is withdrawn rather than sticking around
-    // advertising an upgrade that already landed.
     await waitFor(() => { expect(updateButton()).toBeNull(); });
     expect(screen.queryAllByText('2.1.257').length).toBeGreaterThan(0);
   });
@@ -164,9 +158,8 @@ describe('CustomTitlebar — forced Claude CLI update', () => {
   });
 
   it('reports a run that changed nothing rather than claiming success', async () => {
-    // `claude update` exits 0 when it is already current, and it also exits 0
-    // when a policy pin blocks the upgrade. Only the re-probe distinguishes
-    // them, so the button must not report "Updated" off a clean exit alone.
+    // `claude update` exits 0 both when current and when a policy pin blocks the
+    // upgrade; only the re-probe tells them apart.
     getClaudeCliReviewStatus.mockResolvedValue(status());
     updateClaudeCli.mockResolvedValue({
       from: '2.1.252',
@@ -196,8 +189,8 @@ describe('CustomTitlebar — forced Claude CLI update', () => {
     await vi.advanceTimersByTimeAsync(50);
 
     expect(updateButton()!.disabled).toBe(true);
-    // A second click must not start a second `claude update`: they contend on
-    // the CLI's own .update.lock and the loser silently does nothing.
+    // Concurrent `claude update`s contend on .update.lock and the loser silently
+    // does nothing.
     fireEvent.click(updateButton()!);
     expect(updateClaudeCli).toHaveBeenCalledTimes(1);
 

@@ -1,17 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, runMigrations, type Database } from '../services/database';
 
-/**
- * v23 records WHICH OmniFex-internal activity paid for a cost row.
- *
- * OmniFex spends on the user's account through the CLI — session summaries,
- * Brain indexing, Brain curation — and those transcripts are now retained
- * rather than swept. Folding them into the Cost Report is only useful if each
- * one says what it was, so `internal_kind` carries the answer.
- *
- * Nullable, and NULL means "a real user session". That is what keeps every
- * existing row and every existing query meaning exactly what it meant before.
- */
 describe('session_cost_daily.internal_kind (v23)', () => {
   let db: Database;
 
@@ -62,18 +51,10 @@ describe('session_cost_daily.internal_kind (v23)', () => {
     expect(row.internal_kind).toBe('brain-index');
   });
 
-  // Migration 16 creates this table with CREATE TABLE IF NOT EXISTS, so the
-  // runner can legitimately be pointed at an image that does not have it yet.
-  // Migration 22 had to learn this the hard way; 23 must not relearn it.
+  // Migration 16 uses CREATE TABLE IF NOT EXISTS, so an image may lack the table.
   it('is a no-op against an image with no session_cost_daily', () => {
-    // Not an empty database — that fails on a much earlier migration and would
-    // prove nothing about this one. Drop just the table 23 touches, then
-    // re-run: the guard is what has to keep this from throwing.
     db.raw.exec('DROP TABLE session_cost_daily');
-    // `>=`, not `= 23`: runMigrations gates on MAX(version), so clearing only
-    // this row leaves the max at the newest migration and 23 never re-runs.
-    // The `=` form silently stopped testing anything the moment a later
-    // migration was added.
+    // `>=`: runMigrations gates on MAX(version).
     db.raw.prepare('DELETE FROM schema_version WHERE version >= 23').run();
     expect(() => runMigrations(db.raw)).not.toThrow();
   });

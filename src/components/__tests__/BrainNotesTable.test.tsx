@@ -39,7 +39,6 @@ const NOTES = [
   }),
 ];
 
-/** Every row's title, in the order the table renders them. */
 function titles(): string[] {
   return screen.getAllByTestId('note-title').map((n) => n.textContent ?? '');
 }
@@ -62,11 +61,6 @@ describe('BrainNotesTable', () => {
   beforeEach(() => { vi.mocked(api.brainSearch).mockReset().mockResolvedValue([]); });
   afterEach(() => { cleanup(); });
 
-  /**
-   * Newest first with no interaction. A vault is a growing pile and the note
-   * you want is almost always one you touched recently; alphabetical would put
-   * that answer wherever the alphabet happened to leave it.
-   */
   it('opens sorted by most recently updated', () => {
     renderTable();
     expect(titles()).toEqual(['beta', 'alpha', 'gamma']);
@@ -80,10 +74,6 @@ describe('BrainNotesTable', () => {
       .toEqual(['omnifex', 'WIN', '—']);
   });
 
-  /**
-   * 20 of 338 notes carry a curation date, so it is a dimmed second line under
-   * Updated rather than a column that would be empty for 94% of rows.
-   */
   it('shows a curation date beneath the updated date when there is one', () => {
     renderTable();
     const curated = screen.getAllByTestId('note-curated').map((n) => n.textContent);
@@ -94,8 +84,6 @@ describe('BrainNotesTable', () => {
     renderTable();
     const header = screen.getByRole('button', { name: /^project/i });
     fireEvent.click(header);
-    // Descending first, matching the Sources table. Unowned notes sort last
-    // in either direction — an absence is not a name.
     expect(titles()).toEqual(['alpha', 'beta', 'gamma']);
     fireEvent.click(header);
     expect(titles()).toEqual(['beta', 'alpha', 'gamma']);
@@ -104,15 +92,12 @@ describe('BrainNotesTable', () => {
   it('sorts by updated date in both directions', () => {
     renderTable();
     const header = screen.getByRole('button', { name: /^updated/i });
-    // Already the default, so the first press flips it to oldest first.
     fireEvent.click(header);
     expect(titles()).toEqual(['gamma', 'alpha', 'beta']);
     fireEvent.click(header);
     expect(titles()).toEqual(['beta', 'alpha', 'gamma']);
   });
 
-  /** Descending on the first press, uniformly across every column, so the
-   *  arrow means the same thing here as it does in the Sources table. */
   it('sorts by name', () => {
     renderTable();
     const header = screen.getByRole('button', { name: /^name/i });
@@ -129,11 +114,6 @@ describe('BrainNotesTable', () => {
     expect(titles()).toEqual(['beta', 'gamma']);
   });
 
-  /**
-   * Notes with no project are a real population — 7 of 338 in the live vault.
-   * Leaving them out of the picker would make them unhideable and invisible in
-   * the count, so they get their own bucket.
-   */
   it('offers unowned notes as their own filter bucket', () => {
     renderTable();
     fireEvent.click(screen.getByLabelText(/filter by project/i));
@@ -163,11 +143,6 @@ describe('BrainNotesTable', () => {
     expect(selected[0].textContent).toContain('beta');
   });
 
-  /**
-   * Full-text search narrows the same table rather than replacing it with a
-   * second list. Two lists with two layouts was the old pane's shape, and
-   * which one you were looking at was not always obvious.
-   */
   it('narrows the rows to full-text hits, ranked', async () => {
     vi.mocked(api.brainSearch).mockResolvedValue([
       { notePath: 'Notes/gamma.md', title: 'gamma', snippet: 'the stdio bridge', type: 'Note' },
@@ -198,13 +173,6 @@ describe('BrainNotesTable', () => {
     expect(screen.getByText(/nothing matches/i)).toBeTruthy();
   });
 
-  /**
-   * Note titles are long and similar — `omnifex-brain-notes-table-sort` and
-   * `omnifex-brain-notes-table-panes` differ in their last word — so a Name
-   * column the browser is free to squeeze truncates away the only part that
-   * tells two rows apart. The metadata columns are sized, Name takes the rest,
-   * and every boundary between them can be dragged.
-   */
   describe('column widths', () => {
     beforeEach(() => { window.localStorage.clear(); });
 
@@ -244,8 +212,6 @@ describe('BrainNotesTable', () => {
       expect(colWidth('updated')).toBe(updated);
     });
 
-    /** The handle lives inside the header's sort button. A drag that also
-     *  re-sorted the table would make the columns effectively unresizable. */
     it('does not re-sort when a handle is dragged', () => {
       renderTable();
       drag(/resize name column/i, 300, 340);

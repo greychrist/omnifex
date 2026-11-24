@@ -156,7 +156,7 @@ describe('commandsCatalogService.getCatalog (SQLite-persisted)', () => {
     mockedCreate.mockReturnValue(makeFakeEngine({ commands: FRESH }));
     const service = createCommandsCatalogService(db, { cliVersionFn: () => '2.1.181' });
     const result = await service.getCatalog(CONFIG);
-    expect(result).toEqual(FRESH); // the newly-added /design-sync now shows
+    expect(result).toEqual(FRESH);
     expect(catalogRow()!.cli_version).toBe('2.1.181');
   });
 

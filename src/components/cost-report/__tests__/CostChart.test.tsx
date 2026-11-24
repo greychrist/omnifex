@@ -25,12 +25,8 @@ const ROWS = [
 const W = 800;
 const H = 224;
 
-/**
- * recharts' ResponsiveContainer measures its parent through ResizeObserver,
- * which jsdom does not implement — so the chart renders at 0×0 and draws
- * nothing. Stubbing both the observer and the box lets the real SVG render, so
- * the marks below are the ones the app actually draws.
- */
+// ResponsiveContainer measures through ResizeObserver, absent in jsdom;
+// stubbing both lets the real SVG render.
 beforeAll(() => {
   class StubResizeObserver {
     constructor(private cb: ResizeObserverCallback) {}
@@ -75,8 +71,6 @@ describe('CostChart', () => {
     const bars = paths.filter((p) => (p.getAttribute('d') ?? '').endsWith('Z'));
     expect(bars.length).toBeGreaterThanOrEqual(4);
     for (const b of bars) {
-      // No NaN or Infinity anywhere in the geometry — the failure mode that
-      // renders as a blank chart with no error.
       expect(b.getAttribute('d')).not.toMatch(/NaN|Infinity/);
     }
   });
@@ -105,9 +99,6 @@ describe('CostChart', () => {
     expect(container.querySelectorAll('line[data-testid="week-separator"]')).toHaveLength(0);
   });
 
-  // Gridlines and week rules were a near-black tuned to the old surface; on the
-  // lighter plot they vanished into it. They are silver-gray now: a step the
-  // reader can see, still recessive against the bars.
   it('rules the grid and the week lines in the same silver, lifted off the plot', () => {
     const { container } = renderChart(<CostChart rows={ROWS} mode="dark" />);
     const surface = container.querySelector('rect[data-testid="plot-surface"]')?.getAttribute('fill');
@@ -116,7 +107,6 @@ describe('CostChart', () => {
 
     expect(gridline?.getAttribute('stroke')).not.toBe(surface);
     expect(separator?.getAttribute('stroke')).toBe(gridline?.getAttribute('stroke'));
-    // Dark mode lifts toward white; the old value was a fixed near-black.
     expect(gridline?.getAttribute('stroke')).toContain('white');
   });
 
@@ -136,8 +126,6 @@ describe('CostChart', () => {
     expect(fills.has(modelColor('claude-haiku-4-5', 'dark'))).toBe(true);
   });
 
-  // A fixed radius looked square on a month of narrow bars and vanished on a
-  // week of wide ones; it scales with the bar now, capped at 10px.
   it('caps the topmost segment with a round scaled to the bar, top corners only', () => {
     const { container } = renderChart(<CostChart rows={ROWS} mode="dark" />);
     // Three periods across 800px: bars are wide, so the cap takes the ceiling.
@@ -145,15 +133,12 @@ describe('CostChart', () => {
       (p.getAttribute('d') ?? '').includes('a6,6'),
     );
     expect(caps.length).toBeGreaterThan(0);
-    // Two arcs, both at the top, then straight sides down to a square base.
     for (const cap of caps) {
       expect((cap.getAttribute('d')?.match(/a6,6/g) ?? []).length).toBe(2);
     }
   });
 
-  // The bug that made every bar in a real month square: a $0.29 Haiku segment
-  // on a $272 Opus bar is the topmost non-zero model and is under a pixel
-  // tall, so the cap went to a segment nobody can see.
+  // A sub-pixel topmost segment must not take the cap.
   it('caps the tallest visible segment when a sub-pixel sliver sits on top', () => {
     const slivered = [
       row('2026-08-01', 'claude-opus-5', 272),
@@ -177,8 +162,6 @@ describe('CostChart', () => {
     expect(surface).toBeTruthy();
     expect(Number(surface?.getAttribute('width'))).toBeGreaterThan(0);
     expect(Number(surface?.getAttribute('height'))).toBeGreaterThan(0);
-    // Derived from the card token: three themes ship three different card
-    // colors, and a fixed hex is visibly wrong in two of them.
     expect(surface?.getAttribute('fill')).toContain('var(--color-card)');
   });
 
@@ -188,8 +171,6 @@ describe('CostChart', () => {
     expect(surface?.getAttribute('fill')).toBe('var(--color-background)');
   });
 
-  // The seam is a gap cut in the bar, so it has to be the color of whatever
-  // is behind the bar — now the plot surface, not the card.
   it('separates stacked segments with a seam in the plot surface color', () => {
     for (const mode of ['dark', 'light'] as const) {
       const { container } = renderChart(<CostChart rows={ROWS} mode={mode} />);
@@ -206,8 +187,6 @@ describe('CostChart', () => {
 describe('CostChartLegend', () => {
   afterEach(cleanup);
 
-  // Identity must never be color-alone: every band is named, and the names
-  // are the human labels rather than raw dated model ids.
   it('names every series with its label and swatch', () => {
     const { container } = render(
       <CostChartLegend models={['claude-haiku-4-5-20251001', 'claude-opus-5']} mode="dark" />,

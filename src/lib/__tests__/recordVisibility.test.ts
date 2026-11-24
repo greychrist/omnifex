@@ -42,13 +42,6 @@ function assistantEndTurn(text: string): JsonlNode {
   return assistantWithBlocks([{ type: 'text', text }]);
 }
 
-/**
- * Build the pair of messages that represents an answered AskUserQuestion:
- * - the assistant message with only AskUserQuestion tool_use (classifies to
- *   `tool.askUserQuestion.answered`)
- * - the user message with the matching tool_result (classifies to
- *   `tool.askUserQuestion.answered.result`)
- */
 function answeredAskUserQuestionPair(toolUseId = 'tu_auq'): { assistant: JsonlNode; result: JsonlNode } {
   const assistant: JsonlNode = {
     kind: 'assistant', sessionId: '', receivedAt: '',
@@ -82,8 +75,6 @@ describe('isMessageFullyHidden', () => {
     expect(isMessageFullyHidden(assistantEndTurn('done'), [], cfg)).toBe(false);
   });
 
-  // Standard draws tool calls (in the work timeline) and thoughts: v5 Modern
-  // never hid them for Verbose, so v6 shows them by default.
   it('returns false for a tool_use-only assistant message by default', () => {
     const cfg = createDefaultConfig();
     const msg = toolUseMsg('Read', { file_path: '/a' });
@@ -137,9 +128,6 @@ describe('isMessageFullyHidden', () => {
   });
 
   it('never hides a queued feedback draft in compact mode', () => {
-    // The system category defaults to verbose-only. A feedback draft is
-    // the only sign the CLI queued one — burying it in compact mode means the
-    // user never learns it exists, since OmniFex has no /feedback surface.
     const cfg = createDefaultConfig();
     const msg = {
       kind: 'system', subtype: 'feedback_draft_queued', sessionId: '', receivedAt: '',
@@ -153,8 +141,6 @@ describe('isMessageFullyHidden', () => {
   });
 
   it('never hides an answered AskUserQuestion assistant message (tool.askUserQuestion.answered)', () => {
-    // Regression: sentinel id head is "tool" → originOf returns "system" →
-    // system category is verbose-only → card vanishes in compact mode.
     const cfg = createDefaultConfig();
     const { assistant, result } = answeredAskUserQuestionPair();
     const allMsgs = [assistant, result];
@@ -169,7 +155,6 @@ describe('isMessageFullyHidden', () => {
   });
 
   it('never hides an alwaysShown kind even if its standard is forced off', () => {
-    // user.prompt is alwaysShown in the registry: a turn boundary.
     const cfg = createDefaultConfig();
     cfg.kinds['user.prompt'] = { ...cfg.kinds['user.prompt'], standard: false };
     const msg = userText('hi');
@@ -217,5 +202,3 @@ describe('withoutHiddenInStandard', () => {
   });
 });
 
-// A hidden run with nothing countable in it would render an empty expander —
-// no row at all is the only honest output.

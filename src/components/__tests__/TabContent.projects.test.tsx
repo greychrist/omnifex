@@ -5,7 +5,6 @@ import type { Tab } from '@/contexts/TabContext';
 
 const project = { id: '-repo-alpha', path: '/repo/alpha', sessions: ['s1'], created_at: 0, most_recent_session: 0 };
 
-// The tab list is the test's own state; updateTab mutates it and re-renders.
 let tabs: Tab[] = [];
 let activeTabId = 't1';
 let rerender: () => void = () => {};
@@ -63,7 +62,6 @@ beforeEach(() => { __resetProjectsCacheForTests(); });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('TabContent — projects tab', () => {
-  // The sessions page used to wait on getProjectSessions before it showed.
   it('opens a project\'s sessions page at once and fills the list when it arrives', async () => {
     tabs = [projectsTab()];
     mount();
@@ -83,12 +81,9 @@ describe('TabContent — projects tab', () => {
     expect(await screen.findByRole('button', { name: 'Back to Projects' })).toBeTruthy();
     expect(api.getProjectSessions).toHaveBeenCalledWith('-repo-alpha', '/repo/alpha');
     expect(tabs[0].title).toBe('alpha: Sessions');
-    // The hand-off is consumed, so the next visit is the plain list.
     expect(tabs[0].returnToProjectPath).toBeUndefined();
   });
 
-  // A list fetched once is shown straight away on the next visit while it
-  // refreshes, instead of a skeleton.
   it('shows the last list it fetched while a new projects tab refreshes', async () => {
     tabs = [projectsTab()];
     const first = mount();

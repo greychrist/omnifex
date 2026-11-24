@@ -4,11 +4,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { IconPicker, AVAILABLE_ICONS, ICON_MAP } from '../IconPicker';
 
-// framer-motion + Radix Dialog both rely on layout effects + portals that
-// don't compose cleanly with jsdom. Mock motion.* as plain DOM and let
-// Radix Dialog mount inline via its `forceMount` fallback behavior — the
-// Dialog itself doesn't gate rendering on `open={true}` for our assertions
-// because we always render with isOpen=true.
+// framer-motion and Radix Dialog's layout effects and portals do not compose
+// with jsdom.
 vi.mock('framer-motion', () => ({
   motion: new Proxy(
     {},
@@ -39,7 +36,6 @@ describe('IconPicker — exports', () => {
   it('ICON_MAP exposes each icon component keyed by name', () => {
     expect(typeof ICON_MAP.home).toBe('object'); // React.forwardRef component
     expect(ICON_MAP.settings).toBeDefined();
-    // Every AVAILABLE_ICONS entry should have a matching ICON_MAP entry.
     for (const name of AVAILABLE_ICONS) {
       expect(ICON_MAP[name]).toBeDefined();
     }
@@ -51,7 +47,6 @@ describe('IconPicker — search', () => {
     render(
       <IconPicker value="" onSelect={() => {}} isOpen onClose={() => {}} />,
     );
-    // "Interface & Navigation" is one of the categories defined in the source.
     expect(screen.getByText(/Interface & Navigation/i)).toBeDefined();
   });
 
@@ -61,9 +56,7 @@ describe('IconPicker — search', () => {
     );
     const input = screen.getByPlaceholderText(/Search icons/i);
     fireEvent.change(input, { target: { value: 'home' } });
-    // "home" matches at least one icon button (the home icon).
     const buttons = document.querySelectorAll('button');
-    // Confirm we narrowed the result set significantly (full grid > 50 buttons).
     expect(buttons.length).toBeLessThan(40);
   });
 
@@ -85,12 +78,10 @@ describe('IconPicker — selection', () => {
     render(
       <IconPicker value="" onSelect={onSelect} isOpen onClose={onClose} />,
     );
-    // Narrow to a single icon via search so we can pick it deterministically.
     fireEvent.change(screen.getByPlaceholderText(/Search icons/i), {
       target: { value: 'home' },
     });
     const buttons = document.querySelectorAll('button');
-    // Find the icon-grid button (skip the Dialog's built-in close X button).
     const iconButton = Array.from(buttons).find(
       (btn) => btn.className.includes('p-2.5'),
     );

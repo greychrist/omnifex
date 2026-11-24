@@ -2,9 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, screen } from '@testing-library/react';
 
-// The one input that decides all of this. Mocked rather than driven through
-// window.innerWidth because useLayoutMode caches its value in module state
-// shared by every test in the file.
+// Mocked: useLayoutMode caches its value in module state shared by every test.
 const layout = { narrow: false, touch: false, web: false };
 vi.mock('@/hooks/useLayoutMode', () => ({ useLayoutMode: () => layout }));
 
@@ -35,7 +33,6 @@ describe('narrow windows drop the meter bars', () => {
   it('keeps the session widget bar at full width and drops it when narrow', () => {
     const { unmount } = render(<SessionCard totalTokens={12_000} contextLimit={200_000} contextUsage={USAGE} />);
     expect(screen.getByTestId('context-meter-bar')).toBeTruthy();
-    // The numbers either side of it stay — they carry the same fact.
     expect(screen.getByText('12.0k')).toBeTruthy();
     unmount();
 
@@ -44,7 +41,6 @@ describe('narrow windows drop the meter bars', () => {
     expect(screen.queryByTestId('context-meter-bar')).toBeNull();
     expect(screen.getByText('12.0k')).toBeTruthy();
     expect(screen.getByText('6%')).toBeTruthy();
-    // The bar was also what kept those two numbers apart.
     expect(screen.getByTestId('context-meter-divider')).toBeTruthy();
   });
 
@@ -63,7 +59,6 @@ describe('narrow windows drop the meter bars', () => {
     render(<RateLimitWidget snapshot={SNAPSHOT} windowType="five_hour" />);
     expect(screen.queryByTestId('rate-limit-bar')).toBeNull();
     expect(screen.getByText('42%')).toBeTruthy();
-    // Otherwise the percentage runs straight into the reset countdown.
     expect(screen.getByTestId('rate-limit-divider')).toBeTruthy();
   });
 
@@ -73,7 +68,6 @@ describe('narrow windows drop the meter bars', () => {
     expect(screen.queryByTestId('rate-limit-divider')).toBeNull();
   });
 
-  // The empty state carries a placeholder bar of the same width.
   it('drops the placeholder bar too, so an account with no data still fits', () => {
     layout.narrow = true;
     render(<RateLimitWidget snapshot={null} windowType="seven_day" />);

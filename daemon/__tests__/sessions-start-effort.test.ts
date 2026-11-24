@@ -1,8 +1,4 @@
 // @vitest-environment node
-//
-// session_start has always carried `effort` and `thinking`, but start() handed
-// the engine only model + permission mode, so the level the picker showed was
-// never what a fresh session ran. Pinned here at the service seam.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';

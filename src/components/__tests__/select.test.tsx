@@ -14,16 +14,8 @@ beforeAll(() => {
   proto.scrollIntoView ??= () => {};
 });
 
-/**
- * Split so Tailwind's scanner does not see a complete class name here.
- *
- * Tailwind v4 scans raw source text — test files and COMMENTS included — and
- * generates a rule for anything that looks like a utility. Spelling it out
- * whole anywhere in this repo emits the height rule into the bundle forever:
- * dead CSS no element uses, and a false positive for anyone grepping the built
- * output to check whether this bug is back. (Measured: it took three rebuilds
- * to notice the comments were doing it.)
- */
+// Split: Tailwind v4 scans source text, comments included, and would emit the
+// rule for a whole class name.
 const VIEWPORT_HEIGHT_CLASS = 'h-[var(--radix-select-trigger' + '-height)]';
 
 const OPTIONS = [
@@ -45,23 +37,8 @@ function openSelect(triggerClass?: string) {
 }
 
 describe('SelectComponent dropdown sizing', () => {
-  /**
-   * The regression this pins:
-   *
-   * The Viewport is the SCROLL CONTAINER holding the options. Binding its
-   * height to the trigger-height custom property makes it exactly as tall as
-   * the trigger — 28px for the Brain tab's `h-7` switcher — so a three-account
-   * list becomes a one-line scrolling window with scroll buttons and hover
-   * auto-scroll. It reads as a laggy, sticky dropdown.
-   *
-   * Radix's documented way to bound a popper Select is
-   * `max-height: var(--radix-select-content-available-height)` on the CONTENT,
-   * never a fixed height on the viewport.
-   *
-   * This asserts on a class name, which is a proxy: jsdom computes no layout,
-   * so it cannot see the visual result. It catches the exact reintroduction,
-   * not the general class of bug.
-   */
+  // Binding the Viewport (the scroll container) to the trigger-height variable
+  // makes it exactly as tall as the trigger.
   it('does not pin the options viewport to the trigger height', () => {
     openSelect('h-7 w-56 text-xs');
 

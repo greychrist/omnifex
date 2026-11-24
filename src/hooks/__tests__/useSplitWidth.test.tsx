@@ -6,7 +6,6 @@ import { useSplitWidth } from '@/hooks/useSplitWidth';
 
 const KEY = 'omnifex.split.test';
 
-/** A container of a known width, so the clamp has something real to clamp to. */
 function Harness({ defaultWidth = 400 }: { defaultWidth?: number }): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const { width, startResize } = useSplitWidth({
@@ -34,8 +33,7 @@ function drag(from: number, to: number): void {
 describe('useSplitWidth', () => {
   beforeEach(() => {
     window.localStorage.clear();
-    // jsdom reports every rect as zero, which would clamp the max to a
-    // negative number and make every assertion below meaningless.
+    // jsdom reports every rect as zero, which would clamp the max negative.
     Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
       configurable: true,
       value: () => ({ width: 1000, height: 600, top: 0, left: 0, right: 1000, bottom: 600 }),
@@ -55,21 +53,12 @@ describe('useSplitWidth', () => {
     expect(screen.getByTestId('left').style.width).toBe('320px');
   });
 
-  /**
-   * Without a floor the handle can be dragged past the left edge, leaving a
-   * table too narrow to read and a handle too far left to grab back.
-   */
   it('never shrinks the left pane below its minimum', () => {
     render(<Harness />);
     drag(500, 0);
     expect(screen.getByTestId('left').style.width).toBe('200px');
   });
 
-  /**
-   * The ceiling is the container's width minus the room the right pane needs.
-   * A splitter that can swallow the pane it exists to reveal is a splitter
-   * that can hide the note you just clicked.
-   */
   it('never grows past the room the right pane needs', () => {
     render(<Harness />);
     drag(500, 5000);
@@ -84,7 +73,6 @@ describe('useSplitWidth', () => {
     expect(screen.getByTestId('left').style.width).toBe('500px');
   });
 
-  /** A stored width from a wider window must still respect this one's ceiling. */
   it('clamps a stored width that no longer fits', () => {
     window.localStorage.setItem(KEY, '5000');
     render(<Harness />);

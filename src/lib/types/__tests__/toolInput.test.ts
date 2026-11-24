@@ -32,23 +32,13 @@ describe('asToolInput', () => {
   });
 
   it('does NOT validate field-level shape — passes through any object payload', () => {
-    // Documented behavior: CLI types are compile-time only; runtime asserts
-    // the discriminator name and object-ness, no more. Each widget reads
-    // with optional access so a missing field renders gracefully.
     const result = asToolInput('Bash', 'Bash', { unrelated: true });
     expect(result).not.toBeNull();
   });
 });
 
 describe('asToolInput — Write empty-content predicate', () => {
-  // Regression for the empty-file write bug. `content === ''` is a
-  // legitimate empty-file write — the CLI schema permits it and Claude
-  // Code emits it for `touch`-style operations. The StreamMessage gate
-  // historically used `writeInput?.file_path && writeInput.content`
-  // which evaluates to `''` (falsy) for empty content and silently
-  // dropped the widget through to the generic JSON display. The fix
-  // is `writeInput?.file_path && writeInput.content !== undefined`.
-  // This test pins the contract at the literal-expression level.
+  // `content === ''` is a legitimate empty-file write.
   it('preserves empty-string content on Write narrowing', () => {
     const input = asToolInput('Write', 'Write', { file_path: '/tmp/empty.txt', content: '' });
     expect(input).not.toBeNull();
@@ -58,27 +48,18 @@ describe('asToolInput — Write empty-content predicate', () => {
 
   it('the WRONG predicate (truthiness) drops empty-content writes', () => {
     const input = asToolInput('Write', 'Write', { file_path: '/tmp/empty.txt', content: '' });
-    // Documents why the bug existed: the truthiness check sees '' as falsy.
     expect(Boolean(input!.file_path && input!.content)).toBe(false);
   });
 
   it('the CORRECT predicate (definedness) keeps empty-content writes', () => {
     const input = asToolInput('Write', 'Write', { file_path: '/tmp/empty.txt', content: '' });
-    // The fixed predicate the StreamMessage gate must use.
     expect(Boolean(input!.file_path && input!.content !== undefined)).toBe(true);
   });
 });
 
 describe('GrepInputExtended', () => {
-  // Regression: GrepInputExtended adds optional `include` / `exclude`
-  // fields the CLI no longer models (replaced upstream by glob / type).
-  // GrepWidget still reads them for back-compat with older session
-  // payloads. If the intersection were ever removed from toolInput.ts,
-  // the call site in StreamMessage.tsx would compile (because rawInput
-  // is unknown until narrowed) but `grepInput.include` would silently
-  // become `unknown` rather than `string | undefined`. This test
-  // exercises the access pattern so the type intersection can't be
-  // removed without breaking either the test or the consumer.
+  // GrepWidget still reads `include` / `exclude`, which the CLI no longer models,
+  // for older payloads.
   it('exposes legacy include/exclude fields after narrowing', () => {
     const result = asToolInput('Grep', 'Grep', {
       pattern: 'foo',
@@ -114,12 +95,6 @@ describe('asToolInputOneOf', () => {
     expect(asToolInputOneOf('Task', ['Task'], 'string')).toBeNull();
   });
 
-  // Regression: the renderer used to PascalCase-normalize the name before
-  // calling asToolInputOneOf because isSubagentDispatch was case-insensitive
-  // and this helper was case-sensitive — the asymmetry forced a shim at
-  // the call site. Both layers are now case-sensitive against the CLI's
-  // PascalCase contract; this test pins the case-sensitive behavior so any
-  // future regression to lenient matching breaks loudly.
   it('is case-sensitive — lowercase variants do NOT match PascalCase expected set', () => {
     expect(asToolInputOneOf('task', ['Task', 'Agent'], { description: 'd', prompt: 'p' })).toBeNull();
     expect(asToolInputOneOf('agent', ['Task', 'Agent'], { description: 'd', prompt: 'p' })).toBeNull();
@@ -128,10 +103,6 @@ describe('asToolInputOneOf', () => {
 });
 
 describe('KNOWN_TOOL_NAMES / TOOLS_WITH_WIDGETS_LOWER', () => {
-  // Single-source-of-truth invariant: TOOLS_WITH_WIDGETS_LOWER must be the
-  // KNOWN_TOOL_NAMES tuple lowercased, with no drift in either direction.
-  // The Set is what StreamMessage.tsx uses for the tool-result suppression
-  // path; it must stay in lockstep with the typed widget switch keys.
   it('TOOLS_WITH_WIDGETS_LOWER is exactly KNOWN_TOOL_NAMES lowercased', () => {
     const expected = new Set(KNOWN_TOOL_NAMES.map((n) => n.toLowerCase()));
     expect(TOOLS_WITH_WIDGETS_LOWER).toEqual(expected);
@@ -139,8 +110,6 @@ describe('KNOWN_TOOL_NAMES / TOOLS_WITH_WIDGETS_LOWER', () => {
   });
 
   it('KNOWN_TOOL_NAMES contains the expected tools', () => {
-    // Fence-post check so adding a tool requires updating this assertion
-    // (and forces deliberate consideration of whether it needs a widget).
     expect(new Set(KNOWN_TOOL_NAMES)).toEqual(
       new Set([
         'Bash', 'Edit', 'MultiEdit', 'Read', 'Write', 'Glob', 'Grep',
@@ -181,10 +150,7 @@ describe('warnUnhandledKnownTool', () => {
     warnSpy.mockRestore();
   });
 
-  // Vitest sets import.meta.env.DEV=true by default in test mode, so the
-  // helper's DEV gate is satisfied during these tests. We intentionally
-  // do NOT mock the gate — the test reflects how the helper behaves in
-  // a dev session of the renderer.
+  // Vitest sets import.meta.env.DEV=true in test mode, so the DEV gate holds.
 
   it('warns when toolName is in KNOWN_TOOL_NAMES (a known name fell through with no rendering branch matching)', () => {
     warnUnhandledKnownTool('Bash', { unexpected: true });

@@ -4,8 +4,7 @@ import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import type { Account } from '@/lib/api';
 import { AccountPickerDialog } from '@/components/AccountPickerDialog';
 
-// Mock the typed API surface the dialog imports. Hoisted so the factory
-// closure resolves before the module under test imports `@/lib/api`.
+// Hoisted: bare consts would land after the hoisted vi.mock factory.
 const { apiMock } = vi.hoisted(() => {
   return {
     apiMock: {
@@ -19,8 +18,6 @@ vi.mock('@/lib/api', () => ({
   api: apiMock,
 }));
 
-// AccountBadge pulls from AccountsContext + useTheme(); stub both so the
-// dialog renders account names without needing real providers.
 vi.mock('@/contexts/AccountsContext', () => ({
   useAccounts: () => ({
     accounts: [],
@@ -73,7 +70,6 @@ describe('AccountPickerDialog — engineFilter', () => {
       />,
     );
 
-    // Wait for the async listAccounts() resolution to render rows.
     await waitFor(() => {
       expect(screen.getByText('Personal-Codex')).toBeTruthy();
     });

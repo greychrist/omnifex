@@ -11,7 +11,6 @@ const opts = {
   pressure: DEFAULT_CONTEXT_PRESSURE,
 };
 
-/** Claude writing to the user: a text block. The rows that get a badge. */
 const assistant = (total: number, content: unknown[] = [{ type: 'text', text: 'Done.' }]): JsonlNode =>
   ({
     kind: 'assistant',
@@ -32,7 +31,6 @@ const assistant = (total: number, content: unknown[] = [{ type: 'text', text: 'D
     },
   }) as unknown as JsonlNode;
 
-/** Claude working: a tool call and nothing said. A reading, but no badge. */
 const toolCall = (total: number): JsonlNode =>
   assistant(total, [{ type: 'tool_use', id: 't1', name: 'Read', input: {} }]);
 
@@ -94,11 +92,6 @@ describe('buildContextTimeline — sampling', () => {
 });
 
 describe('buildContextTimeline — badges only on replies', () => {
-  // A badge on every API response put one on each tool row, and the "+Nk"
-  // landed on whichever row followed a big tool result — no rhyme or reason
-  // from where the user sits (Greg, 2026-11-18). Badges now sit only on
-  // Claude's text to the user, and each delta is the growth since the
-  // previous reply, tool work included.
   it('gives a tool call no badge', () => {
     const tool = toolCall(120_000);
     const t = buildContextTimeline([assistant(100_000), tool], opts);
@@ -160,8 +153,7 @@ describe('buildContextTimeline — badges only on replies', () => {
 
 describe('buildContextTimeline — filtered rendering', () => {
   // ClaudeTranscript renders `displayableMessages` (hard-filtered), not
-  // `messages`. Keying by node identity means the rail still resolves for the
-  // rows that survive, and deltas stay measured across the hidden ones.
+  // `messages`.
   it('resolves points for a filtered subset without shifting deltas', () => {
     const a = assistant(100_000);
     const hidden = assistant(400_000);
@@ -233,9 +225,6 @@ describe('buildContextTimeline — fraction', () => {
   });
 });
 
-// The rail is colored green/amber/red by where each row sits against the
-// budget. Levels come from contextPressure so the rail and the banner cannot
-// disagree about where amber starts.
 describe('buildContextTimeline — pressure level', () => {
   const at = (tokens: number) => {
     const node = assistant(tokens);
@@ -254,8 +243,6 @@ describe('buildContextTimeline — pressure level', () => {
     expect(at(250_000)?.level).toBe('critical');
   });
 
-  // Carried-forward rows hold the previous reading, so they must hold its
-  // color too — otherwise the rail flickers back to green between samples.
   it('carries the level forward on rows with no reading', () => {
     const a = assistant(250_000);
     const p = prompt();
@@ -264,7 +251,6 @@ describe('buildContextTimeline — pressure level', () => {
     expect(t.get(p)?.level).toBe('critical');
   });
 
-  // A compaction is the one place the color should visibly fall back.
   it('drops the level after a compaction resets the window', () => {
     const before = assistant(250_000);
     const after = assistant(20_000);
@@ -284,8 +270,6 @@ describe('buildContextTimeline — previous reading', () => {
   });
 
   it('carries it across a compaction, where `delta` is deliberately null', () => {
-    // The rail needs to print "−420k" on the reset row, but `delta` stays null
-    // there so `isJump` and the level coloring keep their meaning.
     const messages = [assistant(500_000), compactBoundary(), assistant(80_000)];
     const points = buildContextTimeline(messages, opts);
 
@@ -317,8 +301,7 @@ describe('showsGutterDelta', () => {
 
 describe('buildContextTimeline — the reply the CLI re-writes after /compact', () => {
   // The CLI copies the last reply in after the compact_boundary with all-zero
-  // usage. It must not badge, and must not use up the reset: the "compacted"
-  // drop belongs on the first real reply after the boundary.
+  // usage.
   const zeroCopy = (): JsonlNode => {
     const node = assistant(100_000) as unknown as { raw: { message: { usage: Record<string, number> } } };
     node.raw.message.usage = {

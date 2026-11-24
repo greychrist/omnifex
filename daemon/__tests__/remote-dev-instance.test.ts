@@ -21,12 +21,6 @@ describe('devInstanceEnv', () => {
     });
   });
 
-  // The bug this replaced: it used to write these three into `process.env`,
-  // so every child the dev app spawned inherited them — CLI sessions, agents,
-  // Brain extraction, and any shell command run inside a session. `npm test`
-  // from a terminal in a dev-app session then failed remote-config's
-  // "file overrides port" case, because loadServerConfig() read the inherited
-  // OMNIFEX_PORT. The overlay is handed to the two places that want it.
   it('does not touch the environment it was handed', () => {
     const env: Record<string, string | undefined> = { PATH: '/opt/bin' };
     devInstanceEnv(env, HOME);
@@ -52,8 +46,6 @@ describe('devInstanceEnv', () => {
     );
     expect(env.OMNIFEX_STATE_DIR).toBe('/tmp/smoke');
     expect(env.OMNIFEX_PORT).toBe('49999');
-    // Still a dev daemon: the marker is about who owns the background work,
-    // not about where the state lives.
     expect(env.OMNIFEX_DEV_DAEMON).toBe('1');
   });
 
@@ -73,10 +65,8 @@ describe('isDevDaemon', () => {
 });
 
 describe('periodicWorkGate', () => {
-  // Two daemons now share one greychrist.db. `brain_spend` is append-only and
-  // recoverOrphans() re-queues whatever the other process is mid-extraction
-  // on, so a second sweeper is billed for real. The dev daemon is a test
-  // fixture; the installed pair keeps the maintenance.
+  // Two daemons share one greychrist.db and `brain_spend` is append-only, so a
+  // second sweeper bills for real.
   it('shuts periodic work off in a dev daemon', () => {
     const gate = periodicWorkGate({ OMNIFEX_DEV_DAEMON: '1' });
     expect(gate?.()).toBe(false);

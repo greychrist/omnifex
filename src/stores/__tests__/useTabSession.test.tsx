@@ -54,8 +54,6 @@ describe('useTabSession', () => {
     const captures: ReturnType<typeof useTabSession>[] = [];
     const { rerender } = render(<HookHarness tabId={TAB} capture={(s) => { captures.push(s); }} />);
 
-    // Force a re-render that also mutates the slice — setters must NOT change
-    // identity even as the data does.
     act(() => { useClaudeSessionStore.getState().patchTab(TAB, { claudeSessionId: 's-rerender' }); });
     rerender(<HookHarness tabId={TAB} capture={(s) => { captures.push(s); }} />);
 
@@ -64,7 +62,6 @@ describe('useTabSession', () => {
     expect(last.setMessages).toBe(first.setMessages);
     expect(last.appendMessage).toBe(first.appendMessage);
     expect(last.setClaudeSessionId).toBe(first.setClaudeSessionId);
-    // ...while the data still updated.
     expect(last.claudeSessionId).toBe('s-rerender');
   });
 

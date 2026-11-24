@@ -3,9 +3,8 @@ import { resolveContextLimit } from '../contextLimit';
 
 describe('resolveContextLimit', () => {
   it('trusts the live CLI maxTokens even when the model string lost its [1m] suffix (resume bug)', () => {
-    // This is the reported bug: on resume selectedModel falls back to "opus"
-    // (no [1m]), but the live CLI reports the true 1M window. We must NOT clamp
-    // the authoritative live number to 200k.
+    // On resume selectedModel can be a bare "opus" while the live CLI reports the
+    // true 1M window.
     expect(resolveContextLimit({ sdkMaxTokens: 1_000_000, model: 'opus' })).toBe(1_000_000);
     expect(resolveContextLimit({ sdkMaxTokens: 1_000_000, model: undefined })).toBe(1_000_000);
   });
@@ -89,12 +88,8 @@ describe('resolveContextLimit', () => {
   });
 
   it('uses the account default model to detect a 1M window when the session model lost its [1m] suffix', () => {
-    // The reported bug (a resumed chat-mode session before its next turn, where
-    // live usage hasn't been fetched): an "Account Default" session never
-    // carries [1m] on its own model string (selectedModel is the base id from
-    // JSONL, or the "default" sentinel). The account's settings.json `model`
-    // ("opus[1m]") is the only signal that the resolved default is a 1M model,
-    // so the fallback must honor it.
+    // Only the account's settings.json `model` ("opus[1m]") says the default is a
+    // 1M model.
     expect(
       resolveContextLimit({ sdkMaxTokens: null, model: 'claude-opus-4-8', defaultModel: 'opus[1m]' }),
     ).toBe(1_000_000);
@@ -107,8 +102,6 @@ describe('resolveContextLimit', () => {
   });
 
   it('does NOT inherit the 1M default when the session explicitly runs a different model family', () => {
-    // Account defaults to opus[1m], but this session was explicitly switched to
-    // sonnet. In the fallback we must size against sonnet's window, not 1M.
     expect(
       resolveContextLimit({ sdkMaxTokens: null, model: 'claude-sonnet-4-6', defaultModel: 'opus[1m]' }),
     ).toBe(200_000);
@@ -139,8 +132,6 @@ describe('resolveContextLimit', () => {
   });
 
   it('still trusts a live window over the account default model heuristic', () => {
-    // Live data is authoritative — a 200k live window wins even if the account
-    // default looks like a 1M model (e.g. a sub-agent pinned to a smaller window).
     expect(
       resolveContextLimit({ sdkMaxTokens: 200_000, model: 'opus', defaultModel: 'opus[1m]' }),
     ).toBe(200_000);

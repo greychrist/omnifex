@@ -1,12 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, runMigrations, type Database } from '../services/database';
 
-/**
- * v27 strips `thinkingConfig` from stored account session defaults. The
- * Thinking picker went in v0.4.70 and nothing could set the value after
- * that; the setting itself is gone now, so the key would be dead weight
- * that every account save round-tripped.
- */
 describe('accounts.session_defaults thinkingConfig strip (v27)', () => {
   let db: Database;
 

@@ -149,15 +149,12 @@ describe('keepUnchangedItems', () => {
     const done = text('done');
     const second = keepUnchangedItems(first, buildModernItems([p, bash, res, done], createDefaultConfig()));
     expect(second[0]).toBe(first[0]);
-    // The work item gained a result, so it is new.
     expect(second[1]).not.toBe(first[1]);
     const third = keepUnchangedItems(second, buildModernItems([p, bash, res, done], createDefaultConfig()));
     expect(third.every((item, i) => item === second[i])).toBe(true);
   });
 
   it("replaces a record line when its kind's icon or color changes in settings", () => {
-    // The line's icon and color are resolved from the config when it is
-    // built; keeping the old object kept the old look until a reload.
     const records = [prompt('go'), system('dev_intent')];
     const before = createDefaultConfig();
     const first = buildModernItems(records, before, records, false);
@@ -168,7 +165,6 @@ describe('keepUnchangedItems', () => {
     const line = (second[1] as Extract<ModernItem, { kind: 'line' }>).line;
     expect(line.icon).toBe('Star');
     expect(line.accent).toEqual({ kind: 'css', color: '#ff0000' });
-    // The same config again keeps the object, so appends stay cheap.
     const third = keepUnchangedItems(second, buildModernItems(records, after, records, false));
     expect(third[1]).toBe(second[1]);
   });
@@ -190,8 +186,6 @@ describe('buildModernItems — results outside the displayable rows', () => {
   it('pairs a tool with a result the display filter dropped', () => {
     const bash = toolUse('a', 'Bash');
     const res = toolResult('a', 'hello');
-    // The transcript filters tool-result rows out (other formats reach them
-    // through row lookups), so the full list is passed separately.
     const items = buildModernItems([bash], createDefaultConfig(), [bash, res]);
     const work = items[0];
     if (work.kind !== 'work' || work.entries[0].type !== 'tool') throw new Error('shape');
@@ -346,8 +340,6 @@ describe('buildModernItems — injected user records', () => {
     raw: { type: 'user', origin: { kind: originKind }, message: { role: 'user', content: [{ type: 'text', text }] } },
   } as unknown as JsonlNode);
 
-  // Stamped as injected, not typed: never your bubble. Compact hides a task
-  // notification by default, so Modern leaves it out too.
   it('does not draw a task notification as your prompt', () => {
     const note = injected('task-notification', '<task-notification>\n<summary>Background command "Build" completed (exit code 0)</summary>\n</task-notification>');
     const items = buildModernItems([prompt('go'), note], createDefaultConfig());
@@ -448,8 +440,6 @@ describe('buildModernItems — instructions and permission mode', () => {
 });
 
 describe('buildModernItems — live control changes', () => {
-  // The marker the app appends when you switch mode, effort or model in a
-  // running session (the persisted permission-mode line arrives only on resume).
   const change = (control: string, value: string) => ({
     kind: 'control-change', control, value, sessionId: 't', receivedAt: '2026-11-02T00:00:00.000Z',
   }) as unknown as JsonlNode;
@@ -476,7 +466,6 @@ describe('buildModernItems — nothing borrows the Compact card but content', ()
       { kind: 'system', subtype: 'api_error', sessionId: '', receivedAt: 'x', raw: { type: 'system', subtype: 'api_error', content: 'Overloaded' } },
       { kind: 'system', subtype: 'local_command', sessionId: '', receivedAt: 'x', raw: { type: 'system', subtype: 'local_command', content: '<local-command-stdout>Total cost: $1</local-command-stdout>', commandRun: { command: 'cost' } } },
     ] as unknown as JsonlNode[];
-    // Shown, whatever their default visibility: this is about the form.
     const cfg = createDefaultConfig();
     for (const k of ['system.unknown', 'system.local_command']) cfg.kinds[k] = { standard: true };
     expect(buildModernItems(records, cfg).map((i) => i.kind)).toEqual(['line', 'line']);

@@ -15,15 +15,12 @@ describe('decideResumeSeed', () => {
   });
 
   it('ignores a stream fork: prop id unchanged, only claudeSessionId advanced', () => {
-    // Seeded A on first run; stream advanced claudeSessionId to the fork A'.
     expect(
       decideResumeSeed({ sessionId: 'A', claudeSessionId: "A'", prevSessionId: 'A' }),
     ).toBe('skip');
   });
 
   it('follows a user switch to a different session even when a live id is set', () => {
-    // The bug: opening a new session reassigns the prop while claudeSessionId
-    // still holds the previous session's (possibly forked) id. Must reseed.
     expect(
       decideResumeSeed({ sessionId: 'B', claudeSessionId: "A'", prevSessionId: 'A' }),
     ).toBe('reseed');
@@ -36,8 +33,6 @@ describe('decideResumeSeed', () => {
   });
 
   it('does not stomp a live id on remount over an already-live tab (first sight, non-null)', () => {
-    // Component remounted (prev ref reset to undefined) while the store slice
-    // still holds the stream-advanced id A'. Must not seed the pre-fork prop A.
     expect(
       decideResumeSeed({ sessionId: 'A', claudeSessionId: "A'", prevSessionId: undefined }),
     ).toBe('skip');

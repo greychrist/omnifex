@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createServerClient, RemoteClientError, type WebSocketLike } from '@/lib/remote/serverClient';
 import { PROTOCOL_VERSION } from '@/protocol';
 
-/** A scripted socket: the test plays the daemon. */
 class FakeSocket implements WebSocketLike {
   static instances: FakeSocket[] = [];
   readyState = 0;
@@ -25,7 +24,6 @@ class FakeSocket implements WebSocketLike {
     this.readyState = 3;
     this.onclose?.({ code: code ?? 1000, reason: reason ?? '' });
   }
-  // --- daemon side ---
   open(): void {
     this.readyState = 1;
     this.onopen?.({});
@@ -33,7 +31,6 @@ class FakeSocket implements WebSocketLike {
   receive(m: unknown): void {
     this.onmessage?.({ data: JSON.stringify(m) });
   }
-  /** Answer the most recent request of a type. */
   answer(type: string, result: unknown): void {
     const req = [...this.sent].reverse().find((s) => s.type === type);
     if (!req) throw new Error(`no ${type} request was sent`);
@@ -64,7 +61,6 @@ function make(overrides: Partial<Parameters<typeof createServerClient>[0]> = {})
   });
 }
 
-/** Connect and complete the handshake. */
 async function connected(client = make()) {
   const p = client.connect();
   const sock = FakeSocket.instances.at(-1)!;
@@ -137,7 +133,6 @@ describe('server client', () => {
 
     sock.drop();
     expect(client.state).toBe('reconnecting');
-    // A request while down is queued, not rejected.
     const queued = client.request('project.list', {});
 
     vi.advanceTimersByTime(100);
@@ -146,8 +141,8 @@ describe('server client', () => {
     sock2.open();
     expect(sock2.sent.map((s) => s.type)).toEqual(['hello']);
     sock2.answer('hello', WELCOME);
-    // The greeting resolves on a microtask; only after it does the queue
-    // flush, and it goes out in order.
+    // The greeting resolves on a microtask; only then does the queue flush, in
+    // order.
     await vi.advanceTimersByTimeAsync(0);
     expect(sock2.sent.map((s) => s.type)).toEqual(['hello', 'project.list']);
     sock2.answer('project.list', []);
@@ -215,17 +210,8 @@ describe('server client', () => {
     await expect(req).rejects.toMatchObject({ code: 'TIMEOUT' });
   });
 
-  /**
-   * `rpc.invoke` proxies an IPC handler, and an IPC handler has no deadline.
-   *
-   * Indexing nine sessions into the Brain takes about a minute; a backfill
-   * takes hours. The blanket 30s request timeout rejected the call while the
-   * daemon carried on spending money on it — so the UI showed
-   * "rpc.invoke timed out after 30000ms", never ran the completion refresh,
-   * and left rows reading "indexing…" for work that had already finished.
-   * Matching Electron's own semantics is the fix: a live socket means the call
-   * is still live, and only a dead one ends it.
-   */
+  // `rpc.invoke` proxies an IPC handler, which has no deadline: a Brain backfill
+  // takes hours.
   it('does not time out an rpc.invoke the daemon is still working on', async () => {
     const { client, sock } = await connected(make({ requestTimeoutMs: 1000 }));
     const req = client.request('rpc.invoke', { channel: 'brain_index_selection', params: {} });
@@ -236,10 +222,6 @@ describe('server client', () => {
     await expect(req).resolves.toMatchObject({ written: 9 });
   });
 
-  /**
-   * The liveness guarantee that replaces the timer: a call outlives any clock,
-   * but never the socket it was sent on.
-   */
   it('rejects an in-flight rpc.invoke when the connection drops', async () => {
     const { client, sock } = await connected(make({ requestTimeoutMs: 1000 }));
     const req = client.request('rpc.invoke', { channel: 'brain_index_selection', params: {} });

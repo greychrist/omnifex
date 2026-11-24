@@ -14,11 +14,6 @@ const baseCtx: StreamReducerContext = {
   messagesLength: 0,
 };
 
-// ── helpers that build JsonlNode fixtures ─────────────────────────────────────
-
-// The CLI `system:init` envelope classifies to kind:'cli-stream-init'
-// (jsonlClassifier routes every system:init there). The raw payload keeps
-// its original shape, so session_id is still on raw.
 function sysInit(sessionId = 'sess-1'): JsonlNode {
   return {
     kind: 'cli-stream-init',
@@ -38,8 +33,6 @@ function compactBoundary(): JsonlNode {
   };
 }
 
-/** `result` arrives as kind:'cli-stream-result' (jsonlClassifier routes every
- *  `type:'result'` line there). The raw payload keeps its original shape. */
 function resultOk(): JsonlNode {
   return {
     kind: 'cli-stream-result',
@@ -107,8 +100,6 @@ function sysStatus(status: string | null): JsonlNode {
   };
 }
 
-/** Assistant node carrying full per-message usage (model, requestId, message.id)
- *  — the shape `computeCost` reads for model-aware, cache-aware pricing. */
 function assistantUsageNode(opts: {
   id?: string;
   model?: string;
@@ -206,12 +197,6 @@ describe('reduceSessionStreamMessage', () => {
   });
 
   it('interrupted error result is kept as a neutralized turn-closer (not skipped)', () => {
-    // Dropping the post-interrupt result row used to leave the trailing
-    // partial assistant (stop_reason:null) as the last turn-significant node,
-    // so waitingOnClaude() stayed true forever and the tab was stuck on
-    // "Turn in flight"/WORKING after Stop. Keep the result row so the turn
-    // axis can close; neutralize is_error so a deliberate cancel renders as a
-    // benign completion, not a red "failed" card.
     const r = reduceSessionStreamMessage(resultErr(), {
       ...baseCtx,
       userInterrupted: true,
@@ -221,7 +206,6 @@ describe('reduceSessionStreamMessage', () => {
     expect(r.replaceWith!.kind).toBe('cli-stream-result');
     expect((r.replaceWith as { raw?: { is_error?: boolean } }).raw?.is_error).not.toBe(true);
     expect(r.clearUserInterrupted).toBe(true);
-    // A deliberate cancel must not auto-drain queued prompts.
     expect(r.effects.map((e) => e.kind)).not.toContain('processQueuedPrompt');
   });
 
@@ -237,15 +221,11 @@ describe('reduceSessionStreamMessage', () => {
     expect(r.effects.map((e) => e.kind)).toContain('queuePostCompactDirective');
   });
 
-  // The drain used to hang off `cli-stream-result` alone, on the assumption
-  // that the boundary always arrives mid-turn. Work session 3445e547 (CLI
-  // 2.1.273) emitted the result two records BEFORE the boundary, so the
-  // directive was queued after its only trigger had passed and never sent.
+  // The CLI can emit the result before compact_boundary (2.1.273).
   it('compact_boundary also asks to drain the queue', () => {
     const r = reduceSessionStreamMessage(compactBoundary(), baseCtx);
     const kinds = r.effects.map((e) => e.kind);
     expect(kinds).toContain('processQueuedPrompt');
-    // Queue first, then drain — draining an empty queue is a noop.
     expect(kinds.indexOf('queuePostCompactDirective'))
       .toBeLessThan(kinds.indexOf('processQueuedPrompt'));
   });
@@ -380,9 +360,8 @@ describe('reduceSessionStreamMessage', () => {
     });
 
     it('cli-stream-result usage contributes zero (rollup of already-counted assistant messages)', () => {
-      // cli-stream-result.usage is the CLI's turn-level rollup of the same
-      // assistant messages the reducer already priced individually — pricing
-      // it again here would double-count the turn's cost.
+      // cli-stream-result.usage is the CLI's rollup of the assistant messages
+      // already priced.
       const node: JsonlNode = {
         kind: 'cli-stream-result',
         raw: { type: 'result', subtype: 'success', usage: { input_tokens: 1000, output_tokens: 500 } } as never,
@@ -421,11 +400,6 @@ describe('reduceSessionStreamMessage overlay handling', () => {
 });
 
 describe('model-fallback context refresh', () => {
-  // A fallback means the model actually running just changed. Waiting for
-  // turn end leaves the header summary naming the wrong model mid-turn, so
-  // both fallback signals request an immediate get_context_usage refresh —
-  // same pattern as compact_boundary.
-
   it('model-fallback system records request a context usage refresh', () => {
     for (const subtype of [
       'model_fallback',
@@ -518,11 +492,8 @@ describe('costDelta pricing', () => {
 
 describe('forwarded subagent messages (--forward-subagent-text)', () => {
   it('does not price forwarded subagent assistant usage into the session cost', () => {
-    // Forwarded subagent assistants (parent_tool_use_id set) carry their own
-    // usage blocks. Persisted parent transcripts never contain these lines,
-    // so pricing them live would make the live session cost disagree with
-    // the same session's cost on reload. Subagent totals surface via the
-    // subagent row meta instead.
+    // Persisted parent transcripts never contain forwarded subagent lines, so
+    // pricing them live would disagree with the reloaded cost.
     const node = assistantUsageNode({
       id: 'msg_sub_1',
       model: 'claude-haiku-4-5-20251001',
@@ -531,8 +502,6 @@ describe('forwarded subagent messages (--forward-subagent-text)', () => {
     ((node as unknown as { raw: Record<string, unknown> }).raw).parent_tool_use_id = 'toolu_parent_1';
     const r = reduceSessionStreamMessage(node, { ...baseCtx, seenCostKeys: new Set<string>() });
     expect(r.costDelta).toBe(0);
-    // The node itself still lands in messages[] — subagent derivation
-    // reads forwarded text from there.
     expect(r.append).toBe('append');
   });
 });

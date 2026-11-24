@@ -61,8 +61,6 @@ describe('claudeSessionStore', () => {
     expect(store.selectTab(TAB).messages).toEqual([a, b]);
   });
 
-  // The optimistic prompt echo (no uuid) is a placeholder for the CLI's own
-  // record of the same prompt. See src/lib/promptReconciliation.ts.
   describe('appendOrReconcilePrompt', () => {
     const cliPrompt = (text: string, uuid: string): JsonlNode =>
       ({
@@ -101,8 +99,6 @@ describe('claudeSessionStore', () => {
     });
   });
 
-  // A turn's last record can reach the tail after the queued prompt it
-  // preceded was already echoed. See appendCliRecord.
   it('appendCliRecord puts a record written before a pending echo above it', () => {
     const echo = { ...userMsg(), receivedAt: '2026-10-02T19:25:48.480Z' } as JsonlNode;
     const answer = {
@@ -160,9 +156,6 @@ describe('claudeSessionStore', () => {
       text: 'Hello world',
       parentToolUseId: null,
     });
-    // The turn is the session's axis (useSessionLifecycle), not a slot here:
-    // a streamed partial delta cannot end it, so the per-tab busy indicator
-    // cannot clear mid-turn — the 0.4.17 partial-messages bug.
     expect(slice.claudeSessionId).toBe('x');
     expect('isLoading' in slice).toBe(false);
   });

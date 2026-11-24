@@ -54,9 +54,6 @@ function makeScriptedSpawn(scriptedOutput: string, settleDelayMs = 30): PtySpawn
     let killed = false;
     setTimeout(() => {
       if (killed) return;
-      // Emit the welcome-screen footer marker the runner now waits for
-      // before sending /usage. Real TUI shows "? for shortcuts" once the
-      // prompt is interactive.
       for (const h of dataHandlers) h('? for shortcuts ');
     }, 5);
     const fake: FakePty = {
@@ -84,9 +81,6 @@ const TUNING = {
   usageQuietMs: 60,
   hardTimeoutMs: 5000,
   killGraceMs: 0,
-  // Stub out the trusted-scratch-cwd resolver — these tests don't touch
-  // real filesystem state. The integration of the resolver itself is
-  // covered by usage-runner-scratch-cwd.test.ts.
   ensureCwd: () => '/tmp/test-scratch-cwd',
 };
 
@@ -94,11 +88,8 @@ describe('usage-runner', () => {
   it('happy path: parses, dual-writes recordUtilization, caches result', async () => {
     const accounts = makeFakeAccountsService();
     const rateLimits = makeFakeRateLimits();
-    // observedAt = Nov 15 10:40 UTC = 5:40am NY. The fixture's "9:40am NY"
-    // is 4h ahead (today, within the 5-hour cap), and "7pm NY" is ~13h ahead
-    // (within the 7-day cap). Earlier observedAts that pushed the 5-hour
-    // reset >5h out (e.g. yesterday-evening rolling to tomorrow) get rejected
-    // by the new sanity bound, which is the whole point.
+    // observedAt = Nov 15 10:40 UTC = 5:40am NY: "9:40am NY" is 4h ahead (inside
+    // the 5-hour cap) and "7pm NY" ~13h (inside the 7-day cap).
     const observedAt = Date.UTC(2023, 10, 15, 10, 40, 0);
     const runner = createUsageRunnerService({
       accounts, rateLimits,
@@ -127,10 +118,8 @@ describe('usage-runner', () => {
   });
 
   it('launches the TUI with no MCP servers — /usage reads local history, and starting them cost ~84 spawns a scrape', async () => {
-    // Every configured server (uvx / npx launchers by bare name) started and
-    // was killed again on each 5-minute refresh; each PATH miss is a process
-    // syspolicyd assesses. The /usage tables are "based on local sessions",
-    // so the output is the same without them (measured 2026-09-26).
+    // The /usage tables are "based on local sessions", so MCP servers change
+    // nothing.
     const calls: { command: string; args: string[] }[] = [];
     const scripted = makeScriptedSpawn(MAX_FULL_FIXTURE);
     const runner = createUsageRunnerService({
@@ -146,11 +135,6 @@ describe('usage-runner', () => {
   });
 
   it('stale (last-known) render: returns parsed data flagged stale, never records utilization', async () => {
-    // Claude Code 2.1.208: a rate-limited /usage shows LAST-KNOWN bars with a
-    // "Showing last-known usage as of <time> (rate limited — try again in a
-    // moment)" marker. The bars parse fine, but recording them via
-    // recordUtilization would store stale utilization with a fresh
-    // observed_at. The runner must skip the dual-write for stale renders.
     const STALE_FIXTURE = MAX_FULL_FIXTURE.replace(
       '\nCurrent session',
       '\nShowing last-known usage as of 5:43pm (rate limited — try again in a moment)\n\nCurrent session',
@@ -173,17 +157,9 @@ describe('usage-runner', () => {
   });
 
   it('waits for the full render before parsing, even when bytes arrive in chunks', async () => {
-    // Emit the fixture in three slices: first only the session header (no
-    // windows yet), then two of the three windows, then the third. The runner
-    // should not parse until the third window's Resets line lands. Expressed
-    // as: recordUtilization gets called with the values from the COMPLETE
-    // fixture (all three windows), not with a partial.
     const accounts = makeFakeAccountsService();
     const rateLimits = makeFakeRateLimits();
 
-    // Split the fixture so the first chunk is missing the third window
-    // entirely. If the runner snapshots too early, only two windows would be
-    // recorded.
     const sonnetIdx = MAX_FULL_FIXTURE.indexOf('Current week (Sonnet only)');
     const partial = MAX_FULL_FIXTURE.slice(0, sonnetIdx);
     const completion = MAX_FULL_FIXTURE.slice(sonnetIdx);
@@ -199,14 +175,10 @@ describe('usage-runner', () => {
       return {
         write: (data: string) => {
           if (data.includes('/usage')) {
-            // Chunk 1: partial render arrives quickly.
             setTimeout(() => {
               if (killed) return;
               for (const h of dataHandlers) h(partial);
             }, 30);
-            // Chunk 2: completion arrives after a longer delay than the
-            // configured `usageQuietMs` would normally tolerate. The new
-            // completeness check should keep us waiting through the gap.
             setTimeout(() => {
               if (killed) return;
               for (const h of dataHandlers) h(completion);
@@ -229,9 +201,6 @@ describe('usage-runner', () => {
       findClaudeBinary: () => '/fake/claude',
       now: () => observedAt,
       settleQuietMs: 30,
-      // Quiet timeout long enough for both chunks to arrive (chunk 2 lands
-      // at ~250ms). The completeness fast-path then trips fullRenderQuietMs
-      // and exits without waiting the full quiet window.
       usageQuietMs: 500,
       fullRenderQuietMs: 50,
       hardTimeoutMs: 5000,
@@ -249,13 +218,8 @@ describe('usage-runner', () => {
   });
 
   it('keeps waiting past usageQuietMs when the parse is incomplete (e.g. Sonnet bar arrives late)', async () => {
-    // Real-world scenario seen on Claude Code 2.1.132: the Session +
-    // Current session + Current week (all models) blocks render
-    // immediately, the buffer goes quiet for >usageQuietMs, *then* the
-    // Sonnet block arrives via async redraw. The prior logic snapshotted
-    // at the first quiet period and missed the Sonnet bar entirely. With
-    // `incompleteParseGraceMs` we extend the wait when the parse hasn't
-    // hit all 3 windows yet.
+    // The Sonnet block can arrive by async redraw after the buffer goes quiet
+    // (2.1.132).
     const accounts = makeFakeAccountsService();
     const rateLimits = makeFakeRateLimits();
     const sonnetIdx = MAX_FULL_FIXTURE.indexOf('Current week (Sonnet only)');
@@ -272,14 +236,10 @@ describe('usage-runner', () => {
       return {
         write: (data: string) => {
           if (data.includes('/usage')) {
-            // First two windows arrive at 30ms, then buffer goes quiet.
             setTimeout(() => {
               if (killed) return;
               for (const h of dataHandlers) h(firstChunk);
             }, 30);
-            // Sonnet block arrives at 200ms — *after* a 100ms usageQuietMs
-            // would have fired in the prior logic. The extension grace
-            // must be long enough to bridge this gap.
             setTimeout(() => {
               if (killed) return;
               for (const h of dataHandlers) h(lateChunk);
@@ -317,18 +277,8 @@ describe('usage-runner', () => {
   });
 
   it('keeps waiting while "Loading usage data…" placeholder is visible (Claude Code 2.1.146+ async load)', async () => {
-    // Real-world break observed in app_logs after CLI auto-updated past
-    // 2.1.146: /usage now async-loads the rate-limit blocks. The TUI first
-    // renders the Session block + a "Loading usage data…" placeholder,
-    // then goes quiet for several seconds while it hits the server, then
-    // streams in the three Current * blocks once the response arrives.
-    //
-    // Prior logic snapshotted at usageQuietMs + incompleteParseGraceMs
-    // (default 1.5 + 3 = 4.5s) and missed the entire rate-limit payload,
-    // resulting in `no_windows` parse failures on every poll.
-    //
-    // Fix: while the buffer contains the loading-data placeholder and the
-    // parse is incomplete, extend the wait past the standard grace period.
+    // Since 2.1.146 /usage async-loads the rate-limit blocks behind a "Loading
+    // usage data…" placeholder.
     const accounts = makeFakeAccountsService();
     const rateLimits = makeFakeRateLimits();
     const sessionBlock = MAX_FULL_FIXTURE.slice(
@@ -350,14 +300,11 @@ describe('usage-runner', () => {
       return {
         write: (data: string) => {
           if (data.includes('/usage')) {
-            // Session block + loading placeholder arrives quickly…
             setTimeout(() => {
               if (killed) return;
               for (const h of dataHandlers) h(sessionBlock + placeholder);
             }, 30);
-            // …then the buffer goes quiet for 500ms — well past the
-            // standard usageQuietMs (80) + incompleteParseGraceMs (100) =
-            // 180ms total grace. Prior logic snapshotted at 180ms quiet.
+            // 500ms quiet: past usageQuietMs (80) + incompleteParseGraceMs (100).
             setTimeout(() => {
               if (killed) return;
               for (const h of dataHandlers) h(rateLimitBlocks);
@@ -392,9 +339,6 @@ describe('usage-runner', () => {
   });
 
   it('does eventually snapshot a partial parse if the late chunk never arrives', async () => {
-    // Counterpart to the above: if Sonnet truly isn't coming (e.g. free
-    // tier with only 2 windows), don't wait the full hardTimeoutMs.
-    // After usageQuietMs + incompleteParseGraceMs, snapshot what we have.
     const accounts = makeFakeAccountsService();
     const rateLimits = makeFakeRateLimits();
     const sonnetIdx = MAX_FULL_FIXTURE.indexOf('Current week (Sonnet only)');
@@ -414,7 +358,6 @@ describe('usage-runner', () => {
               if (killed) return;
               for (const h of dataHandlers) h(partial);
             }, 30);
-            // No late chunk — Sonnet never comes.
           }
         },
         kill: () => { killed = true; for (const h of exitHandlers) h({ exitCode: 0 }); },
@@ -442,20 +385,14 @@ describe('usage-runner', () => {
     const elapsed = Date.now() - t0;
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Got the 2 windows that did arrive.
     expect(result.parsed.windows.length).toBe(2);
-    // And we exited well before hardTimeoutMs (5000ms). Generous bound to
-    // avoid CI flakiness, but proves we're on the grace path not the hard
-    // deadline.
+    // A generous bound against suite load that still proves the grace path.
     expect(elapsed).toBeLessThan(2000);
   });
 
   it('passes resetsAt=null when the parsed reset is implausibly far in the future', async () => {
-    // observedAt at Nov 14 22:13 UTC pushes the fixture's "9:40am NY"
-    // 16+ hours out (parser rolls past today, then tomorrow). That's well
-    // beyond the 5-hour cap, so the runner should pass null instead of the
-    // junk timestamp — recordUtilization will COALESCE that against any
-    // prior good value.
+    // observedAt Nov 14 22:13 UTC pushes "9:40am NY" 16+ hours out, past the
+    // 5-hour cap.
     const accounts = makeFakeAccountsService();
     const rateLimits = makeFakeRateLimits();
     const runner = createUsageRunnerService({
@@ -549,7 +486,6 @@ describe('usage-runner', () => {
     });
     const ok = await runner.run('personal');
     expect(ok.ok).toBe(true);
-    // Now reconfigure with a binary that doesn't exist — fail the next run
     const runner2 = createUsageRunnerService({
       accounts, rateLimits,
       spawnPty: makeScriptedSpawn(''),
@@ -559,15 +495,11 @@ describe('usage-runner', () => {
     });
     const fail = await runner2.run('personal');
     expect(fail.ok).toBe(false);
-    // (caches are per-instance; this test mostly checks there's no
-    //  global state leak between runs.)
   });
 
   it('recognizes the post-2.1.132 welcome footer (shift+tab to cycle)', async () => {
-    // Claude Code 2.1.132 replaced the "? for shortcuts" footer with
-    // "⏵⏵ auto mode on (shift+tab to cycle) ◉ xhigh · /effort". Greg saw
-    // this in /tmp logs — runner timed out because READY_MARKER didn't
-    // match. The runner now matches a small set of stable footer hints.
+    // 2.1.132 replaced the "? for shortcuts" footer with "⏵⏵ auto mode on
+    // (shift+tab to cycle) ◉ xhigh · /effort".
     const accounts = makeFakeAccountsService();
     const rateLimits = makeFakeRateLimits();
     const newWelcome = '⏵⏵ auto mode on (shift+tab to cycle) ◉ xhigh · /effort';
@@ -608,11 +540,8 @@ describe('usage-runner', () => {
   });
 
   it('recognizes the 2.1.146 welcome footer even when ANSI stripping collapses inter-word spaces', async () => {
-    // Claude Code 2.1.146 lays out the welcome banner with cursor-positioning
-    // escapes for some inter-word spacing rather than literal space chars.
-    // After stripAnsi() the visible characters remain but the spacing is gone,
-    // so a literal substring match for "shift+tab to cycle" misses. The
-    // matcher must normalize whitespace on both sides. Captured live by Greg.
+    // 2.1.146 spaces the banner with cursor moves, so stripAnsi() output loses the
+    // spaces; the matcher normalizes whitespace on both sides.
     const accounts = makeFakeAccountsService();
     const rateLimits = makeFakeRateLimits();
     const stripped146 = '⏵⏵automodeon (shift+tabtocycle)·←foragents◉xhigh·/effort';
@@ -664,11 +593,7 @@ describe('usage-runner', () => {
     }
 
     it('accepts a reset time that has only just passed instead of rejecting it', async () => {
-      // Production regression, seen 4× in app_logs between 2026-08-05 and
-      // 2026-08-22: the 5-hour window rolled over mid-capture, so the label
-      // read "5:19pm" while observedAt was 17:19:16 EDT. The clock parser
-      // pushed it to tomorrow (dt = 23h59m45s) and validateResetEpoch dropped
-      // it as beyond_cap, so a correct reset time never reached rate-limits.
+      // The window can roll over mid-capture: "5:19pm" read at 17:19:16.
       const observedAt = Date.UTC(2026, 7, 22, 21, 19, 16);
       const fixture = MAX_FULL_FIXTURE.replace(
         'Resets 9:40am (America/New_York)',
@@ -688,8 +613,6 @@ describe('usage-runner', () => {
       const result = await runner.run('personal');
       expect(result.ok).toBe(true);
 
-      // The five-hour window must carry a reset time, clamped to "now" rather
-      // than sitting 16s in the past.
       const fiveHour = recordUtilization.mock.calls.find((c) => c[1] === 'five_hour');
       expect(fiveHour).toBeDefined();
       expect(fiveHour?.[3]).toBe(Math.floor(observedAt / 1000));
@@ -697,10 +620,7 @@ describe('usage-runner', () => {
     });
 
     it('treats an absent Resets line as absent, not as a parse failure', async () => {
-      // 25× in app_logs since 2026-08-05, most recently today: the CLI renders
-      // the current-session window with no Resets line at all. That is the CLI
-      // declining to print one, not a label we failed to understand — logging
-      // it at warn buried the real drift signal under recurring noise.
+      // The CLI sometimes renders the current-session window with no Resets line.
       const observedAt = Date.UTC(2023, 10, 15, 10, 40, 0);
       const fixture = MAX_FULL_FIXTURE.replace('Resets 9:40am (America/New_York)\n', '');
       const { rows, logging } = makeLoggingSpy();
@@ -717,8 +637,7 @@ describe('usage-runner', () => {
       const result = await runner.run('personal');
       expect(result.ok).toBe(true);
 
-      // Still recorded, still with a null reset (recordUtilization COALESCEs
-      // null against the last known-good value) — but not as a warning.
+      // recordUtilization COALESCEs a null reset against the last known-good value.
       const fiveHour = recordUtilization.mock.calls.find((c) => c[1] === 'five_hour');
       expect(fiveHour?.[3]).toBeNull();
       expect(rows.some((r) => r.message.startsWith('rejected reset epoch'))).toBe(false);
@@ -728,8 +647,6 @@ describe('usage-runner', () => {
     });
 
     it('still warns when a Resets label is present but unrecognized', async () => {
-      // The signal the noise was hiding: a label the CLI reworded into a shape
-      // resetsLabelToEpoch does not understand must stay loud.
       const observedAt = Date.UTC(2023, 10, 15, 10, 40, 0);
       const fixture = MAX_FULL_FIXTURE.replace(
         'Resets 9:40am (America/New_York)',
@@ -753,12 +670,8 @@ describe('usage-runner', () => {
   });
 
   it('dismisses the Chrome-extension interstitial (Esc) and still reaches /usage', async () => {
-    // Claude Code added a first-run "Claude in Chrome extension detected"
-    // prompt that appears BEFORE the welcome footer. Its default-highlighted
-    // choice ("❯ 1. Yes, use my browser") would opt the account into browser
-    // tools if we blindly pressed Enter. The runner must recognize the prompt
-    // and press Esc ("keep browser tools off"), then continue to the welcome
-    // screen. Greg hit this in the wild — the scrape stalled on the prompt.
+    // The Chrome-extension prompt's default choice opts into browser tools, so Esc,
+    // never Enter.
     const chromePrompt = [
       ' Claude in Chrome extension detected',
       '',
@@ -775,8 +688,6 @@ describe('usage-runner', () => {
       const dataHandlers: ((d: string) => void)[] = [];
       const exitHandlers: ((code: { exitCode: number }) => void)[] = [];
       let killed = false;
-      // Emit the Chrome interstitial first; the welcome footer only appears
-      // once the runner dismisses it with Esc.
       setTimeout(() => {
         if (killed) return;
         for (const h of dataHandlers) h(chromePrompt);
@@ -785,7 +696,6 @@ describe('usage-runner', () => {
         write: (data: string) => {
           writes.push(data);
           if (data.includes('\x1b')) {
-            // Esc pressed — dialog dismissed, welcome screen renders.
             setTimeout(() => {
               if (killed) return;
               for (const h of dataHandlers) h('\n? for shortcuts ');
@@ -817,8 +727,6 @@ describe('usage-runner', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.parsed.windows.length).toBe(3);
-    // Esc must have been sent before /usage, and Enter (\r) must NOT have been
-    // used to answer the Chrome prompt (that would enable browser tools).
     const escIdx = writes.findIndex((w) => w.includes('\x1b'));
     const usageIdx = writes.findIndex((w) => w.includes('/usage'));
     expect(escIdx).toBeGreaterThanOrEqual(0);
@@ -826,17 +734,8 @@ describe('usage-runner', () => {
   });
 
   it('dismisses the fullscreen-renderer offer (Esc) and still reaches /usage', async () => {
-    // CLI 2.1.239 caps this dialog at three impressions
-    // (`fullscreenUpsellSeenCount`), but within those three it renders INSTEAD
-    // of the welcome screen: a live capture of 2.1.240 in a pty
-    // (CLAUDE_CODE_FORCE_FULLSCREEN_UPSELL=1) contains the dialog and none of
-    // READY_MARKERS, so the phase-1 loop ran to the hard deadline and the
-    // scrape returned ok:false.
-    //
-    // Esc is "Not now". Enter would pick the highlighted "Yes, try it", which
-    // starts a renderer trial and, if the session stays healthy, persists
-    // `tui: "fullscreen"` into the user's settings.json — a scrape must never
-    // change the user's renderer.
+    // CLI 2.1.239+ shows the fullscreen offer INSTEAD of the welcome screen for up
+    // to three impressions.
     const upsellPrompt = [
       ' Try the new fullscreen renderer?',
       '',
@@ -898,7 +797,7 @@ describe('usage-runner', () => {
     const usageIdx = writes.findIndex((w) => w.includes('/usage'));
     expect(escIdx).toBeGreaterThanOrEqual(0);
     expect(escIdx).toBeLessThan(usageIdx);
-    // Enter must never be sent to this dialog — it would accept the trial.
+    // Enter would accept the trial.
     expect(writes.slice(0, escIdx).some((w) => w.includes('\r'))).toBe(false);
   });
 
@@ -926,9 +825,6 @@ describe('usage-runner', () => {
   });
 
   it('logs timeout failure with the captured raw buffer so it shows up in the Log tab', async () => {
-    // Simulate the Apr-2026 trust-dialog wording change: spawn emits the
-    // safety-check prompt (which the runner does NOT recognize) but never
-    // the welcome marker. Runner should hit hardTimeoutMs and log.
     const safetyPrompt =
       'Accessing workspace:\n\n  /scratch/personal\n\n' +
       "Quick safety check: Is this a project you created or one you trust?";
@@ -964,8 +860,6 @@ describe('usage-runner', () => {
       now: () => 1,
       settleQuietMs: 20,
       usageQuietMs: 50,
-      // Keep this small so the test runs quickly. The hardTimeoutMs path
-      // is what we're exercising.
       hardTimeoutMs: 200,
       killGraceMs: 0,
       ensureCwd: () => '/scratch/personal',
@@ -976,14 +870,8 @@ describe('usage-runner', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/timed out/i);
-    // The raw output we captured should be returned to the caller so the
-    // UI can render it (this preserves the existing "Raw output" panel
-    // behavior).
     expect(result.raw).toContain('Quick safety check');
 
-    // And critically — a warn-level log should mention the timeout AND
-    // include the captured raw in its metadata so the Log tab is useful
-    // when this happens in the wild.
     const timeoutLog = logs.find(
       (l) => l.level === 'warn' && /timed out|prompt was ready/i.test(l.message),
     );
@@ -992,10 +880,6 @@ describe('usage-runner', () => {
   });
 
   it('warns in the Log tab when a parse succeeds but a CLI label has drifted (silent zero)', async () => {
-    // The whole point of the drift guard: a render where the CLI reworded
-    // "Total cost:" → "Total spend:" still parses ok (windows intact), so the
-    // session cost is silently stored as 0. That must leave a loud warn-level
-    // breadcrumb instead of looking like real zero usage.
     const drifted = MAX_FULL_FIXTURE.replace('Total cost:             $0.0000', 'Total spend:            $4.2000');
 
     const logs: { level: string; message: string; metadata?: string }[] = [];
@@ -1018,7 +902,6 @@ describe('usage-runner', () => {
     const result = await runner.run('personal');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Silent corruption confirmed: cost parsed as 0 despite the $4.20 render.
     expect(result.parsed.session.cost_usd).toBe(0);
 
     const driftLog = logs.find(

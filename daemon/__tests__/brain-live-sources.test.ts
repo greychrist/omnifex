@@ -1,20 +1,3 @@
-// A session that is still open is still being written to. Indexing it distils
-// a partial conversation, records the item as done, and — because extraction
-// asks a non-deterministic model — the note it leaves is one that will never
-// match the finished transcript.
-//
-// This already happened in the field: session 82ab1eb8 was indexed at 02:46 on
-// 2026-08-13 while its tab was open in OmniFex.
-//
-// The guard lives in `indexSource`, not only at the enqueue boundary, because
-// the Sources pane's "Index Selected" calls `indexSource` DIRECTLY — a queue-
-// only guard would leave the pane's own button as the one unprotected path.
-//
-// "Live" now means open AND recently written: a tab left open long after its
-// conversation ended no longer holds the transcript out of the vault. These
-// tests therefore stamp a FRESH mtime, which is what makes a session here
-// actively-written rather than merely open. The idle half of the contract —
-// what happens once the writes stop — lives in brain-idle-sweep.test.ts.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -36,15 +19,12 @@ describe('brain: live sessions', () => {
     listAccounts: () => [{ id: 1, config_dir: '/cfg/personal' }],
   } as unknown as AccountsService;
 
-  /** Stands in for the real session adapter: itemKey IS the session UUID. */
   function sessionSource(keys: string[]): BrainSource {
     return {
       id: 'session',
       discover: () => Promise.resolve(keys.map((k) => ({
         sourceId: 'session', itemKey: k, accountId: 1,
         path: join(dir, `${k}.jsonl`),
-        // Written just now: these cases are about a session mid-conversation,
-        // and a stale mtime would make every one of them idle instead.
         mtimeMs: Date.now(), size: 10, label: '/proj',
       }))),
       admit: () => ({ admitted: true, reason: 'ok' }),
@@ -58,7 +38,6 @@ describe('brain: live sessions', () => {
     };
   }
 
-  /** A file-backed source whose itemKey deliberately collides with a live UUID. */
   function fileSource(itemKey: string, fileName: string): BrainSource {
     return {
       id: 'auto-memory',
@@ -95,8 +74,6 @@ describe('brain: live sessions', () => {
   });
 
   it('never flags a non-session row, even when its key matches a live UUID', async () => {
-    // A capture or memory note whose key happens to equal a session UUID is
-    // not that session, and blocking it would be unexplainable to the user.
     const brain = createBrainService(db, {
       execGit: stubExec, accounts: accountsStub,
       sources: [fileSource(LIVE, 'note.md')],
@@ -155,8 +132,6 @@ describe('brain: live sessions', () => {
 
     expect((await brain.indexSource(1, LIVE)).skipped).toBe(true);
     live = [];
-    // Reaches the extractor now — no note is written for zero entities, but it
-    // is no longer refused before it starts.
     expect((await brain.indexSource(1, LIVE)).reason).not.toMatch(/active in OmniFex/i);
   });
 
@@ -170,9 +145,6 @@ describe('brain: live sessions', () => {
   });
 
   it('survives a live-session lookup that throws', async () => {
-    // The sessions service is injected from main; a listing must not die
-    // because that lookup failed. Erring toward "not in use" keeps the pane
-    // rendering — `indexSource` is where the money is actually protected.
     const brain = createBrainService(db, {
       execGit: stubExec, accounts: accountsStub,
       sources: [sessionSource([LIVE])],
@@ -242,11 +214,6 @@ describe('brain: source display name', () => {
   });
 });
 
-// Every indexing run already pays for a `claude -p --output-format json` call
-// whose envelope carries `total_cost_usd` and a usage breakdown — and
-// `runCliOnce` threw all of it away, keeping only `result`. Recording it is
-// the difference between "the Brain costs something" and "that backfill cost
-// $2.40, mostly cache creation".
 describe('brain: indexing cost', () => {
   let dir: string;
   let db: Database;
@@ -312,9 +279,6 @@ describe('brain: indexing cost', () => {
   });
 
   it('adds the retry to the bill rather than replacing it', async () => {
-    // The extractor retries once on an unparseable reply, and that retry is
-    // spent money. Reporting only the successful call would understate every
-    // item that needed one.
     let call = 0;
     const brain = createBrainService(db, {
       execGit: stubExec, accounts: accountsStub,
@@ -334,7 +298,6 @@ describe('brain: indexing cost', () => {
 
     await brain.indexSource(1, 'sess-retry');
     const rows = await brain.listSources(1);
-    // One call here, but the shape must carry whatever the extractor totalled.
     expect(rows[0].costUsd).toBeCloseTo(0.01, 6);
   });
 
@@ -366,8 +329,6 @@ describe('brain: indexing cost', () => {
     expect(stats.spentUsd).toBeCloseTo(0.25, 6);
   });
 
-  // The extractor asks for the `sonnet` alias. The ledger records the model
-  // that actually billed, so a row stays attributable after the alias moves.
   it('records the model that ran in the spend ledger, not the alias asked for', async () => {
     const brain = createBrainService(db, {
       execGit: stubExec, accounts: accountsStub,

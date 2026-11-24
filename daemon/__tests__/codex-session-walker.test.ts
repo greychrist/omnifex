@@ -10,11 +10,6 @@ import {
 } from '../services/codex-session-walker';
 import type { Account } from '../services/accounts';
 
-/**
- * Build an empty tmpdir that stands in for a Codex account's config dir. The
- * walker scans `<config_dir>/sessions`, so fixtures are written under a
- * `sessions/` subdir (mix of flat + nested files for shape coverage).
- */
 function makeTmpDir(): { dir: string; cleanup: () => void } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-codex-walk-'));
   return {
@@ -58,7 +53,6 @@ function writeRollout(filePath: string, lines: unknown[], mtimeIso: string): voi
 
 describe('createCodexSessionWalker', () => {
   let tmp: ReturnType<typeof makeTmpDir>;
-  /** Path to a rollout under this account's `sessions/` dir. */
   let sess: (p: string) => string;
   let walker: ReturnType<typeof createCodexSessionWalker>;
 
@@ -179,9 +173,6 @@ describe('createCodexSessionWalker', () => {
     expect(bad?.projectPath).toBeNull();
   });
 
-  // Only the first record matters, but rollouts grow to many MB: reading
-  // each whole (and synchronously) blocked the daemon's event loop for the
-  // sum of every rollout on disk.
   it('reads only the head of each rollout, asynchronously', async () => {
     const id = '019cb5ad-0c36-7d80-b43f-559e40646c80';
     // A session_meta line longer than one read chunk, then a large tail.

@@ -43,7 +43,6 @@ describe('latestInitMcpCount', () => {
 });
 
 describe('splitPlugins', () => {
-  // A mod is listed once, under Mods, not again under Plugins.
   it('separates mods from plugins', () => {
     const { mods, plugins } = splitPlugins([plugin('a'), mod('m'), plugin('b')]);
     expect(mods.map((p) => p.name)).toEqual(['m']);
@@ -57,7 +56,6 @@ describe('loadoutSummary', () => {
     expect(loadoutSummary({ mods: 0, plugins: 1, mcp: 1 })).toBe('1 plugin · 1 MCP server');
   });
 
-  // A count we do not have yet is left out, not shown as zero.
   it('omits what is unknown and says nothing when everything is', () => {
     expect(loadoutSummary({ mods: null, plugins: null, mcp: 3 })).toBe('3 MCP servers');
     expect(loadoutSummary({ mods: null, plugins: null, mcp: null })).toBeNull();

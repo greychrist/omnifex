@@ -2,10 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { listenToMessages } from '../services/sessions/runtime';
 import type { SessionHandle } from '../services/sessions/types';
 
-/**
- * Drives the runtime's engine listener with the exact message sequence a
- * backgrounded agent produces, captured from a live 2.1.235 stream.
- */
+// The message sequence a backgrounded agent produces, from a live 2.1.235
+// stream.
 function harness() {
   const messageCbs: ((m: unknown) => void)[] = [];
   const sendToRenderer = vi.fn();
@@ -53,8 +51,6 @@ describe('background agent completion notification', () => {
       type: 'system', subtype: 'task_started', task_id: 'a53f', tool_use_id: 'toolu_1',
       description: 'Adversarial pre-push review', subagent_type: 'general-purpose', task_type: 'local_agent',
     });
-    // The turn that launched it ends here — this is the notification the
-    // user already gets, minutes before the agent is actually done.
     emit({ type: 'result', subtype: 'success', result: 'dispatched' });
     expect(showNotification.mock.calls).toHaveLength(1);
 

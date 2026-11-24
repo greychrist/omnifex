@@ -12,11 +12,8 @@ import { withoutHiddenInStandard } from '../recordVisibility';
 import { filterDisplayableMessages } from '../messageFilters';
 import { JSONL_CARRIED_SYSTEM_SUBTYPES } from '../../../daemon/services/sessions/stream-forward';
 
-// The Live-only section groups the kinds a reload loses: records the CLI sends
-// on stream-json stdout and never writes to the session file. Which subtypes
-// those are is decided once, main-side, by stream-forward's
-// JSONL_CARRIED_SYSTEM_SUBTYPES; this pins the settings tree to that list so
-// the two cannot drift.
+// Stream-only subtypes are decided by stream-forward's
+// JSONL_CARRIED_SYSTEM_SUBTYPES; this pins the settings tree to that list.
 
 const system = (subtype: string, extra: Record<string, unknown> = {}): JsonlNode =>
   ({
@@ -24,7 +21,6 @@ const system = (subtype: string, extra: Record<string, unknown> = {}): JsonlNode
     raw: { type: 'system', subtype, ...extra },
   }) as unknown as JsonlNode;
 
-// Every system subtype with a registry kind of its own.
 const SUBTYPES = [
   'notification',
   'hook_started',
@@ -56,7 +52,6 @@ const SUBTYPES = [
   'stop_hook_summary',
 ];
 
-// Stream-only CLI bookkeeping: nothing to say in the transcript unless asked.
 const BOOKKEEPING = [
   'background_tasks_changed',
   'dev_intent',
@@ -64,16 +59,14 @@ const BOOKKEEPING = [
   'elicitation_complete',
   'session_metadata',
   'session_title_changed',
-  // Mod plumbing from a headless session (CLI >= 2.1.287). ui_status is read
-  // by the Session context panel's Mods section instead.
+  // Mod plumbing from a headless session (CLI >= 2.1.287).
   'ui_invalidate',
   'ui_focus',
   'ui_panes',
   'ui_placed',
   'ui_scroll',
   'ui_status',
-  // CLI 2.1.321: a mod's OS notification and its withdrawal. The daemon
-  // raises the banner (sessions/mod-notifications.ts); the row says nothing.
+  // CLI 2.1.321: a mod's OS notification and its withdrawal.
   'ui_notify',
   'ui_notify_cancel',
   'commands_changed',

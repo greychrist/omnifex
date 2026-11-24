@@ -36,9 +36,6 @@ describe('sessionNameRegistry', () => {
   });
 
   it('merges partial updates instead of overwriting', () => {
-    // Common lifecycle: tab opens with title + projectName, then the CLI
-    // assigns a claudeSessionId a moment later. The second write must not
-    // erase what the first one stored.
     sessionNameRegistry.set('tab-1', {
       title: 'Bug hunt',
       projectName: 'omnifex',
@@ -82,10 +79,6 @@ describe('sessionNameRegistry', () => {
   });
 
   it('reads back legacy v1 entries that only had {title, updatedAt}', () => {
-    // Older builds wrote entries with just `{ title, updatedAt }`. Make sure
-    // those round-trip cleanly: the new schema's extra fields are simply
-    // absent (undefined), which is exactly what the Log tab's fallback
-    // chain expects.
     const legacy = {
       'tab-legacy': { title: 'Pre-upgrade session', updatedAt: 1700000000000 },
     };

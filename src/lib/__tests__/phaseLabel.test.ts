@@ -11,8 +11,7 @@ describe('phaseLabel', () => {
   });
 
   it('title-cases an unknown open-string value, turning separators into spaces', () => {
-    // The CLI may emit status values the docs do not list (the field is an
-    // open string). They should degrade gracefully, not vanish.
+    // The CLI's status field is an open string.
     expect(phaseLabel('tool_use')).toBe('Tool use');
   });
 

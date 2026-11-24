@@ -3,9 +3,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import type { PermissionRequestPayload } from "@/lib/types/permissionRequest";
 
-// DiffViewer (rendered by CodexPatchPreview) reaches for the syntax theme
-// via useTheme(); stub it the same way CodexApplyPatch.test.tsx does so
-// the test environment doesn't blow up without a ThemeProvider.
+// useTheme() throws without a ThemeProvider.
 vi.mock("@/hooks", () => ({
   useTheme: () => ({ theme: "gray", setTheme: () => {}, isLoading: false }),
 }));
@@ -51,7 +49,6 @@ function makeCodexPatchRequest(
       },
       reason: "refactor extract",
     },
-    // Stub Claude fields so the wider type stays valid.
     toolName: "apply_patch",
     toolInput: {},
     suggestions: [],
@@ -90,9 +87,7 @@ describe("PermissionCard — Claude tool variant (regression)", () => {
         onDeny={vi.fn()}
       />,
     );
-    // The Bash command surfaces in the tool-input preview pre.
     expect(screen.getByText("ls -la")).toBeTruthy();
-    // The rule editor input exists with the suggestion pre-filled.
     const ruleInput = screen.getByPlaceholderText<HTMLInputElement>(
       /e\.g\. Bash\(git:\*\) or Read/i,
     );
@@ -142,7 +137,6 @@ describe("PermissionCard — Codex patch variant", () => {
       />,
     );
     expect(screen.getByText(/codex patch approval/i)).toBeTruthy();
-    // CodexPatchPreview surfaces the N-files header.
     expect(screen.getByText(/2 files/)).toBeTruthy();
   });
 
@@ -166,9 +160,6 @@ describe("PermissionCard — Codex patch variant", () => {
         onDeny={vi.fn()}
       />,
     );
-    // With N=2 files the file blocks open by default (≤ 3 heuristic).
-    // DiffViewer marks each rendered diff part; assert at least one is
-    // present per file block (proves diffs actually rendered).
     expect(container.querySelectorAll("[data-diff-line]").length).toBeGreaterThan(0);
   });
 
@@ -236,11 +227,7 @@ describe("PermissionCard — Codex exec variant", () => {
       />,
     );
     expect(screen.getByText(/codex command approval/i)).toBeTruthy();
-    // CodexExecPreview lays the command inside a <code> with a leading `$`
-    // (rendered alongside the command in the same element). The literal `$`
-    // and the command sit in adjacent text nodes; assert via the joined
-    // textContent of the <code> rather than getByText (which uses node-by-
-    // node matching).
+    // The `$` and the command are adjacent text nodes in one <code>.
     const codes = Array.from(container.querySelectorAll("code"));
     const commandLine = codes.find((el) => el.textContent?.includes("npm test"));
     expect(commandLine).toBeTruthy();
@@ -308,7 +295,6 @@ describe("PermissionCard — Codex exec variant", () => {
         />,
       ),
     ).not.toThrow();
-    // Empty-state placeholder for an absent command.
     expect(screen.getByText(/empty command/i)).toBeTruthy();
   });
 });
@@ -366,11 +352,8 @@ describe("PermissionCard — command preview hardening", () => {
   });
 });
 
-// Claude Code 2.1.229 fixed its own crash on a tool call carrying a non-string
-// `glob`, `file_path`, or `command`. The same payload reaches this card, whose
-// typed branches returned the field as a declared `string` straight into
-// `buildCommandPreview` → `raw.replace(...)` → TypeError. A permission card
-// that cannot render has no Allow/Deny, so the session sits blocked.
+// Claude Code 2.1.229 crashed on a tool call carrying a non-string `glob`,
+// `file_path` or `command`; the same payload reaches this card.
 describe("PermissionCard — malformed tool input (CLI 2.1.229 class)", () => {
   const malformed: { tool: string; input: Record<string, unknown>; what: string }[] = [
     { tool: "Bash", what: "object command", input: { command: { cmd: "ls" } } },
@@ -395,7 +378,6 @@ describe("PermissionCard — malformed tool input (CLI 2.1.229 class)", () => {
           />,
         ),
       ).not.toThrow();
-      // Allow/Deny must stay reachable — that is the whole point of the card.
       expect(screen.getByRole("button", { name: /deny/i })).toBeTruthy();
     });
   }
@@ -412,10 +394,8 @@ describe("PermissionCard — malformed tool input (CLI 2.1.229 class)", () => {
   });
 });
 
-// The CLI sets `suppress_always_allow_rule` when a persistent grant for this
-// ask would be broader than the ask itself (MCP retroactive approvals, and
-// from 2.1.235 any edit whose content can't be fully reviewed). Its own TUI
-// drops the entire standing row in that case, leaving accept-once / reject.
+// The CLI sets `suppress_always_allow_rule` when a persistent grant would be
+// broader than the ask; its own TUI then drops the standing row.
 describe("PermissionCard — suppressAlwaysAllowRule", () => {
   it("withholds the rule editor and both persisting buttons", () => {
     render(
@@ -484,9 +464,8 @@ describe("PermissionCard — suppressAlwaysAllowRule", () => {
   });
 });
 
-// A write that resolves through a symlink to outside the working directories.
-// No Edit(...) rule stops the CLI asking again (verified on 2.1.280); only a
-// folder grant does, so the card offers the CLI's addDirectories instead.
+// For a write through a symlink outside the working directories no Edit(...)
+// rule stops the CLI asking (2.1.280); only a folder grant does.
 describe("PermissionCard — symlink escape folder grant", () => {
   const symlinkRequest = () =>
     makeClaudeRequest({

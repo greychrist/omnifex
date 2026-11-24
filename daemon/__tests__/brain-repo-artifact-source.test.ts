@@ -12,7 +12,6 @@ function writeTranscript(configDir: string, project: string, name: string, cwd: 
   const dir = join(configDir, 'projects', project);
   mkdirSync(dir, { recursive: true });
   const rows = [
-    // A leading row with no cwd, which real transcripts have.
     JSON.stringify({ type: 'summary', summary: 'no cwd on this row' }),
     ...(cwd ? [JSON.stringify({ type: 'user', cwd, message: { role: 'user', content: 'hi' } })] : []),
   ];
@@ -31,9 +30,6 @@ describe('repoPathFromTranscripts', () => {
   });
 
   it('reads the real path from a transcript rather than the directory name', async () => {
-    // The encoded name is LOSSY: this one decodes naively to
-    // /Users/dev/Repos/wombeats/ios, which does not exist. The real repo is
-    // /Users/dev/Repos/wombeats-ios, and only the transcript knows that.
     const project = '-Users-dev-Repos-wombeats-ios';
     writeTranscript(tmp, project, 'sess-a', '/Users/dev/Repos/wombeats-ios');
 
@@ -114,12 +110,6 @@ describe('repo artifact source', () => {
     ]);
   });
 
-  /**
-   * The label is the PROJECT, never the file. It is what the Sources pane
-   * groups on and what exclusions key on, so labelling an artifact `CLAUDE.md`
-   * both read as a file at the root of the drive and made every repo's
-   * instruction file share one exclusion.
-   */
   it('labels an artifact with its repo, not with the file', async () => {
     writeFileSync(join(repo, 'CLAUDE.md'), '# rules\n\nsome rules\n', 'utf8');
     mkdirSync(join(repo, 'src'), { recursive: true });
@@ -154,8 +144,6 @@ describe('repo artifact source', () => {
 
   it('omits an artifact whose repo resolves to no account', async () => {
     writeFileSync(join(repo, 'CLAUDE.md'), '# rules\n\nsome rules\n', 'utf8');
-    // An adapter that cannot determine ownership omits the item rather than
-    // guessing — guessing writes one account's material into another's vault.
     expect(await createRepoArtifactSource({ accounts: accountsWith(null) }).discover()).toEqual([]);
   });
 

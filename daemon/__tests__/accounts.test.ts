@@ -16,10 +16,6 @@ describe('accounts service', () => {
     db.close();
   });
 
-  // -----------------------------------------------------------------------
-  // CRUD
-  // -----------------------------------------------------------------------
-
   describe('CRUD', () => {
     it('creates and lists accounts', () => {
       accounts.createAccount({ name: 'Personal', configDir: '/home/user/.claude' });
@@ -175,10 +171,6 @@ describe('accounts service', () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // Path rules
-  // -----------------------------------------------------------------------
-
   describe('path rules', () => {
     it('adds and lists path rules', () => {
       const work = accounts.createAccount({ name: 'Work', configDir: '/home/user/.claude-work', subscriptionLabel: 'team' });
@@ -204,10 +196,6 @@ describe('accounts service', () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // Resolution — ResolvePair
-  // -----------------------------------------------------------------------
-
   describe('resolution', () => {
     it('resolves the claude slot via explicit project override', () => {
       accounts.createAccount({ name: 'Default', configDir: '/home/user/.claude' });
@@ -224,9 +212,6 @@ describe('accounts service', () => {
     it('override written with a non-normalized path still resolves (trailing slash)', () => {
       const work = accounts.createAccount({ name: 'Work', configDir: '/home/user/.claude-work' });
 
-      // User picks an account for a path the renderer happened to pass with a
-      // trailing slash. resolve() normalizes before lookup, so the write must
-      // normalize too — otherwise the override silently never matches.
       accounts.setProjectOverride('/home/user/projects/myapp/', work.id);
 
       const pair = accounts.resolve('/home/user/projects/myapp');
@@ -256,9 +241,6 @@ describe('accounts service', () => {
 
     it('listPathRules orders by prefix length first, matching resolution precedence', () => {
       const a = accounts.createAccount({ name: 'A', configDir: '/a' });
-      // Short prefix with a high priority must NOT be listed ahead of a longer
-      // prefix — resolution is longest-prefix-wins, and the list must agree so
-      // the UI does not imply the high-priority short rule takes precedence.
       accounts.addPathRule(a.id, '/home/user/work', 99);
       accounts.addPathRule(a.id, '/home/user/work/deep/nested', 0);
 
@@ -344,10 +326,6 @@ describe('accounts service', () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // Explain resolution
-  // -----------------------------------------------------------------------
-
   describe('explain resolution', () => {
     it('explains override match', () => {
       const work = accounts.createAccount({ name: 'Work', configDir: '/home/user/.claude-work', subscriptionLabel: 'team' });
@@ -373,9 +351,6 @@ describe('accounts service', () => {
     });
 
     it('resolves the requested engine, not whichever prefix is longest', () => {
-      // A Claude session on a path that ALSO matches a longer Codex rule must
-      // still report the Claude account in its header — engine-agnostic
-      // resolution would surface Codex here (the longer-prefix winner).
       const claude = accounts.createAccount({ name: 'Personal', configDir: '/home/user/.claude' });
       const codex = accounts.createAccount({ name: 'Codex', configDir: '/home/user/.codex', engine: 'codex' });
       accounts.addPathRule(claude.id, '/home/user/proj', 0);
@@ -391,8 +366,6 @@ describe('accounts service', () => {
     });
 
     it('returns null for an engine with no matching rule even when the other engine matches', () => {
-      // Deleting/never-having a Codex account for a path must not let a Claude
-      // match leak into the Codex slot (and vice versa).
       const claude = accounts.createAccount({ name: 'Personal', configDir: '/home/user/.claude' });
       accounts.addPathRule(claude.id, '/home/user/proj', 0);
 
@@ -400,10 +373,6 @@ describe('accounts service', () => {
       expect(accounts.explainResolution('/home/user/proj/x', 'codex')).toBeNull();
     });
   });
-
-  // -----------------------------------------------------------------------
-  // Icon field
-  // -----------------------------------------------------------------------
 
   describe('icon field', () => {
     it('persists icon on create and reads it back via listAccounts', () => {
@@ -426,10 +395,6 @@ describe('accounts service', () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // Discovery
-  // -----------------------------------------------------------------------
-
   describe('discovery', () => {
     it('returns an array', async () => {
       const discovered = await accounts.discoverAccounts();
@@ -451,10 +416,6 @@ describe('accounts service', () => {
       expect(accounts.listAccounts()).toHaveLength(countAfterFirst);
     });
   });
-
-  // -----------------------------------------------------------------------
-  // Per-session summary settings (toggle + model)
-  // -----------------------------------------------------------------------
 
   describe('summary settings', () => {
     it('migration adds summarizeOnClose + summaryModel columns', () => {
@@ -489,11 +450,6 @@ describe('accounts service', () => {
     });
   });
 
-  // -----------------------------------------------------------------------
-  // expected_email — the address the user asserts a config dir should be
-  // authenticated as. Null means "don't check".
-  // -----------------------------------------------------------------------
-
   describe('expected_email', () => {
     it('defaults to null on a freshly created account', () => {
       const acct = accounts.createAccount({ name: 'personal', configDir: '/tmp/.claude-personal' });
@@ -520,11 +476,9 @@ describe('accounts service', () => {
       accounts.updateAccount(acct.id, { ...base, expectedEmail: 'b@example.com' });
       expect(accounts.listAccounts()[0].expected_email).toBe('b@example.com');
 
-      // undefined preserves
       accounts.updateAccount(acct.id, { ...base });
       expect(accounts.listAccounts()[0].expected_email).toBe('b@example.com');
 
-      // null clears
       accounts.updateAccount(acct.id, { ...base, expectedEmail: null });
       expect(accounts.listAccounts()[0].expected_email).toBeNull();
     });

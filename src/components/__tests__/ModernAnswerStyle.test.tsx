@@ -49,8 +49,6 @@ describe('Modern answer style', () => {
     expect(container.querySelector('[data-turn-footer]')).not.toBeNull();
   });
 
-  // The same 16px off the rule as every other ruled text in Modern: a
-  // recap, an opened compaction or step (TraceCollapsibleContent's pl-4).
   it('sets the answer 16px off the bar, as the other ruled text is', () => {
     renderWith('line');
     const line = screen.getByText('All done.').closest('.modern-final-line');
@@ -77,9 +75,6 @@ describe('Modern user prompt style', () => {
     expect(container.querySelector('.modern-prompt-line')).toBeNull();
   });
 
-  // Laid out opposite to the answer's line (Greg, 2026-11-19): the bar on
-  // the right, right-aligned, under a "User prompt" chip in the User prompt
-  // kind's icon.
   it('draws a bar on the right in line style, mirrored from the answer, with no fill or shadow', () => {
     const { container } = renderPrompt('line');
     const line = screen.getByText('Fix the login bug.').closest('.modern-prompt-line');

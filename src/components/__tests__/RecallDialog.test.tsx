@@ -52,8 +52,6 @@ describe('RecallDialog', () => {
   it('searches only the account it was given', async () => {
     open();
     await search();
-    // Never merged across vaults: a search shows one account's hits, and
-    // switching vaults is a deliberate act elsewhere in the app.
     expect(api.brainSearch).toHaveBeenCalledWith(7, 'drain');
   });
 
@@ -94,7 +92,6 @@ describe('RecallDialog', () => {
     fireEvent.click(screen.getByText('Queue'));
     fireEvent.click(screen.getByRole('button', { name: /insert 1 note/i }));
 
-    // Closing on a failed read would look like a successful insert.
     expect(await screen.findByText(/cannot read note/)).toBeTruthy();
     expect(onInsert).not.toHaveBeenCalled();
   });

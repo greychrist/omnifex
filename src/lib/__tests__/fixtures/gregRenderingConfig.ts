@@ -1,5 +1,4 @@
-/** Greg's saved message_rendering_config (v5), 2026-11-18: the visibility and
- *  style parts the migration reads. Copied from app_settings. */
+// A real saved message_rendering_config (v5): the parts the migration reads.
 export const GREG_RENDERING_CONFIG: unknown = {
   "version": 5,
   "defaultViewMode": "modern",

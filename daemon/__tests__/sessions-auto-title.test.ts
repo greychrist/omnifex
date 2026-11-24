@@ -4,8 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-// One shared spy across every engine the service builds, so the assertions
-// can ask "was a title ever requested?" without knowing which handle asked.
 const sendControlRequestSpy = vi.fn(async (_subtype: string, _payload: unknown) => undefined);
 
 vi.mock('../services/agents/claude-cli-engine', () => ({
@@ -69,8 +67,7 @@ describe('shouldAutoTitle', () => {
   });
 
   it('skips a slash command', () => {
-    // "/resume" or "/compact" would name the session after the command
-    // rather than the work. The CLI's own auto-title gate excluded these too.
+    // The CLI's own auto-title skips these too.
     expect(shouldAutoTitle({ attempted: false, prompt: '/resume' })).toBe(false);
     expect(shouldAutoTitle({ attempted: false, prompt: '  /compact keep the plan' })).toBe(false);
   });
@@ -131,9 +128,6 @@ describe('sendMessage — session auto-naming', () => {
   });
 
   it('leaves a resumed session alone', () => {
-    // A resumed conversation either already carries a title or is one of the
-    // nameless ones from the 2.1.277+ gap; either way a name derived from a
-    // prompt landing mid-conversation is worse than none. Those rename by hand.
     const sessions = createSessionsService(vi.fn());
     const realId = '11111111-2222-3333-4444-555555555555';
     const dir = path.join(tmpConfig, 'projects', encodeProjectId(projectPath));

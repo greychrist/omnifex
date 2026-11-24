@@ -1,10 +1,4 @@
 // @vitest-environment jsdom
-/**
- * The context setters Settings calls must let a failed write reach the caller.
- * They used to catch and `console.error`, so Settings could not tell a saved
- * value from a lost one. The new value still applies either way — only the
- * persistence failed.
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render, cleanup, waitFor } from '@testing-library/react';
@@ -33,7 +27,6 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-/** Renders `useValue` inside `Provider` and hands back its latest result. */
 async function mount<T>(Provider: React.FC<{ children: React.ReactNode }>, useValue: () => T) {
   const ref: { current: T | null } = { current: null };
   function Probe() { ref.current = useValue(); return null; }

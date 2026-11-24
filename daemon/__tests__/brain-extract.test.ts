@@ -10,13 +10,6 @@ import { addRunCosts } from '../services/brain/spend';
 import type { DistilledItem } from '../services/brain/sources/types';
 import type { CliRunResult } from '../services/sessions/summary-query';
 
-/**
- * A `claude -p` result carrying just the reply.
- *
- * The runner now returns the CLI's cost accounting alongside the text (the
- * Brain records what each indexing run cost). These suites are about the text,
- * so they wrap it here rather than restating five null fields per fixture.
- */
 function reply(text: string, cost: Partial<CliRunResult> = {}): CliRunResult {
   return {
     result: text,
@@ -54,9 +47,6 @@ describe('parseExtraction', () => {
   });
 
   it('parses JSON wrapped in a markdown fence', () => {
-    // The CLI returns the model's text verbatim, and a model asked for JSON
-    // fences it more often than not. Rejecting that would fail most calls for
-    // a reason that has nothing to do with the content.
     const fenced = '```json\n' + JSON.stringify(VALID) + '\n```';
     expect(parseExtraction(fenced).entities).toHaveLength(1);
   });
@@ -67,7 +57,6 @@ describe('parseExtraction', () => {
   });
 
   it('is not fooled by a brace inside trailing prose', () => {
-    // A greedy first-{-to-last-} slice would swallow this and fail to parse.
     const trailing = `${JSON.stringify(VALID)}\nNote: the config uses {braces} too.`;
     expect(parseExtraction(trailing).entities).toHaveLength(1);
   });
@@ -117,11 +106,6 @@ describe('parseExtraction', () => {
   });
 
   it('normalizes a folder-qualified name to its last segment', () => {
-    // Observed from a live Sonnet run: the prompt shows `links.target` as
-    // "Projects/omnifex" and the model generalized that to `name`. A name with
-    // a separator is rejected outright by vault.notePath, so one bad name
-    // would otherwise fail the whole item. Last-segment matches how
-    // linkMatchesNote already resolves wikilinks.
     const q = { entities: [{ type: 'Project', name: 'Projects/omnifex', summary: 'x' }] };
     expect(parseExtraction(JSON.stringify(q)).entities[0].name).toBe('omnifex');
   });
@@ -183,11 +167,7 @@ describe('createExtractor', () => {
     await extract(ITEM, '/Users/dev/.claude-work');
 
     expect(calls).toHaveLength(1);
-    // The family alias, not a version: extraction tracks the newest Sonnet.
     expect(calls[0].model).toBe('sonnet');
-    // The OWNING account's dir. Indexing a work transcript through the
-    // personal account would push work content through the wrong
-    // subscription (spec §8).
     expect(calls[0].configDir).toBe('/Users/dev/.claude-work');
   });
 
@@ -203,8 +183,6 @@ describe('createExtractor', () => {
     expect(prompt).toContain('USER: add a probe');
     expect(prompt).toContain('/repo');
     expect(prompt).toContain('main');
-    // The model supplies prose and aliases only; these facts are handed to it,
-    // never asked for (spec §6).
     expect(prompt).toContain('sess-a');
   });
 
@@ -252,9 +230,6 @@ describe('createExtractor', () => {
         return reply('still not json');
       },
     });
-    // Spec §8: one retry, then `failed` with the error visible. Retrying
-    // further would spend tokens on a model that has already demonstrated it
-    // cannot answer this one.
     await expect(extract(ITEM, '/cfg')).rejects.toThrow(ExtractionParseError);
     expect(n).toBe(2);
   });
@@ -267,8 +242,6 @@ describe('createExtractor', () => {
         throw new Error('claude -p exited 1: not logged in');
       },
     });
-    // A spawn/auth failure is not a bad answer — retrying it immediately just
-    // fails twice as fast and doubles the log noise.
     await expect(extract(ITEM, '/cfg')).rejects.toThrow(/not logged in/);
     expect(n).toBe(1);
   });
@@ -300,9 +273,6 @@ describe('buildExtractionPrompt', () => {
   });
 
   it('never states session facts a capture does not have', () => {
-    // The prompt STATES its facts, so a fabricated prompt count would be a
-    // false fact about the material the model is summarising — the exact
-    // failure mode Plan 4a recorded.
     const prompt = buildExtractionPrompt(CAPTURE);
     expect(prompt).not.toContain('turns:');
     expect(prompt).not.toContain('session:');

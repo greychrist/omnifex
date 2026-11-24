@@ -2,7 +2,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 
-// The panel reads/writes two app_settings keys: the template and the switch.
 vi.mock('@/lib/api', async () => {
   return {
     api: {
@@ -31,8 +30,8 @@ afterEach(() => {
   cleanup();
 });
 
-// The heading renders while the template is still loading; the editor only
-// once it has. Waiting on the heading raced the load under full-suite load.
+// The editor renders only once the template loads; waiting on the heading
+// raced it under suite load.
 async function waitForLoaded() {
   await screen.findByRole('textbox');
 }
@@ -139,9 +138,6 @@ describe('CompactionPromptSettings', () => {
     expect((reset as HTMLButtonElement).disabled).toBe(true);
   });
 
-  // The switch turns the directive off and keeps the edited text, which the
-  // old "clear the box" did not — and clearing never worked anyway: a blank
-  // template resolved to the shipped default.
   const toggle = () => screen.getByRole('switch', { name: /send a prompt after compaction/i });
 
   it('is on when nothing is stored', async () => {

@@ -166,14 +166,11 @@ describe('cost-history', () => {
     expect(first.sessionsScanned).toBe(2);
     expect(readCount).toBe(2);
 
-    // Second sweep over an unchanged world: no content reads, nothing scanned.
     readCount = 0;
     const second = await svc.backfill([{ name: 'Work', config_dir: CFG }]);
     expect(second.sessionsScanned).toBe(0);
     expect(readCount).toBe(0);
 
-    // Mutate only sessA's content (and its stat signature) — third sweep
-    // should rescan just that one session.
     files[SESSION_A] = sessionLineA + '\n' + sessionLineA;
     readCount = 0;
     const third = await svc.backfill([{ name: 'Work', config_dir: CFG }]);
@@ -196,8 +193,6 @@ describe('cost-history', () => {
     expect(weeks[0].period).not.toBe(weeks[1].period);
   });
 
-  // Spend the CLI counted but no transcript records — side questions, title
-  // generation — priced from cli_process_usage as cli-unlogged-<session> rows.
   describe('unlogged CLI spend', () => {
     const CFG = '/cfg';
     const PROJ_DIR = path.join(CFG, 'projects', '-Users-me-proj');
@@ -243,7 +238,7 @@ describe('cost-history', () => {
       record(160, '2026-09-25T11:00:00.000Z');
       const svc = createCostHistoryService(db, world());
       await svc.backfill([{ name: 'Work', config_dir: CFG }]);
-      record(260, '2026-09-25T11:05:00.000Z'); // a side question after the last turn
+      record(260, '2026-09-25T11:05:00.000Z');
       expect((await svc.backfill([{ name: 'Work', config_dir: CFG }])).sessionsScanned).toBe(1);
       expect(unlogged()[0].output_tokens).toBe(160);
     });

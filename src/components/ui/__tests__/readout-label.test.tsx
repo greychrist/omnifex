@@ -6,8 +6,7 @@ import { ReadoutLabel } from '@/components/ui/readout-label';
 afterEach(() => { cleanup(); });
 
 describe('ReadoutLabel', () => {
-  // The colon is drawn by CSS, so the label's text — what tests, aria and
-  // copy read — stays the bare word.
+  // The colon is drawn by CSS, so the label's text stays the bare word.
   it('is the muted label with a colon drawn after it', () => {
     render(<ReadoutLabel>model</ReadoutLabel>);
     const el = screen.getByText('model');

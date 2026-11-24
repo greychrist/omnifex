@@ -23,22 +23,16 @@ function setup(initial: JsonlNode[]) {
 }
 
 describe('useSlashModelSync', () => {
-  // A `/model` typed into the composer is answered by the CLI in the
-  // transcript; the hook hands the new model to selectedModel so the
-  // readout, the picker and a restart follow the switch.
   it('reports a /model result that arrives while the session runs', () => {
     const { rerender, onModel } = setup([assistant('claude-opus-5-5', 'a1')]);
     expect(onModel).not.toHaveBeenCalled();
     rerender({ messages: [assistant('claude-opus-5-5', 'a1'), slash('claude-fable-5-1', 'u1')] });
     expect(onModel).toHaveBeenCalledTimes(1);
     expect(onModel).toHaveBeenCalledWith('claude-fable-5-1');
-    // The same record again is not a new switch.
     rerender({ messages: [assistant('claude-opus-5-5', 'a1'), slash('claude-fable-5-1', 'u1')] });
     expect(onModel).toHaveBeenCalledTimes(1);
   });
 
-  // Replayed history: a /model that turns later overrode is not the model
-  // the session is on, and must not undo what the resume restored.
   it('ignores a /model result a later turn has superseded', () => {
     const { rerender, onModel } = setup([]);
     rerender({ messages: [slash('claude-fable-5-1', 'u1'), assistant('claude-opus-5-5', 'a1')] });

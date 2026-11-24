@@ -10,10 +10,6 @@ import {
 } from '../../services/auth/codex-auth';
 import type { OneShotTerminalService } from '../../services/one-shot-terminal';
 
-/**
- * Build a fresh tmpdir that simulates a Codex `configDir` (CODEX_HOME) so we
- * can write/delete `auth.json` without touching the real user config.
- */
 function makeTmpCodexDir(): { dir: string; authFile: string; cleanup: () => void } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-codex-auth-'));
   const authFile = path.join(dir, 'auth.json');

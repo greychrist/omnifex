@@ -1,9 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDatabase, type Database } from '../services/database';
 
-/**
- * The spend ledger schema (Plan 8 §3).
- */
 describe('brain spend ledger schema', () => {
   let db: Database;
 
@@ -30,10 +27,6 @@ describe('brain spend ledger schema', () => {
     );
   });
 
-  /**
-   * No FOREIGN KEY, unlike every other brain table. Money spent is history: a
-   * deleted account must not silently shrink a month that has been reported.
-   */
   it('keeps a spend row for an account that no longer exists', () => {
     db.raw.prepare(`INSERT INTO accounts (id, name, config_dir) VALUES (7, 'gone', '/tmp/g')`).run();
     db.raw
@@ -51,10 +44,6 @@ describe('brain spend ledger schema', () => {
   });
 });
 
-/**
- * A ledger row that cannot say what it paid for cannot be priced or audited,
- * so the schema refuses one outright.
- */
 describe('brain_spend rejects an unattributed model ', () => {
   let db: Database;
 

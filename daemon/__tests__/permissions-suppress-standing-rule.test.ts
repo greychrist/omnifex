@@ -1,18 +1,6 @@
 // @vitest-environment node
-//
-// `suppress_always_allow_rule` on the CLI's can_use_tool request.
-//
-// The CLI sets it when granting a persistent rule for this ask would write
-// a rule broader than the ask's own verb — its own schema says "the dialog
-// must not offer the persistent 'don't ask again' row for this ask", and its
-// TUI drops the whole standing row when it fires (2.1.235 widened the cases
-// via `contentWithheld`, which never reaches a stdio host).
-//
-// OmniFex is a `--permission-prompt-tool stdio` host, so this flag is the
-// only signal it gets. These tests pin that we (a) forward it to the
-// renderer and (b) stop injecting our own fallback rule, which for an MCP
-// tool is a bare whole-tool allow — exactly the grant the flag exists to
-// prevent.
+// The CLI sets `suppress_always_allow_rule` when a persistent rule would be
+// broader than the ask's own verb; its dialog then drops the standing row.
 import { describe, it, expect, vi } from 'vitest';
 import { createPermissionRequestHandler } from '../services/sessions/permissions';
 import type { SessionHandle } from '../services/sessions/types';
@@ -45,7 +33,6 @@ function req(payload: Record<string, unknown>): AgentPermissionRequest {
   };
 }
 
-/** The `permission_request` envelope the handler pushed to the renderer. */
 function rendererPayload(sendToRenderer: ReturnType<typeof vi.fn>) {
   const call = sendToRenderer.mock.calls.find(
     ([, msg]) => (msg as { type?: string })?.type === 'permission_request',
@@ -96,8 +83,7 @@ describe('suppress_always_allow_rule', () => {
   });
 
   it('does not inject our fallback rule for a file edit when the flag is set', () => {
-    // 2.1.235's notebook/large-diff cases ride Edit and NotebookEdit, where
-    // the fallback rule is normally the SOLE source of the card's rule.
+    // For Edit and NotebookEdit the fallback rule is normally the card's only rule.
     const { fn, sendToRenderer } = handlerHarness();
     fn(
       req({
@@ -112,8 +98,6 @@ describe('suppress_always_allow_rule', () => {
     );
     const payload = rendererPayload(sendToRenderer);
     expect(hasRuleSuggestion(payload.permission_suggestions)).toBe(false);
-    // The CLI's own recommendation still survives — we withhold our rule,
-    // we don't discard what it sent.
     expect(payload.permission_suggestions).toContainEqual({
       type: 'setMode',
       mode: 'acceptEdits',
@@ -136,8 +120,6 @@ describe('suppress_always_allow_rule', () => {
   });
 
   it('treats a non-boolean value as unset rather than truthy', () => {
-    // The field is optional on the wire; only an explicit `true` withholds
-    // the standing grant. A stray string must not silently disable rules.
     const { fn, sendToRenderer } = handlerHarness();
     fn(
       req({
@@ -153,12 +135,8 @@ describe('suppress_always_allow_rule', () => {
   });
 });
 
-// CLI 2.1.325: "Always allow" in SDK hosts offers a rule only when saving it
-// would allow that command again. For a Bash ask it signals that by sending
-// no `addRules` suggestion at all — not by `suppress_always_allow_rule`. The
-// fallback OmniFex used to invent there (`Bash(<first word>:*)`) was both
-// dead and broad: app_logs on 2026-11-08 show `Bash(f=$(grep:*)` offered for
-// a compound command.
+// CLI 2.1.325: a Bash ask with no rule worth saving carries no `addRules`
+// suggestion at all.
 describe('Bash ask with no rule from the CLI', () => {
   it('offers no invented rule and withholds the standing row', () => {
     const { fn, sendToRenderer } = handlerHarness();

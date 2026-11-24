@@ -13,7 +13,6 @@ import {
 import { serializeNote } from '../services/brain/frontmatter';
 import type { ParsedNote } from '../services/brain/types';
 
-/** A note with `count` dated Timeline entries, dated 2026-01-01 onward. */
 function noteWith(count: number, extra: Partial<ParsedNote['frontmatter']> = {}): ParsedNote {
   const entries = Array.from({ length: count }, (_, i) => {
     const day = String(i + 1).padStart(2, '0');
@@ -63,11 +62,6 @@ const RESULT = {
   promotedFacts: ['The flange is revised roughly monthly.'],
 };
 
-/**
- * A note carrying `count` dated Decisions and a short Timeline — the real shape
- * of the vault's biggest notes, where decisions outnumber timeline entries 3-5x
- * because a session yields one Timeline entry and several decisions.
- */
 function decisionNote(
   count: number,
   timelineCount = 2,
@@ -114,7 +108,6 @@ function decisionNote(
   };
 }
 
-/** The non-blank lines of one rendered section. */
 function sectionOf(body: string, name: string): string[] {
   const after = body.split(`## ${name}\n`)[1];
   if (after === undefined) return [];
@@ -150,7 +143,6 @@ describe('qualifies', () => {
   });
 
   it('is false for a note with no Timeline section at all', () => {
-    // This is the shape every translated auto-memory note has.
     const freeform: ParsedNote = {
       frontmatter: {
         type: 'Note',
@@ -211,16 +203,10 @@ describe('curate', () => {
   it('stamps curated_at and leaves updated alone', () => {
     const out = curate(noteWith(12), RESULT, { date: '2026-03-01' });
     expect(out.frontmatter.curated_at).toBe('2026-03-01');
-    // Curation is not a source event. `updated` means "latest source this note
-    // has seen"; bumping it here would make a compressed note look freshly
-    // sourced, and would also defeat the freshness guard in `qualifies`.
     expect(out.frontmatter.updated).toBe('2026-02-01');
   });
 
   it('takes the date range from the entries, not from the model', () => {
-    // A model that tries to supply its own span cannot displace the computed
-    // one: its text lands in the prose position, where it is merely wrong
-    // rather than authoritative.
     const evil = { collapsed: '**1999-01-01 – 1999-12-31**: nope', promotedFacts: [] };
     const out = curate(noteWith(12), evil, { date: '2026-03-01' });
     expect(out.body).toContain(
@@ -235,8 +221,6 @@ describe('curate', () => {
     expect(out.body).toContain(
       '- **2026-01-01 – 2026-01-07**: Heading line one line two _(7 entries collapsed)_',
     );
-    // A heading inside a bullet would restructure the note, which is exactly
-    // what the structured path exists to prevent.
     expect(out.body).not.toContain('\n## Heading');
   });
 
@@ -270,9 +254,6 @@ describe('curate', () => {
 describe('Decisions curation (Plan 9)', () => {
   describe('qualifies', () => {
     it('is true for a note over the Decisions threshold with a short Timeline', () => {
-      // The measured shape of PI-404-dashboard-builder-chrome.md: 38 decisions
-      // against 7 timeline entries, the largest note in the vault, which the
-      // Timeline-only gate could never reach.
       expect(qualifies(decisionNote(MIN_DECISION_ENTRIES, 2), '2026-05-01')).toBe(true);
     });
 
@@ -322,9 +303,6 @@ describe('Decisions curation (Plan 9)', () => {
     });
 
     it('takes the decisions date range from the bullets, not from the model', () => {
-      // A model supplying its own span cannot displace the computed one: its
-      // text lands in the prose position, where it is merely wrong rather than
-      // authoritative. Same guarantee the Timeline fold already makes.
       const out = curate(
         decisionNote(12),
         { ...RESULT, collapsedDecisions: '**1999-01-01 – 1999-12-31**: nope' },
@@ -369,7 +347,6 @@ describe('Decisions curation (Plan 9)', () => {
     });
 
     it('never rewrites Key facts bullets that were already there', () => {
-      // Plan 9 §3: Key facts is deliberately not collapsed, only appended to.
       const out = curate(decisionNote(12), RESULT, { date: '2026-05-01' });
       expect(sectionOf(out.body, 'Key facts')).toContain('- Widgets are load-bearing.');
     });

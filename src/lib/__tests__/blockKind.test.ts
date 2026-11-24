@@ -36,8 +36,6 @@ describe('isSystemContextText — skill preamble must be anchored at the start',
   });
 
   it('does NOT match when the user pastes/quotes the preamble mid-message', () => {
-    // The reported bug: pasting a System Context example (JSON, starts with "{")
-    // that contains the preamble was misclassified as a skill load.
     const pasted =
       '{\n  "type": "user",\n  "text": "Base directory for this skill: /x/y\\n\\n# Systematic Debugging"\n}';
     expect(isSystemContextText(pasted)).toBe(false);
@@ -54,10 +52,7 @@ describe('isSystemContextText — skill preamble must be anchored at the start',
   });
 });
 
-// Test factories build minimal JsonlNode stubs.
-// `classifyBlockKind` only reads `parent.kind`; callers access blocks via
-// `parent.raw.message.content` in production, but in tests we pass blocks
-// directly as the first argument so only `parent.kind` matters for the stub.
+// classifyBlockKind only reads `parent.kind`.
 
 const assistant = (
   content: any[],
@@ -123,9 +118,6 @@ describe('classifyBlockKind', () => {
   });
 
   it('classifies assistant tool_use blocks for an unknown tool name as assistant.tool-use (collapsed)', () => {
-    // v2 catalog has a single assistant.tool-use row — no per-tool sub-IDs.
-    // Unknown tool names collapse to the same row so the renderer lookup
-    // always hits the catalog rather than falling to the unknown catch-all.
     const parent = assistant([{ type: 'tool_use', name: 'SomeRandomTool', input: {} }]);
     expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBe('assistant.tool-use');
   });
@@ -142,9 +134,6 @@ describe('classifyBlockKind', () => {
     expect(classifyBlockKind(parent2.raw.message.content[0], parent2)).toBe('assistant.tool-use');
   });
 
-  // All tool_use blocks — known or unknown — return the single v2 catalog ID
-  // `assistant.tool-use`. This test pins the invariant so any regression to
-  // per-tool sub-IDs or a known/unknown split breaks loudly.
   it('classifies every name in KNOWN_TOOL_NAMES as assistant.tool-use', () => {
     for (const name of KNOWN_TOOL_NAMES) {
       const parent = assistant([{ type: 'tool_use', name, input: {} }]);
@@ -159,11 +148,6 @@ describe('classifyBlockKind', () => {
   });
 
   it('classifies AskUserQuestion tool_use as the generic assistant.tool-use kind', () => {
-    // The answered Q+A card is dispatched by the whole-message classifier
-    // via the AnsweredAskUserQuestionCard short-circuit in StreamMessage;
-    // the per-block classification falls through to assistant.tool-use so
-    // the live (mid-answer) tool_use renders with normal tool-call chrome
-    // instead of falling into the v2-catalog "unknown" fallback.
     const parent = assistant([
       { type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{ question: 'pick', options: [] }] } },
     ]);
@@ -176,8 +160,6 @@ describe('classifyBlockKind', () => {
   });
 
   it('classifies user tool_result with system-reminder as user.tool-result (collapsed)', () => {
-    // v2 catalog has a single user.tool-result row; sub-variants (systemReminder,
-    // generic) were collapsed so the renderer lookup always hits the catalog.
     const parent = user([
       { type: 'tool_result', content: 'output\n<system-reminder>note</system-reminder>' },
     ]);
@@ -189,12 +171,6 @@ describe('classifyBlockKind', () => {
     expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBe('user.tool-result');
   });
 
-  // The CLI doesn't currently surface server-side tool blocks, but if
-  // Anthropic ever exposes the code-execution tool surface
-  // (server_tool_use + bash_code_execution_tool_result +
-  // text_editor_code_execution_tool_result blocks per the Messages API),
-  // the renderer needs to recognize them rather than fall through to the
-  // "unknown" catch-all.
   it('classifies assistant server_tool_use blocks as assistant.serverToolUse', () => {
     const parent = assistant([{
       type: 'server_tool_use',
@@ -255,7 +231,6 @@ describe('classifyBlockKind', () => {
   });
 
   it('does NOT match the hook-feedback pattern when the prefix is mid-line user text', () => {
-    // A user genuinely typing about hooks should not get reclassified.
     const parent = user([{ type: 'text', text: "I read about Stop hook feedback: in the docs and have a question." }]);
     expect(classifyBlockKind(parent.raw.message.content[0], parent)).toBeNull();
   });
@@ -323,9 +298,8 @@ describe('classifyBlockKind — tool results carrying images', () => {
   });
 });
 
-// Claude Code 2.1.234 stopped crashing on content blocks whose narrative field
-// is absent (non-streaming fallback path, typically third-party gateways), so
-// the shape now reaches our classifier instead of dying upstream.
+// Claude Code 2.1.234 no longer crashes on blocks without the narrative field,
+// so the shape reaches the classifier.
 describe('classifyBlockKind — block missing its narrative field (CLI 2.1.234 class)', () => {
   it('treats a thinking block with no `thinking` field as empty', () => {
     const parent = assistant([{ type: 'thinking', signature: 'sig' }]);

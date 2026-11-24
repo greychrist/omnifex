@@ -2,9 +2,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
-// Mock useTheme — MarkdownBlock pulls the syntax theme via useTheme(),
-// which would otherwise throw without a ThemeProvider. Returning the
-// 'gray' theme matches the production default.
+// useTheme() throws without a ThemeProvider.
 vi.mock("@/hooks", () => ({
   useTheme: () => ({ theme: "gray", setTheme: () => {}, isLoading: false }),
 }));
@@ -24,11 +22,9 @@ describe("MarkdownBlock", () => {
   it("switches to Source view when the Source pill is clicked", () => {
     render(<MarkdownBlock source={"# Hello"} />);
     fireEvent.click(screen.getByRole("button", { name: /^source$/i }));
-    // Heading is gone — Rendered view is no longer mounted.
     expect(
       screen.queryByRole("heading", { level: 1, name: "Hello" }),
     ).toBeNull();
-    // The literal source is in the DOM (inside a Prism block).
     expect(document.body.textContent).toContain("# Hello");
   });
 
@@ -73,8 +69,8 @@ describe("MarkdownBlock", () => {
       if (originalDescriptor) {
         Object.defineProperty(navigator, "clipboard", originalDescriptor);
       } else {
-        // No original descriptor — delete the mock so subsequent tests
-        // see the unmocked navigator.clipboard (or undefined in jsdom).
+        // No original descriptor: delete the mock so later tests see the real
+        // navigator.clipboard.
         delete (navigator as any).clipboard;
       }
     });

@@ -2,12 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { foldContextLedger, summariseContextAttachment } from '../contextLedger';
 import type { JsonlNode } from '@/types/jsonl';
 
-/**
- * Fixtures are shaped from REAL transcript records (both config dirs,
- * 2026-09-18 census), not invented. The field names are the load-bearing
- * part: `addedNames`/`removedNames`/`readdedNames` differ per delta type and
- * getting one wrong yields a plausible-looking wrong ledger.
- */
+// Fixtures are shaped from real records: `addedNames` / `removedNames` /
+// `readdedNames` differ per delta type.
 function att(type: string, body: Record<string, unknown>, at: string): JsonlNode {
   return {
     kind: 'attachment',
@@ -31,8 +27,6 @@ describe('foldContextLedger', () => {
       expect(ledger.entries).toEqual([]);
     });
 
-    // The panel needs to tell "not started" from "predates tracking": both
-    // have no in-scope records.
     it('records when the conversation began, from its first prompt or reply', () => {
       const user = { kind: 'user', raw: {}, sessionId: 's1', receivedAt: T2, userKind: 'prompt' } as unknown as JsonlNode;
       const ledger = foldContextLedger([att('total_tokens_reminder', {}, T1), user]);
@@ -90,7 +84,6 @@ describe('foldContextLedger', () => {
       const local = ledger.entries.find(e => e.label === '/p/CLAUDE.local.md');
       expect(local).toMatchObject({ live: false, endedAt: T2 });
 
-      // The surviving file is not duplicated by the second snapshot.
       expect(ledger.entries.filter(e => e.label === '/p/CLAUDE.md')).toHaveLength(1);
       expect(ledger.liveCount).toBe(1);
     });
@@ -133,8 +126,7 @@ describe('foldContextLedger', () => {
     });
   });
 
-  // CLI 2.1.310: claude.ai project documents read into the session on the
-  // user's behalf. Shape from the CLI's own schema (no transcript has one yet):
+  // CLI 2.1.310 claude.ai project documents, shape from the CLI's schema:
   // {reads:[{docId, read:{method:'project_read', path, version?, content, created_at}}]}.
   describe('project_doc_reads', () => {
     const read = (path: string, content: string, version?: string) => ({
@@ -177,11 +169,9 @@ describe('foldContextLedger', () => {
     });
   });
 
-  // CLI 2.1.326: a mod's hooks append a note to the model's context, sent as
-  // "Note from the <plugin> plugin, not from the user". Shape from the
-  // bundle (not yet seen in a transcript): {plugin?, rowUuid, content[],
-  // heldContent?, sentAs?}. A held note (content [] + heldContent) has not
-  // reached the model yet; a restored copy repeats its rowUuid.
+  // CLI 2.1.326 mod context notes, shape from the bundle:
+  // {plugin?, rowUuid, content[], heldContent?, sentAs?}. A held note (content []
+  // + heldContent) has not reached the model; a restored copy repeats its rowUuid.
   describe('plugin_note', () => {
     it('adds one entry per note, labelled by plugin, with the note as content', () => {
       const ledger = foldContextLedger([
@@ -351,11 +341,8 @@ describe('foldContextLedger', () => {
       expect(ledger.entries).toEqual([]);
     });
 
-    // The scope list was an allow-list of User/Project/Local/Managed until
-    // real transcripts turned up `AutoMem` (93 on disk) — the auto-memory
-    // MEMORY.md — which the allow-list silently dropped. The CLI can add a
-    // scope any release, so pass it through and let the UI style what it
-    // knows. Dropping loses information; showing an unfamiliar badge does not.
+    // The CLI can add a scope in any release (`AutoMem` did), so scopes pass
+    // through.
     it('passes AutoMem through', () => {
       const ledger = foldContextLedger([
         att('instructions', { files: [{ path: '/u/MEMORY.md', type: 'AutoMem', content: 'a' }] }, T1),

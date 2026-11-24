@@ -94,9 +94,6 @@ describe('sessionControlSummary', () => {
     ).toBe('Default | High | Default');
   });
 
-  // Regression: a reopened tab seeds `model` with a hardcoded alias before
-  // any catalog arrives. The summary must surface the transcript's actual
-  // model — never the fallback catalog's "Default (recommended)" entry.
   it('prefers the live model over the selection seed on a reopened session', () => {
     expect(
       sessionControlSummary({

@@ -22,8 +22,6 @@ describe('localSlashCommands', () => {
   });
 
   it('marks the command as OmniFex-local so the picker can badge it', () => {
-    // It is deliberately NOT written into <configDir>/commands/ — the Brain
-    // leaves no residue in the user's Claude config.
     const [recall] = localSlashCommands({ hasVault: true });
     expect(recall.scope).toBe('omnifex');
     expect(recall.full_command).toBe('/recall');
@@ -40,9 +38,6 @@ describe('localSlashCommands', () => {
 
 describe('formatRecalledNotes', () => {
   it('inserts each note whole, under its vault path', () => {
-    // Full bodies, not pointers: /recall is the fallback for a session where
-    // the model did not call the MCP tool, so a pointer would re-require the
-    // very tool that was not used.
     expect(
       formatRecalledNotes([
         { path: 'Subsystems/Queue.md', body: 'the drain worker' },

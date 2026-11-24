@@ -23,10 +23,8 @@ describe('classifyRuntimeEvent', () => {
   });
 
   it('classifies system:task_started with the task type that tells an agent from a shell', () => {
-    // Verified on a live 2.1.235 stream. `task_type` is the only field that
-    // distinguishes an agent launch from a backgrounded shell, and
-    // `task_notification` (which is what actually fires the notification)
-    // carries neither — so this is where the type has to be captured.
+    // CLI 2.1.235: `task_type` is the only field telling an agent launch from a
+    // backgrounded shell, and `task_notification` carries neither.
     const event = classifyRuntimeEvent({
       type: 'system',
       subtype: 'task_started',
@@ -126,12 +124,6 @@ describe('classifyRuntimeEvent', () => {
   });
 
   it('surfaces CLI result error subtypes in the body for diagnostic clarity', () => {
-    // The CLI distinguishes error_max_turns / error_during_execution /
-    // error_max_budget_usd / error_max_structured_output_retries. Notifications
-    // should reflect the specific cause rather than collapsing them all to a
-    // generic "Task failed" — `error_during_execution` in particular often
-    // carries an actionable string in `errors[]` (e.g. "Context window
-    // exceeded").
     const turns = classifyRuntimeEvent({
       type: 'result',
       subtype: 'error_max_turns',
@@ -216,19 +208,12 @@ describe('classifyRuntimeEvent', () => {
   });
 
   it('classifies non-hook, non-init/non-compact system messages as turn', () => {
-    // OmniFex toast notifications are still turn-bucketed — they're rare and
-    // typically arrive during a turn, so they don't strand a fresh session.
     expect(
       classifyRuntimeEvent({ type: 'system', subtype: 'notification' }).kind,
     ).toBe('turn');
   });
 
-  // SessionStart hooks emit hook_started / hook_progress / hook_response
-  // BEFORE any user turn. Treating them as 'turn' flips conversationStatus
-  // to 'running' on a fresh idle session and never flips back (no result
-  // is coming). Classify them as their own 'hook' kind so the FSM can
-  // ignore them for status purposes while still forwarding the message
-  // to the renderer for display.
+  // SessionStart hooks emit hook_* before any user turn, and no result follows.
   it("classifies SDK hook lifecycle subtypes as 'hook'", () => {
     expect(classifyRuntimeEvent({ type: 'system', subtype: 'hook_started' }).kind).toBe('hook');
     expect(classifyRuntimeEvent({ type: 'system', subtype: 'hook_progress' }).kind).toBe('hook');
@@ -237,11 +222,6 @@ describe('classifyRuntimeEvent', () => {
   });
 
   it('classifies system:compact_boundary as its own kind with metadata', () => {
-    // Per the CLI contract, CliCompactBoundaryMessage carries
-    // { compact_metadata: { trigger: 'manual'|'auto', pre_tokens: number } }.
-    // Surfacing this as a distinct kind lets the FSM / status badge
-    // distinguish "model is responding" from "stream paused for compaction"
-    // instead of collapsing both into 'turn'.
     const event = classifyRuntimeEvent({
       type: 'system',
       subtype: 'compact_boundary',
@@ -256,10 +236,6 @@ describe('classifyRuntimeEvent', () => {
   });
 
   it('classifies stream_event (partial assistant message) as its own kind', () => {
-    // CliPartialAssistantMessage type === 'stream_event'. Opt-in via
-    // includePartialMessages; treating it as 'turn' would double-flip
-    // status on every token. Distinguishing it lets future code suppress
-    // status churn while a turn is mid-flight.
     const event = classifyRuntimeEvent({
       type: 'stream_event',
       uuid: 'u-1',

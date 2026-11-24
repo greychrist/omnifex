@@ -22,7 +22,6 @@ describe('CostWidget', () => {
   it('renders a placeholder when there is no cost data yet', () => {
     render(<CostWidget costUsd={null} />);
     expect(screen.getByText('—')).toBeTruthy();
-    // Placeholder is non-interactive (no button to click).
     expect(screen.queryByRole('button')).toBeNull();
   });
 
@@ -31,7 +30,6 @@ describe('CostWidget', () => {
     render(<CostWidget costUsd={3.5} onClick={onClick} accountName="Acme" />);
     const btn = screen.getByRole('button');
     expect(btn.textContent).toContain('3.50');
-    // Icon carries the $; rendered text should not have "$$" or duplicate currency marker
     expect(btn.textContent).not.toContain('$$');
     fireEvent.click(btn);
     expect(onClick).toHaveBeenCalledTimes(1);
@@ -46,10 +44,8 @@ describe('CostWidget', () => {
   it('tooltip contains the formatted cost with $, while rendered pill text does not', () => {
     render(<CostWidget costUsd={1.23} onClick={() => {}} accountName="Test" />);
     const btn = screen.getByRole('button');
-    // Rendered pill text has icon (carries $) + value without $
     expect(btn.textContent).toContain('1.23');
     expect(btn.textContent).not.toContain('$$');
-    // Tooltip contains the full formatted cost with $
     expect(btn.title).toContain('$1.23');
   });
 });

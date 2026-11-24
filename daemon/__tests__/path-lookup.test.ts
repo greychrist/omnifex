@@ -13,9 +13,6 @@ vi.mock('node:child_process', async (importOriginal) => {
 import { findOnPath } from '../services/util/path-lookup';
 import { discoverClaudeBinary } from '../services/claude-binary';
 
-// `which` through a shell is two processes to answer what a few stat calls
-// can. See git-binary.ts for why every process counts on macOS.
-
 describe('findOnPath', () => {
   const dirs: string[] = [];
   const realPath = process.env.PATH;

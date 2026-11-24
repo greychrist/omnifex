@@ -55,7 +55,6 @@ describe('remote server config', () => {
       const { utun4: _utun, ...rest } = IFACES;
       const cfg = loadServerConfig({ file: join(dir, 'server.json'), interfaces: rest, env: {} });
       expect(cfg.host).toBe('127.0.0.1');
-      // …and says it is a fallback, so the daemon watches for Tailscale.
       expect(cfg.hostIsFallback).toBe(true);
     });
 
@@ -87,11 +86,8 @@ describe('remote server config', () => {
     });
 
     it('defaults the permission timeout to never and the state dir under ~/.omnifex', () => {
-      // `env: {}` everywhere in this describe that is not deliberately
-      // testing an override: `loadServerConfig` falls back to `process.env`,
-      // so a shell exporting OMNIFEX_STATE_DIR or OMNIFEX_PORT — which the
-      // dev instance's own terminal once did — would otherwise decide the
-      // result and fail a test that never mentioned the environment.
+      // `env: {}`: loadServerConfig falls back to process.env, so an exported
+      // OMNIFEX_* variable would otherwise decide the result.
       const cfg = loadServerConfig({ file: join(dir, 'server.json'), interfaces: IFACES, env: {} });
       expect(cfg.permissionTimeoutMs).toBeNull();
       expect(cfg.stateDir).toBe(join(homedir(), '.omnifex'));
@@ -112,9 +108,6 @@ describe('remote server config', () => {
     });
 
     it('lets OMNIFEX_PORT move the daemon off the real port', () => {
-      // How the dev instance gets a daemon of its own beside the installed
-      // app's: same code, second port. The app and the daemon it spawns read
-      // the same variable, so they cannot disagree about where it is.
       const cfg = loadServerConfig({
         file: join(dir, 'server.json'),
         interfaces: IFACES,
@@ -138,8 +131,6 @@ describe('remote server config', () => {
     });
 
     it('treats a corrupt file as an error, not as defaults', () => {
-      // Silently running on loopback with the wrong port would look like a
-      // network problem from the iPad. Fail where the user can read it.
       const file = join(dir, 'server.json');
       writeFileSync(file, '{not json');
       expect(() => loadServerConfig({ file, interfaces: IFACES, env: {} })).toThrow(/server\.json/);
@@ -147,8 +138,6 @@ describe('remote server config', () => {
   });
 });
 
-// The Mac app loads its page from loopback (see `localUrl` in launcher.ts),
-// so a daemon on any other address listens there as well.
 describe('extraListenHosts', () => {
   it('adds loopback to a tailnet or LAN address', () => {
     expect(extraListenHosts('100.64.1.2')).toEqual(['127.0.0.1']);

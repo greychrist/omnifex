@@ -385,18 +385,13 @@ describe('sessions-summary generateSummary (real)', () => {
         prompt: expect.stringContaining('USER: hello'),
       }),
     );
-    // The service must NOT pass `cwd` — picking the cwd is the runner's
-    // job (it uses a throwaway scratch dir so the subprocess JSONL
-    // doesn't land in the user's real project session list).
+    // The service must NOT pass `cwd`: the runner picks a scratch dir.
     const firstCall = runQuery.mock.calls[0] as unknown as [Record<string, unknown>];
     expect(firstCall[0]).not.toHaveProperty('cwd');
-    // Sidecar persisted on disk.
     const sidecar = readSidecar(sidecarPathFor(jsonlPath));
     expect(sidecar?.headline).toBe('Tested it.');
   });
 
-  // The whole transcript is read here, and transcripts reach tens of MB:
-  // sync, that froze every live session's stream for the duration.
   it('reads the transcript without sync fs calls', async () => {
     const spies = (['readFileSync', 'statSync'] as const).map((m) => vi.spyOn(fs, m));
     try {
@@ -414,12 +409,6 @@ describe('sessions-summary generateSummary (real)', () => {
       for (const spy of spies) spy.mockRestore();
     }
   });
-
-  // Note: global "enabled" / "auto-on-close" toggles are NOT gated inside
-  // generateSummary anymore. Each caller (lifecycle hook in main.ts, or
-  // the manual `summary_generate` IPC handler) decides which mix of
-  // flags applies before invoking the service. So the only gates left
-  // here are no-account and no-model.
 
   it('returns skipped:no-model and skips runQuery when summaryModel is null', async () => {
     const runQuery = vi.fn();
@@ -509,7 +498,6 @@ describe('sessions-summary generateSummary (real)', () => {
       getPromptTemplate: () => newPrompt,
     });
     const result = await svc.generateSummary('abc', projectPath, null);
-    // Sizes match but prompt hash doesn't — should still call the model.
     expect(runQuery).toHaveBeenCalledOnce();
     expect(result.status).toBe('generated');
     if (result.status === 'generated') {
@@ -684,7 +672,6 @@ describe('sessions-summary generateSummary (real)', () => {
     });
     await svc.generateSummary('abc', projectPath, null);
     expect(events).toEqual(['started', 'runQuery', 'finished']);
-    // Both calls reference the same session uuid.
     expect(onGenerationStateChanged.mock.calls.map((c) => c[0])).toEqual(['abc', 'abc']);
   });
 
@@ -709,8 +696,6 @@ describe('sessions-summary generateSummary (real)', () => {
     await expect(
       svc.generateSummary('abc', projectPath, null),
     ).rejects.toThrow(/boom/);
-    // Renderer must see the spinner clear when the model call fails so
-    // the row doesn't spin forever after an OAuth-token-expired error.
     expect(states).toEqual([true, false]);
   });
 
@@ -729,7 +714,6 @@ describe('sessions-summary generateSummary (real)', () => {
   });
 
   it('exposes currently-generating session uuids so renderers can seed the spinner state on mount (race-fix for back-button auto-summarize)', async () => {
-    // Hold the runQuery promise open so we can assert mid-flight.
     let resolveQuery: (text: string) => void = () => {};
     const queryPromise = new Promise<string>((res) => {
       resolveQuery = res;
@@ -749,8 +733,6 @@ describe('sessions-summary generateSummary (real)', () => {
     expect(svc.getGeneratingSessionUuids()).toEqual([]);
 
     const generatePromise = svc.generateSummary('abc', projectPath, null);
-    // Wait for the inner runQuery: the transcript stat and read before it
-    // are async, so it is reached after a few loop turns, not one.
     await vi.waitFor(() => expect(runQuery).toHaveBeenCalled());
 
     expect(svc.getGeneratingSessionUuids()).toEqual(['abc']);
@@ -762,8 +744,6 @@ describe('sessions-summary generateSummary (real)', () => {
   });
 
   it('does NOT emit generation-state events for the size-gate "unchanged" path', async () => {
-    // Seed a sidecar whose jsonlSize matches the on-disk file → the
-    // size gate returns unchanged BEFORE we'd ever spin the model.
     const matchingPrompt = 'MATCHING PROMPT';
     const cachedSummary: SessionSummary = {
       version: 1,

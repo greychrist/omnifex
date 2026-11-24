@@ -32,7 +32,6 @@ const toolResult = (): JsonlNode =>
     raw: { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] } },
   }) as unknown as JsonlNode;
 
-/** A subagent's task prompt, forwarded into the main stream. */
 const subagentPrompt = (text: string): JsonlNode =>
   ({
     kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
@@ -51,17 +50,12 @@ describe('deriveThinkingStatus', () => {
   });
 
   it('returns null once the assistant starts answering', () => {
-    // The burst is over the moment a non-system node lands, so the bar
-    // disappears on its own without any turn-end plumbing.
     expect(
       deriveThinkingStatus([thinkingTokens(900), assistantText('here goes')]),
     ).toBeNull();
   });
 
   it('stays active across interleaved system:status pings', () => {
-    // `status` pings share the stream with thinking_tokens and are themselves
-    // never rendered; treating one as a burst terminator would blink the bar
-    // out mid-thought.
     expect(
       deriveThinkingStatus([thinkingTokens(600), status('requesting')]),
     ).toEqual({ tokens: 600, startedAt: null });
@@ -82,8 +76,6 @@ describe('deriveThinkingStatus', () => {
 
 describe('deriveThinkingStatus — burst start', () => {
   it('times the burst from its first ping, not its most recent', () => {
-    // The elapsed counter has to keep climbing as pings arrive. Reading the
-    // newest ping's timestamp would reset it to zero every few hundred tokens.
     const status = deriveThinkingStatus([
       thinkingTokens(200, '2026-09-11T10:00:00Z'),
       thinkingTokens(900, '2026-09-11T10:00:12Z'),
@@ -115,8 +107,7 @@ describe('lastTurnThinkingTokens', () => {
   });
 
   it('tallies every burst since the last prompt, not just the newest', () => {
-    // Each burst's pings are a running total for THAT burst; a turn that
-    // thinks, calls a tool, and thinks again spent both.
+    // Each burst's pings are a running total for that burst.
     expect(
       lastTurnThinkingTokens([
         userText('go'),

@@ -39,12 +39,6 @@ function note(body: string, project?: string): ParsedNote {
   };
 }
 
-/**
- * A note in the seven-section shape merge.ts renders, sized past MAX_BODY_CHARS
- * with the bulk sitting in `Connected to` — the real shape of the vault's
- * largest notes, where wikilinks and Key facts crowd out everything a prefix
- * slice would reach.
- */
 function sectioned(): string {
   const links = Array.from({ length: 80 }, (_, i) => `- [[Subsystems/WIKILINK-MARKER-${String(i)}]]`);
   return [
@@ -72,7 +66,6 @@ function sectioned(): string {
   ].join('\n');
 }
 
-/** A tools instance bound to one vault, exactly as the server process binds one. */
 function toolsFor(root: string) {
   let n = 0;
   return createBrainMcpTools({
@@ -94,9 +87,6 @@ describe('brain MCP tools', () => {
     vaultA = join(tmp, 'A');
     vaultB = join(tmp, 'B');
 
-    // Two vaults wired up in one test, deliberately. Isolation between them is
-    // the property whose failure is a confidentiality breach rather than a bug,
-    // so it is asserted against a real second vault, not an assumption.
     for (const [root, body] of [
       [vaultA, 'the drain worker yields to interactive sessions'],
       [vaultB, 'work-account material nobody else may read'],
@@ -131,9 +121,6 @@ describe('brain MCP tools', () => {
     });
 
     it('carries the note body so a hit is usable without a second call', () => {
-      // The point of the whole thing: a snippet-only hit forces a brain_read
-      // round trip per note, and in practice the model answers off the
-      // truncated snippet instead of making it.
       const res = toolsFor(vaultA).search({ query: 'drain' });
       expect(res.ok).toBe(true);
       if (!res.ok) return;
@@ -156,8 +143,6 @@ describe('brain MCP tools', () => {
     });
 
     it('stops spending body budget once the response is already large', () => {
-      // `limit` allows 50 hits. Without a ceiling across the whole response,
-      // 50 long notes would bury the caller in one tool result.
       const vault = createVault(vaultA);
       for (let i = 0; i < 30; i++) {
         vault.writeNote(`Subsystems/Bulk${String(i)}.md`, note(`drain ${'y'.repeat(1900)}`));
@@ -169,18 +154,12 @@ describe('brain MCP tools', () => {
       if (!res.ok) return;
       const spent = res.hits.reduce((n, h) => n + (h.body?.length ?? 0), 0);
       expect(spent).toBeLessThanOrEqual(MAX_TOTAL_BODY_CHARS);
-      // Whatever got no body must say so, or the caller reads a partial set as
-      // if it were the whole thing.
       for (const h of res.hits) {
         if (h.body === null) expect(h.bodyTruncated).toBe(true);
       }
     });
 
     it('returns a handful of hits when the caller names no limit', () => {
-      // The index default is 20, which is right for the Brain tab's scrollable
-      // list and wrong for a tool result: a measured default search returned
-      // 20 hits and 27,161 characters, ~6.8K tokens, of which the last seven
-      // hits carried no body at all. An explicit limit still overrides this.
       const vault = createVault(vaultA);
       for (let i = 0; i < 30; i++) {
         vault.writeNote(`Subsystems/Many${String(i)}.md`, note(`drain note ${String(i)}`));
@@ -199,11 +178,6 @@ describe('brain MCP tools', () => {
     });
 
     it('gives a hit a whole body or an index line, never a fragment', () => {
-      // Measured against the real vault: with hits capped at 8 and the shared
-      // budget at 10,000, notes six through eight came back with 377, 147 and
-      // 133 characters — a heading and two bullets, formatted exactly like a
-      // body and answering nothing. The renderer already lists a bodyless hit
-      // as one cheap line naming its path, which is strictly more useful.
       const vault = createVault(vaultA);
       for (let i = 0; i < 12; i++) {
         vault.writeNote(`Subsystems/Wide${String(i)}.md`, note(`drain ${'q'.repeat(1900)}`));
@@ -213,25 +187,17 @@ describe('brain MCP tools', () => {
       const res = toolsFor(vaultA).search({ query: 'drain' });
       expect(res.ok).toBe(true);
       if (!res.ok) return;
-      // Every body that was served had a real budget behind it, so none is a
-      // heading and two bullets. The guard is on what is left to spend, which
-      // is why a small note served whole is unaffected.
       const served = res.hits.filter((h) => h.body !== null);
       expect(served.length).toBeGreaterThan(0);
       for (const h of served) {
         expect(h.body!.length).toBeGreaterThanOrEqual(MIN_USEFUL_BODY_CHARS);
       }
       expect(res.hits.some((h) => h.body === null)).toBe(true);
-      // And the budget still binds, so this is not a licence to overspend.
       const spent = res.hits.reduce((n, h) => n + (h.body?.length ?? 0), 0);
       expect(spent).toBeLessThanOrEqual(MAX_TOTAL_BODY_CHARS);
     });
 
     it('spends an over-cap body on Key facts and Decisions, not the wikilink dump', () => {
-      // The failure this prevents, measured on the real vault: Projects/OmniFex.md
-      // is 25KB whose first 2000 characters are Summary plus a truncated
-      // `Connected to` list. A prefix slice therefore answered every search with
-      // navigation links and no content — confidently formatted and useless.
       const vault = createVault(vaultA);
       vault.writeNote('Subsystems/Big.md', note(sectioned()));
       createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
@@ -249,9 +215,6 @@ describe('brain MCP tools', () => {
     });
 
     it('fills the budget with part of a section too large to fit whole', () => {
-      // Measured on the real vault: Key facts is 14KB of Projects/OmniFex.md's
-      // 25KB. Keeping only sections that fit entire leaves that note spending
-      // 560 of its 2000 characters on the Summary and dropping every fact.
       const vault = createVault(vaultA);
       const facts = Array.from({ length: 120 }, (_, i) => `- FACT-${String(i)} drain detail`);
       vault.writeNote(
@@ -265,7 +228,6 @@ describe('brain MCP tools', () => {
       if (!res.ok) return;
       const fat = res.hits.find((h) => h.notePath === 'Subsystems/Fat.md')!;
       expect(fat.body!.length).toBeLessThanOrEqual(MAX_BODY_CHARS);
-      // The whole point: most of the budget goes to facts, not to whitespace.
       expect(fat.body!.length).toBeGreaterThan(MAX_BODY_CHARS * 0.8);
       expect(fat.body).toContain('## Key facts');
       expect(fat.body).toContain('FACT-0');
@@ -285,15 +247,11 @@ describe('brain MCP tools', () => {
       expect(res.ok).toBe(true);
       if (!res.ok) return;
       const body = res.hits.find((h) => h.notePath === 'Subsystems/Fat.md')!.body!;
-      // Saying "Key facts omitted" while showing 40 of them would be a lie.
       expect(body).not.toMatch(/sections omitted[^)]*Key facts/);
       expect(body).toContain('more in this section');
     });
 
     it('spends a part-shown section on the lines that match the query', () => {
-      // The failure this prevents, observed 2026-10-16: four hits, each Summary
-      // plus the opening Key facts and "97 more in this section", and the
-      // bullet that matched was never among the ones shown.
       const vault = createVault(vaultA);
       const facts = Array.from({ length: 120 }, (_, i) =>
         i === 100 ? '- NEEDLE-LINE the turnOrigin sanitizer moved' : `- FACT-${String(i)} filler detail`,
@@ -311,17 +269,13 @@ describe('brain MCP tools', () => {
       expect(deep.body!.length).toBeLessThanOrEqual(MAX_BODY_CHARS);
       expect(deep.body).toContain('NEEDLE-LINE');
       expect(deep.body).toContain('a summary');
-      // Leftover budget still goes to the section's leading lines, in order.
       expect(deep.body).toContain('FACT-0 ');
       expect(deep.body!.indexOf('FACT-0 ')).toBeLessThan(deep.body!.indexOf('NEEDLE-LINE'));
-      // A selection must say it is one, or it reads as the top of the section.
       expect(deep.body).toContain('lines matching the query kept');
       expect(deep.bodyTruncated).toBe(true);
     });
 
     it('gives a matching section the budget before a non-matching one', () => {
-      // Decisions ranks below Key facts and fits whole, so a greedy pass would
-      // keep it and leave the matching section nothing to show its match with.
       const vault = createVault(vaultA);
       const decisions = Array.from({ length: 16 }, (_, i) => `- **2026-08-0${String(i % 9)}**: DECISION-${String(i)} ${'d'.repeat(80)}`);
       const facts = Array.from({ length: 60 }, (_, i) =>
@@ -349,9 +303,6 @@ describe('brain MCP tools', () => {
     });
 
     it('still keeps a small matching section whole after a large one spills', () => {
-      // Measured on the real vault: a note matched in both Key facts and
-      // Timeline. Stopping at the first matching section that spilled gave
-      // Key facts the whole budget and dropped Timeline's matching line.
       const vault = createVault(vaultA);
       const facts = Array.from({ length: 60 }, (_, i) =>
         i === 1 ? '- NEEDLE-FACT drainConcurrency is one' : `- FACT-${String(i)} ${'f'.repeat(60)}`,
@@ -378,8 +329,6 @@ describe('brain MCP tools', () => {
     });
 
     it('condenses exactly as before when no line matches the query', () => {
-      // A hit can match on its title alone. With nothing to prefer, the
-      // excerpt is the leading lines and claims no selection.
       const facts = Array.from({ length: 120 }, (_, i) => `- FACT-${String(i)} filler detail`);
       const index = createVaultIndex(join(vaultA, '.omnifex', 'index.db'));
       const vault = createVault(vaultA);
@@ -398,8 +347,6 @@ describe('brain MCP tools', () => {
     });
 
     it('drops Connected to from an over-cap body', () => {
-      // Wikilinks are navigation, not content. They are the single largest
-      // thing standing between the cap and the sections that answer a query.
       const vault = createVault(vaultA);
       vault.writeNote('Subsystems/Big.md', note(sectioned()));
       createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
@@ -413,8 +360,6 @@ describe('brain MCP tools', () => {
     });
 
     it('names the sections it left out so an omission does not read as an empty one', () => {
-      // Every note has all seven sections by construction (merge.ts SECTION_ORDER),
-      // so a silently missing one reads as "nothing to say" rather than "not shown".
       const vault = createVault(vaultA);
       vault.writeNote('Subsystems/Big.md', note(sectioned()));
       createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
@@ -428,8 +373,6 @@ describe('brain MCP tools', () => {
     });
 
     it('serves a body that fits verbatim, Connected to and all', () => {
-      // Condensing is a response to the cap, not a rewrite of every note. Over
-      // half the vault fits, and those hits must keep arriving whole.
       const vault = createVault(vaultA);
       const small = '# Small\n\n## Connected to\n- [[Projects/omnifex]]\n\n## Key facts\n- drain fact\n';
       vault.writeNote('Subsystems/Small.md', note(small));
@@ -444,8 +387,6 @@ describe('brain MCP tools', () => {
     });
 
     it('falls back to a prefix for an over-cap body with no sections at all', () => {
-      // Auto-memory translations carry prose with no `## ` headings. Section
-      // selection has nothing to select, and must not return an empty body.
       const vault = createVault(vaultA);
       vault.writeNote('Notes/Freeform.md', note(`drain ${'z'.repeat(5000)}`));
       createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
@@ -464,8 +405,6 @@ describe('brain MCP tools', () => {
       const vault = createVault(vaultA);
       vault.writeNote('Subsystems/Gone.md', note('drain me'));
       createVaultIndex(join(vaultA, '.omnifex', 'index.db')).rebuild(vault);
-      // Indexed, then removed underneath — the index is a snapshot, so this is
-      // an ordinary race, not a corrupted vault.
       rmSync(join(vaultA, 'Subsystems/Gone.md'));
 
       const res = toolsFor(vaultA).search({ query: 'drain' });
@@ -475,13 +414,10 @@ describe('brain MCP tools', () => {
       expect(gone).toBeDefined();
       expect(gone!.body).toBeNull();
       expect(gone!.bodyTruncated).toBe(true);
-      // The healthy hit in the same response still carries its body.
       expect(res.hits.find((h) => h.notePath === 'Subsystems/Queue.md')?.body).toBeTruthy();
     });
 
     it('never carries a body across the vault boundary', () => {
-      // Bodies are new surface on the isolation property: `notePath` leaking
-      // would be bad, a body leaking would be worse.
       const res = toolsFor(vaultA).search({ query: 'drain' });
       expect(res.ok).toBe(true);
       if (!res.ok) return;
@@ -511,8 +447,6 @@ describe('brain MCP tools', () => {
     });
 
     it('closes the index it opened on every call', () => {
-      // A held-open handle would keep reading an unlinked inode after a
-      // rebuild from the Brain tab replaces the file.
       const t = toolsFor(vaultA);
       t.search({ query: 'drain' });
       const index = createVaultIndex(join(vaultA, '.omnifex', 'index.db'));
@@ -573,8 +507,6 @@ describe('brain MCP tools', () => {
     it('trims the captured text and rejects an empty one', () => {
       const t = toolsFor(vaultA);
       expect(t.remember({ text: '   ' }).ok).toBe(false);
-      // A rejected capture must not consume an id — ids are the capture's
-      // itemKey, and a gap would look like a lost capture in the queue.
       expect(t.remember({ text: '  padded  ' })).toEqual({ ok: true, id: 'cap-1' });
       const file = JSON.parse(
         readFileSync(join(vaultA, '.omnifex', 'capture', 'cap-1.json'), 'utf8'),
@@ -596,8 +528,6 @@ describe('brain MCP tools', () => {
     });
 
     it('does not touch SQLite', () => {
-      // The capture path is the reason the MCP process can open the DB
-      // read-only at all; a write here would reintroduce the contention.
       rmSync(join(vaultA, '.omnifex', 'index.db'));
       expect(toolsFor(vaultA).remember({ text: 'still works' }).ok).toBe(true);
       expect(existsSync(join(vaultA, '.omnifex', 'index.db'))).toBe(false);
@@ -606,7 +536,6 @@ describe('brain MCP tools', () => {
 });
 
 describe('renderSearchResult', () => {
-  /** A hit in the shape `search` returns, with only what the renderer reads. */
   function hit(over: Partial<SearchResultHit> = {}): SearchResultHit {
     return {
       notePath: 'Subsystems/Queue.md',
@@ -621,9 +550,6 @@ describe('renderSearchResult', () => {
   }
 
   it('renders note text as markdown rather than escaped JSON', () => {
-    // Measured on a real response: pretty-printed JSON spent 5,302 of 27,161
-    // characters — 20% — on indentation and on escaping the newlines that every
-    // markdown note is full of. The model reads markdown either way.
     const text = renderSearchResult('drain', [hit()]);
     expect(text).toContain('## Key facts');
     expect(text).toContain('- drain concurrency is 1');
@@ -631,8 +557,6 @@ describe('renderSearchResult', () => {
   });
 
   it('omits the bm25 score', () => {
-    // A raw negative float the model cannot calibrate against anything. It was
-    // ~7 characters on every hit of every search, forever.
     expect(renderSearchResult('drain', [hit()])).not.toContain('12.5');
   });
 
@@ -643,24 +567,17 @@ describe('renderSearchResult', () => {
   });
 
   it('lists a bodyless hit as one line instead of an empty stub', () => {
-    // The old shape returned `body: null, bodyTruncated: true` for every hit
-    // past the budget — on a default search, 7 of 20 — which reads as a note
-    // whose content was withheld rather than as one simply ranked lower.
     const text = renderSearchResult('drain', [
       hit(),
       hit({ notePath: 'Topics/Later.md', title: 'Later', body: null, bodyTruncated: true }),
     ]);
     expect(text).toContain('Topics/Later.md');
-    // Its one line carries the snippet, which is the only thing that can stand
-    // in for a body it did not get.
     expect(text).toContain('the [drain] worker');
     const shown = text.slice(text.indexOf('Topics/Later.md'));
     expect(shown.split('\n').length).toBeLessThanOrEqual(3);
   });
 
   it('says plainly when nothing matched', () => {
-    // `[]` is indistinguishable from a broken tool, and the empty-result rate
-    // was 44% before the OR fix — the model has met this often.
     const text = renderSearchResult('nothing here', []);
     expect(text.toLowerCase()).toContain('no notes');
     expect(text).toContain('nothing here');
@@ -697,8 +614,6 @@ describe('renderNote', () => {
   });
 
   it('keeps the frontmatter a reader would act on and drops the bookkeeping', () => {
-    // `sources` is provenance for the indexer. It is a list of opaque session
-    // ids the model can do nothing with, and it grows with every reindex.
     const text = renderNote('Subsystems/Queue.md', parsed);
     expect(text).toContain('Subsystem');
     expect(text).toContain('[[Projects/omnifex]]');

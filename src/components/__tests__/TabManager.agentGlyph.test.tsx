@@ -21,9 +21,6 @@ const tab = (over: Partial<Tab> = {}): Tab =>
 
 describe('resolveTabStatusIndicator — background agents', () => {
   it('reports the running agent count, so a background tab says what it is waiting on', () => {
-    // The reason this exists: a backgrounded agent's launching turn is over,
-    // so the tab is "working" with nothing visibly happening in it. A bare
-    // spinner can't distinguish that from Claude mid-sentence.
     expect(
       resolveTabStatusIndicator(tab({ promptStatus: 'working', activeAgents: 2 }), NOW),
     ).toEqual({ kind: 'agents', count: 2 });

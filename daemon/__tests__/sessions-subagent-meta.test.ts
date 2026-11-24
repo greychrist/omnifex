@@ -6,7 +6,6 @@ const CONFIG_DIR = '/cfg';
 const PROJECT_PATH = '/Users/me/proj';
 const SESSION_ID = 'sess1';
 
-// Mirror the service's path construction so the in-memory fs keys line up.
 const PROJECT_DIR = path.join(CONFIG_DIR, 'projects', '-Users-me-proj');
 const SESSION_FILE = path.join(PROJECT_DIR, `${SESSION_ID}.jsonl`);
 const SUBAGENTS_DIR = path.join(PROJECT_DIR, SESSION_ID, 'subagents');
@@ -15,11 +14,8 @@ const subagentFile = (agentId: string) =>
 const subagentMetaFile = (agentId: string) =>
   path.join(SUBAGENTS_DIR, `agent-${agentId}.meta.json`);
 
-/**
- * The CLI writes a `.meta.json` sidecar beside every subagent transcript.
- * Verified live: 100% coverage across both of Greg's config dirs (396/396).
- * `parentAgentId` is present only at spawnDepth >= 2.
- */
+// The CLI writes a `.meta.json` beside every subagent transcript;
+// `parentAgentId` is present only at spawnDepth >= 2.
 function sidecar(fields: {
   agentType?: string;
   description?: string;
@@ -40,7 +36,6 @@ function fsFromMap(files: Record<string, string>): SubagentMetaFs {
   };
 }
 
-/** A main-session tool_result line carrying the rich `toolUseResult` enrichment. */
 function toolResultLine(
   toolUseId: string,
   result: Record<string, unknown>,
@@ -55,11 +50,7 @@ function toolResultLine(
   });
 }
 
-/**
- * A subagent sidechain assistant line carrying the executed model, and
- * optionally the subagent's own `effort` — a TOP-LEVEL string, sibling to
- * `message`, not inside it (verified against a real transcript).
- */
+// `effort` is a TOP-LEVEL string, sibling to `message`.
 function sidechainAssistant(agentId: string, model: string, effort?: string): string {
   return JSON.stringify({
     type: 'assistant',
@@ -148,7 +139,7 @@ describe('readSubagentMeta', () => {
     const files = {
       [SESSION_FILE]: [
         JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [] } }),
-        toolResultLine('toolu_4', { type: 'text', file: { filePath: '/x' } }), // a plain file-read result, no agentId
+        toolResultLine('toolu_4', { type: 'text', file: { filePath: '/x' } }),
       ].join('\n'),
     };
 
@@ -169,13 +160,9 @@ describe('readSubagentMeta', () => {
   });
 });
 
-// Nested subagents are the case the main-stream scan cannot see. Verified
-// against a real depth-2 run: the grandchild's dispatching tool_use is issued
-// inside its PARENT's transcript, never appears in the main stream, and gets
-// no `toolUseResult.agentId` line anywhere. The sidecars are the only record.
+// A grandchild's dispatching tool_use is in its parent's transcript, never the
+// main stream; the sidecars are the only record.
 describe('readSubagentMeta — nested subagents via .meta.json sidecars', () => {
-  // Mirrors the real probe: depth-1 agent dispatched from main, depth-2
-  // dispatched from inside the depth-1 agent.
   const nested = () =>
     fsFromMap({
       [SESSION_FILE]: toolResultLine('toolu_parent', {
@@ -218,7 +205,6 @@ describe('readSubagentMeta — nested subagents via .meta.json sidecars', () => 
     const meta = read();
     expect(meta.toolu_child.parentAgentId).toBe('a987');
     expect(meta.toolu_child.spawnDepth).toBe(2);
-    // Depth 1 has no parent — it was dispatched from the main stream.
     expect(meta.toolu_parent.parentAgentId).toBeUndefined();
     expect(meta.toolu_parent.spawnDepth).toBe(1);
   });
@@ -232,17 +218,14 @@ describe('readSubagentMeta — nested subagents via .meta.json sidecars', () => 
   });
 
   it('reads each subagent its own description', () => {
-    // Without this the renderer has nothing to label a nested row with and
-    // falls back to the parent's description — verified against a real
-    // depth-2 run, where both children rendered as the parent's task.
     const meta = read();
     expect(meta.toolu_child.description).toBe('Count txt files');
     expect(meta.toolu_parent.description).toBe('Nested subagent txt count');
   });
 
   it('still merges main-stream totals onto the agent that has them', () => {
-    // The sidecar carries no token/duration counts — those only exist on the
-    // dispatching Task's toolUseResult, which only depth-1 agents get.
+    // The sidecar has no token/duration counts; only the dispatching Task's
+    // toolUseResult does.
     const meta = read();
     expect(meta.toolu_parent).toMatchObject({
       totalTokens: 5000,
@@ -254,8 +237,6 @@ describe('readSubagentMeta — nested subagents via .meta.json sidecars', () => 
   });
 
   it('falls back to the main-stream scan when a sidecar is missing', () => {
-    // A partially-written run can leave a transcript without its sidecar;
-    // dropping the subagent entirely would be worse than losing the depth.
     const meta = readSubagentMeta(
       { configDir: CONFIG_DIR, projectPath: PROJECT_PATH, sessionId: SESSION_ID },
       fsFromMap({
@@ -285,7 +266,6 @@ describe('readSubagentMeta — nested subagents via .meta.json sidecars', () => 
         [subagentFile('a987')]: sidechainAssistant('a987', 'claude-opus-4-8'),
       }),
     );
-    // Main-stream fallback still produces the row.
     expect(meta.toolu_parent.agentId).toBe('a987');
   });
 
@@ -302,9 +282,7 @@ describe('readSubagentMeta — nested subagents via .meta.json sidecars', () => 
   });
 });
 
-// The CLI reports a subagent's own `effort:` separately from the session's
-// (2.1.222 fixed the spinner that conflated the two). It only exists in the
-// subagent's transcript, so it rides in alongside the model read.
+// A subagent's own `effort` exists only in its transcript.
 describe('readSubagentMeta — per-subagent effort', () => {
   const withSubagent = (subagentLines: string[]) =>
     fsFromMap({
@@ -324,8 +302,6 @@ describe('readSubagentMeta — per-subagent effort', () => {
   });
 
   it('leaves effort undefined when the transcript carries none', () => {
-    // Effort is absent whenever the run used the session default, so a
-    // missing field must not become an empty string in the UI.
     const meta = read(withSubagent([sidechainAssistant('aaa111', 'claude-opus-4-8')]));
     expect(meta.toolu_1.effort).toBeUndefined();
     expect(meta.toolu_1.model).toBe('claude-opus-4-8');
@@ -366,8 +342,7 @@ describe('readSubagentMeta — per-subagent effort', () => {
   });
 });
 
-// EnterWorktree moves the session's transcript and its subagents/ folder into
-// the worktree's project directory; the session's projectPath stays the repo.
+// EnterWorktree moves the transcript and its subagents/ folder.
 describe('readSubagentMeta after the CLI moves the session into a worktree', () => {
   it('reads the moved transcript and subagents folder', () => {
     const movedDir = path.join(CONFIG_DIR, 'projects', '-Users-me-proj--claude-worktrees-PI-1');

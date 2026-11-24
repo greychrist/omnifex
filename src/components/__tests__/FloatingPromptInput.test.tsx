@@ -18,8 +18,6 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 afterEach(() => { cleanup(); });
 
-// CLI 2.1.326 `prompt_draft_activity`: typing in a session's composer tells
-// the CLI, throttled per tab (src/lib/promptDraftActivity.ts).
 describe('FloatingPromptInput — typing hint', () => {
   it("pings the session's CLI when the person types, and not without a tab", async () => {
     const { api } = await import('@/lib/api');
@@ -40,7 +38,6 @@ describe('FloatingPromptInput — chat bar layout', () => {
   it('hosts no model/effort/permission pickers (they live in the session popover)', () => {
     render(<FloatingPromptInput onSend={vi.fn()} defaultModel="sonnet" />);
 
-    // Form-picker value labels must NOT render in the bar anymore.
     expect(screen.queryByText('Sonnet')).toBeNull();
     expect(screen.queryByText('High')).toBeNull();
     expect(screen.queryByText('Default')).toBeNull();
@@ -63,12 +60,8 @@ describe('FloatingPromptInput — chat bar layout', () => {
     const output = screen.getByTestId('output-toggle');
     expect(output.parentElement?.className).toContain('flex-col');
     expect(output.parentElement?.className).toContain('items-stretch');
-    // Narrow enough for the toggle alone: its label stacks above it rather
-    // than sitting beside it, so the column no longer pays for both.
     expect(output.parentElement?.className).toContain('w-40');
     expect(output.parentElement?.className).not.toContain('w-52');
-    // Extras sit in a 3-up grid on the right: six of them are two rows, not
-    // three, which is what sets the bar's height.
     expect(screen.getByTestId('extra-1').parentElement?.className).toContain('grid-cols-3');
   });
 
@@ -88,16 +81,11 @@ describe('FloatingPromptInput — chat bar layout', () => {
 
     const stack = screen.getByTestId('output-toggle').parentElement!;
     const row = stack.parentElement!;
-    // The bar's height is set by whichever side stack is taller; the row
-    // must stretch its children rather than sit them on the baseline.
     expect(row.className).toContain('items-stretch');
     expect(row.className).not.toContain('items-end');
-    // Both side stacks hug the top of that height.
     expect(stack.className).toContain('self-start');
     expect(screen.getByTestId('extra-1').parentElement?.className).toContain('self-start');
 
-    // The textarea fills the stretched middle column, with the auto-grow
-    // measurement kept as its floor.
     const textarea = screen.getByPlaceholderText(/Message Claude/);
     expect(textarea.className).toContain('h-full');
     expect(textarea.style.minHeight).toBe('72px');
@@ -105,9 +93,8 @@ describe('FloatingPromptInput — chat bar layout', () => {
   });
 
   it('keeps the 72px floor while empty: the placeholder must not size the bar', () => {
-    // A narrow textarea wraps the placeholder onto several lines, and the
-    // auto-grow used to read THAT as content height. The first keystroke
-    // removes the placeholder, the floor drops, and the whole bar shrinks.
+    // A narrow textarea wraps the placeholder onto several lines; auto-grow must
+    // not read that as content height.
     const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
     Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get: () => 130 });
     try {
@@ -142,8 +129,7 @@ function stubLayout(props: Record<string, number>): () => void {
 
 describe('FloatingPromptInput — auto-grow', () => {
   it('counts the border: a border-box min-height of bare scrollHeight clips the text by 2px', () => {
-    // scrollHeight excludes the border; min-height (border-box) includes it.
-    // Short by the border, the box scrolls its text to keep the caret in view.
+    // scrollHeight excludes the border; a border-box min-height includes it.
     const restore = stubLayout({ scrollHeight: 130, offsetHeight: 102, clientHeight: 100 });
     try {
       render(<FloatingPromptInput onSend={vi.fn()} />);
@@ -156,8 +142,8 @@ describe('FloatingPromptInput — auto-grow', () => {
   });
 
   it('does not animate its height: a transitioning min-height is shorter than the text it holds', () => {
-    // transition-all animated each new min-height over 150ms; meanwhile the
-    // overflow-hidden box scrolled the caret line up, then dropped back down.
+    // A transitioning min-height lets the overflow-hidden box scroll the caret line
+    // up and back.
     render(<FloatingPromptInput onSend={vi.fn()} />);
     const textarea = screen.getByPlaceholderText(/Message Claude/);
     expect(textarea.className).not.toMatch(/transition-all/);
@@ -214,7 +200,7 @@ describe('FloatingPromptInput — dropping a file', () => {
 });
 
 // Teams/Outlook put a nested list on the clipboard as flat text/plain lines;
-// the text/html still has the structure, so the composer pastes Markdown.
+// the text/html keeps the structure.
 describe('FloatingPromptInput — rich-text list paste', () => {
   const clipboard = (types: Record<string, string>) => ({
     items: [],

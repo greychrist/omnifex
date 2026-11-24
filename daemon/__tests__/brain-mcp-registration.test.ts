@@ -56,8 +56,6 @@ describe('brain MCP registration', () => {
 
       const path = writeBrainSpawnConfig(7, vault, env(tmp));
 
-      // The file holds machine-specific absolute paths including execPath, and
-      // a vault is a directory the user may sync or open in Obsidian.
       expect(path.startsWith(join(tmp, 'brain-mcp'))).toBe(true);
       expect(path).not.toContain(vault);
       expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({
@@ -97,13 +95,10 @@ describe('brain MCP registration', () => {
         '--allowedTools',
         'mcp__omnifex-brain__brain_search,mcp__omnifex-brain__brain_read',
       ]);
-      // --strict-mcp-config would suppress every other server the user has.
       expect(args).not.toContain('--strict-mcp-config');
     });
 
     it('never pre-allows the write tool', () => {
-      // A write stays a deliberate, visible act even though it only appends to
-      // a capture file in the user's own vault.
       expect(brainSpawnArgs('/x.json').join(' ')).not.toContain('brain_remember');
     });
   });
@@ -161,7 +156,6 @@ describe('brain MCP registration', () => {
       const after = JSON.parse(readFileSync(join(configDir, 'settings.json'), 'utf8')) as {
         permissions: { allow: string[]; deny: string[] };
       };
-      // Only ever adds and removes its own two rules.
       expect(after.permissions.allow).toEqual(['Bash(git status)']);
       expect(after.permissions.deny).toEqual(['Read(./secrets/**)']);
     });
@@ -206,14 +200,8 @@ describe('brain MCP registration', () => {
   });
 });
 
-/**
- * The persistent registration outlives the process that wrote it: every
- * Claude session started anywhere spawns whatever it names. Naming a dev
- * checkout kept that checkout's better_sqlite3.node loaded in every session,
- * and `npm test`'s pretest rebuild then overwrote it in place under them —
- * which macOS answers with SIGKILL (Code Signature Invalid). So it always
- * names an installed app, never a checkout.
- */
+// The registration outlives its writer: naming a dev checkout let an in-place
+// native rebuild get sessions SIGKILLed (Code Signature Invalid).
 describe('persistent registration targets the installed app', () => {
   const CHECKOUT = {
     execPath: '/Users/me/.nvm/versions/node/v26.12.1/bin/node',
@@ -227,8 +215,6 @@ describe('persistent registration targets the installed app', () => {
     expect(persistentServerEnv(packaged, () => null)).toEqual(packaged);
   });
 
-  // Every account registered before the Swift app names the Electron binary
-  // and a script inside app.asar — both gone once the update lands.
   it('swaps a registration that names the old Electron bundle for the installed app', () => {
     const electron = {
       execPath: '/Applications/OmniFex.app/Contents/MacOS/omnifex',
@@ -280,12 +266,6 @@ describe('persistent registration targets the installed app', () => {
   });
 });
 
-/**
- * A persistent registration outlives the build that wrote it. Re-writing the
- * ones that exist at daemon start is what carries them across an update that
- * moves the server — the Electron → Swift one moved both the executable and
- * the script.
- */
 describe('refreshBrainRegistrations', () => {
   const reg = (registered: string[], failOn?: string) => ({
     isRegistered: (configDir: string) => registered.includes(configDir),

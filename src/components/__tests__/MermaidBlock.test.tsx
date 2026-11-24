@@ -27,8 +27,7 @@ vi.mock('@/lib/diagramExport', async (orig) => ({
   canCopyImage: () => copyImageAllowed,
 }));
 
-// The pan/zoom library measures layout jsdom does not have; render its
-// children straight through and hand back a no-op controller.
+// The pan/zoom library measures layout jsdom does not have.
 vi.mock('react-zoom-pan-pinch', () => ({
   TransformWrapper: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TransformComponent: ({ children }: { children: React.ReactNode }) => <>{children}</>,

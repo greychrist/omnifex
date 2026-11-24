@@ -9,7 +9,6 @@ import { createRemoteServer, type RemoteServer } from '../remote/server';
 import { PROTOCOL_VERSION, type ServerMessage } from '../../src/protocol';
 import type { ProtocolHandlers } from '../../src/protocol/interfaces';
 
-/** A thin scripted client: collects every frame, resolves responses by id. */
 class TestClient {
   private ws: WebSocket;
   readonly frames: ServerMessage[] = [];
@@ -40,7 +39,6 @@ class TestClient {
     this.ws.send(text);
   }
 
-  /** Send a request and resolve with its response frame. */
   async request(type: string, params: Record<string, unknown> = {}): Promise<ServerMessage> {
     const requestId = `r${++this.n}`;
     const p = this.next((m) => m.type === 'response' && m.requestId === requestId);
@@ -65,7 +63,6 @@ class TestClient {
     this.ws.close();
   }
 
-  /** Stop reading the socket — a peer that has gone quiet (a sleeping iPad). */
   goQuiet(): void {
     (this.ws as unknown as { _socket: { pause(): void } })._socket.pause();
   }
@@ -126,10 +123,8 @@ describe('remote server', () => {
     rmSync(webRoot, { recursive: true, force: true });
   });
 
-  // Quitting the app stops the daemon, and the app waits only so long. A peer
-  // that never answers the close frame used to hold `close()` for ws's 30s
-  // close timeout — with every CLI session still running behind it, since
-  // sessions stop after the server closes (review, 2026-11-18).
+  // A peer that never answers the close frame would hold close() for ws's 30s
+  // close timeout.
   it('closes promptly even when a client never answers the close', async () => {
     const c = new TestClient(url);
     await c.open();
@@ -151,8 +146,6 @@ describe('remote server', () => {
   });
 
   it('names its boot in welcome, the same for every client of this run', async () => {
-    // A client compares it with the one it last saw: a different bootId
-    // means the daemon restarted and every seq it holds is meaningless.
     const a = new TestClient(url);
     const b = new TestClient(url);
     await a.open();
@@ -293,7 +286,6 @@ describe('remote server', () => {
     await closed;
     await new Promise((r) => setTimeout(r, 20));
     expect(server.clients).toHaveLength(0);
-    // Pushing to a session with no subscribers is a no-op, not a throw.
     expect(() => server.pushToSession('s1', { type: 'event', sessionId: 's1', seq: 3, kind: 'transcript', payload: {} })).not.toThrow();
   });
 
@@ -316,8 +308,6 @@ describe('remote server', () => {
     it('serves /healthz, /api/sessions and /api/projects as JSON, readable cross-origin', async () => {
       const health = await fetchText('/healthz');
       expect(JSON.parse(health.body)).toEqual({ ok: true });
-      // The Electron renderer's title-bar Daemon panel reads this from
-      // localhost (dev) or its own scheme (packaged).
       expect(health.cors).toBe('*');
       expect(JSON.parse((await fetchText('/api/sessions')).body)).toEqual([{ sessionId: 's1' }]);
       expect(JSON.parse((await fetchText('/api/projects')).body)).toEqual([{ projectId: 'p1' }]);
@@ -326,9 +316,7 @@ describe('remote server', () => {
     it('serves the web root with an SPA fallback and refuses to escape it', async () => {
       expect((await fetchText('/')).body).toContain('OmniFex');
       expect((await fetchText('/assets/app.js')).type).toContain('text/javascript');
-      // A deep link renders the app shell…
       expect((await fetchText('/sessions/abc')).body).toContain('OmniFex');
-      // …but a missing asset is a real 404, and so is a traversal.
       expect((await fetchText('/assets/nope.js')).status).toBe(404);
       expect((await fetchText('/..%2f..%2fetc/passwd')).status).toBe(404);
     });
@@ -363,7 +351,6 @@ describe('remote server', () => {
       expect(subs).toEqual([{ endpoint: 'https://p/1', keys: { p256dh: 'x', auth: 'y' } }]);
       expect((await post('/api/push/unsubscribe', { endpoint: 'https://p/1' })).status).toBe(200);
       expect((await post('/api/push/nope', {})).status).toBe(404);
-      // Still no other writes.
       expect((await fetchText('/healthz', 'POST')).status).toBe(405);
     });
 
@@ -378,9 +365,7 @@ describe('remote server', () => {
   });
 });
 
-// The Mac app loads from loopback while the daemon's main address is the
-// tailnet one (see `extraListenHosts`). Here `::1` stands in for the extra
-// address, since a test cannot bind a tailnet IP.
+// `::1` stands in for the extra address: a test cannot bind a tailnet IP.
 describe('remote server on extra hosts', () => {
   const getText = (url: string) =>
     new Promise<{ status: number; body: string }>((res, rej) => {
@@ -424,8 +409,6 @@ describe('remote server on extra hosts', () => {
   });
 });
 
-// A daemon that started before Tailscale was up took loopback alone; the
-// tailnet watch adds the address once it appears.
 describe('remote server addHost', () => {
   const api = { health: () => ({ ok: true }), sessions: () => [], projects: () => [] };
   const getStatus = (url: string) =>

@@ -14,15 +14,13 @@ import {
   sessionAuthFailure,
 } from '../sessionDerivedState';
 
-// Minimal helpers — these build JsonlNodes with the fields the derivation reads.
 function userPrompt(timestamp: string, sessionId = 's1'): JsonlNode {
   return {
     kind: 'user',
     userKind: 'prompt',
     sessionId,
     receivedAt: timestamp,
-    // `as never` because AssistantRaw / UserRaw don't declare `isSidechain` and
-    // the helpers add fields the union types don't model — see Task notes.
+    // `as never`: the raw union types do not declare `isSidechain`.
     raw: {
       type: 'user',
       message: { role: 'user', content: 'hi' },
@@ -42,8 +40,7 @@ function assistantWithStop(
     kind: 'assistant',
     sessionId,
     receivedAt: timestamp,
-    // `as never` because AssistantRaw / UserRaw don't declare `isSidechain` and
-    // the helpers add fields the union types don't model — see Task notes.
+    // `as never`: the raw union types do not declare `isSidechain`.
     raw: {
       type: 'assistant',
       message: { role: 'assistant', content: [], stop_reason },
@@ -54,12 +51,8 @@ function assistantWithStop(
   };
 }
 
-// The CLI `result` envelope classifies to kind:'cli-stream-result' (see
-// jsonlClassifier — every `type:'result'` line routes there). It is the
-// turn-complete marker and closes `waitingOnClaude` regardless of the
-// preceding assistant's stop_reason — load-bearing under
-// --include-partial-messages, where the committed assistant carries
-// stop_reason:null and the terminal reason rides the message_delta overlay.
+// `result` closes the turn whatever the stop_reason: under
+// --include-partial-messages the committed assistant has stop_reason:null.
 function resultNode(timestamp: string): JsonlNode {
   return {
     kind: 'cli-stream-result',
@@ -69,7 +62,6 @@ function resultNode(timestamp: string): JsonlNode {
   } as unknown as JsonlNode;
 }
 
-// system.status — plumbing that often trails a completed turn.
 function systemStatus(timestamp: string): JsonlNode {
   return {
     kind: 'system',
@@ -267,10 +259,8 @@ describe('sessionStartedAt', () => {
 });
 
 describe('forwarded subagent messages (--forward-subagent-text)', () => {
-  // Live-forwarded subagent lines are regular user/assistant envelopes with a
-  // non-empty top-level `parent_tool_use_id` (verified against CLI 2.1.217;
-  // main-chain lines carry null / omit it). They must never decide the main
-  // turn axis, name the session model, or anchor turn durations.
+  // Forwarded subagent lines carry a non-empty top-level parent_tool_use_id
+  // (CLI 2.1.217); main-chain lines carry null or omit it.
   function forwardedAssistant(timestamp: string, stop_reason: string | null, model = 'claude-haiku-4-5-20251001'): JsonlNode {
     return {
       kind: 'assistant',
@@ -331,16 +321,8 @@ describe('forwarded subagent messages (--forward-subagent-text)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// usageLimitWait — Claude Code 2.1.234
-// ---------------------------------------------------------------------------
-// 2.1.234 added `autoContinueAtUsageLimit` (default ON for claude.ai logins:
-// the CLI only defaults it off when an API key is present). A session that
-// hits a usage limit no longer ends its turn — it parks and resumes when the
-// limit resets, which can be hours. `waitingOnClaude` correctly stays true
-// through that (a rate-limit-event is skip-by-default, so the last decisive
-// node is still the unsettled assistant/prompt), which means OmniFex spins
-// with no explanation. This derivation is what lets the UI say why.
+// CLI 2.1.234's `autoContinueAtUsageLimit` (on for claude.ai logins) parks a
+// turn at a usage limit until it resets, which can be hours.
 function rateLimitEvent(
   timestamp: string,
   info: Record<string, unknown> | undefined,
@@ -402,9 +384,7 @@ describe('usageLimitWait', () => {
   });
 
   it('returns null for a rejection with no resetsAt', () => {
-    // The CLI's own auto-continue predicate requires a finite resetsAt; with
-    // none it shows the limit dialog instead of waiting, so there is no wait
-    // to report and we must not invent one.
+    // The CLI auto-continues only with a finite resetsAt.
     const msgs = [
       userPrompt('2026-08-18T10:00:00Z'),
       rateLimitEvent('2026-08-18T10:00:02Z', { status: 'rejected' }),
@@ -432,10 +412,8 @@ describe('usageLimitWait', () => {
   });
 });
 
-// A CLI process whose OAuth refresh fails gives up for good: it never re-reads
-// the Keychain, so a later sign-in cannot reach it. The only evidence is in
-// its own transcript — the account's on-disk login looks fine throughout.
-// Shapes are copied from session 845b2f3d (CLI 2.1.284).
+// A CLI whose OAuth refresh fails never re-reads the Keychain; only its
+// transcript shows it (CLI 2.1.284).
 function authFailedAssistant(timestamp: string, uuid: string, text: string): JsonlNode {
   return {
     kind: 'assistant',
@@ -513,8 +491,6 @@ describe('sessionAuthFailure', () => {
     expect(sessionAuthFailure(msgs)).toEqual({ at: '2026-09-29T20:01:21.4Z', text: 'Not logged in · Please run /login' });
   });
 
-  // Auto-recap is often the first thing an idle session runs, and a failed
-  // local command leaves only its stdout — there is no structured marker.
   it('reports a failed local command whose output is the expired-session error', () => {
     const msgs = [localCommand('2026-09-29T19:58:40Z', 'c1', EXPIRED, 'failed')];
     expect(sessionAuthFailure(msgs)).toEqual({ at: '2026-09-29T19:58:40Z', text: EXPIRED });
@@ -560,11 +536,8 @@ describe('sessionAuthFailure', () => {
   });
 });
 
-// The CLI's answer to a typed `/model`, as it lands in the transcript: a
-// `user` record whose content is the local-command stdout envelope (string
-// or text blocks), or a `system/local_command` record. OmniFex never saw
-// these, so a switch typed into the composer left the readout, the picker
-// and a restart on the model OmniFex had picked itself.
+// The CLI answers a typed `/model` with a `user` local-command stdout record
+// or a system/local_command record.
 describe('slashModelResult', () => {
   const userOut = (text: string, content: 'string' | 'blocks' = 'string'): JsonlNode => ({
     kind: 'user', userKind: 'prompt', sessionId: 's1', receivedAt: 't',
@@ -615,8 +588,6 @@ describe('lastSessionModel', () => {
     raw: { type: 'user', uuid: 'u-' + model, message: { role: 'user', content: `<local-command-stdout>Set model to \`${alias} (${model})\`</local-command-stdout>` } } as never,
   });
 
-  // The model the session is on at its end: a `/model` with no turn after
-  // it counts, so a restart keeps the switch instead of the last turn's model.
   it('is the later of the last turn\'s model and the last /model result', () => {
     expect(lastSessionModel([assistantWithModel('t1', 'claude-opus-5-5'), slash('claude-fable-5-1')])).toBe('claude-fable-5-1');
     expect(lastSessionModel([slash('claude-fable-5-1'), assistantWithModel('t2', 'claude-opus-5-5')])).toBe('claude-opus-5-5');

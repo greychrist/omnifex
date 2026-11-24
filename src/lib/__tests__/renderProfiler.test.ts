@@ -12,7 +12,6 @@ function fakeStorage(initial?: Record<string, string>) {
   };
 }
 
-/** A clock the test drives by hand. */
 function fakeClock(start = 0) {
   let t = start;
   return { now: () => t, advance: (ms: number) => { t += ms; } };
@@ -50,7 +49,6 @@ describe('renderProfiler', () => {
       const p = createRenderProfiler({ storage: throwing });
       expect(p.isEnabled()).toBe(false);
       expect(() => { p.setEnabled(true); }).not.toThrow();
-      // In-memory state still flips even though the write failed.
       expect(p.isEnabled()).toBe(true);
     });
 

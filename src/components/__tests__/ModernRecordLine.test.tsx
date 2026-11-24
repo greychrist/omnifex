@@ -28,8 +28,6 @@ describe('Modern record line', () => {
     expect(container.querySelector('[data-frame-variant]')).toBeNull();
   });
 
-  // Colored as an answered question is: the icon and the title in the
-  // accent, the detail left muted.
   it('draws the icon and title in the line\'s accent', () => {
     const { container } = draw({ icon: 'Zap', title: 'Effort', detail: 'High', accent: { kind: 'css', color: 'rgb(202, 138, 4)' } });
     expect((container.querySelector('[data-slot="trace-icon"]') as HTMLElement).style.color).toBe('rgb(202, 138, 4)');

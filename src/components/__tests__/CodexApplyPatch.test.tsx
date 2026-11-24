@@ -3,9 +3,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import type { AgentMessage } from "@/lib/api";
 
-// DiffViewer pulls the syntax theme via useTheme(), which would otherwise
-// throw without a ThemeProvider. Matches the pattern from
-// CodexAgentMessage.test.tsx.
+// useTheme() throws without a ThemeProvider.
 vi.mock("@/hooks", () => ({
   useTheme: () => ({ theme: "gray", setTheme: () => {}, isLoading: false }),
 }));
@@ -80,9 +78,6 @@ describe("ApplyPatchItem", () => {
   });
 
   it("renders DiffViewer content (diff rows) inline by default when N ≤ 3", () => {
-    // With N=1 file the file block is open by default — the DiffViewer
-    // renders its diff rows under the filename. We assert by counting
-    // the "+" / "-" gutter markers DiffViewer emits.
     const { container } = render(
       <ApplyPatchItem
         message={makeMessage({
@@ -92,8 +87,6 @@ describe("ApplyPatchItem", () => {
         })}
       />,
     );
-    // DiffViewer marks each rendered diff part; assert at least one is
-    // present (proves the diff actually rendered).
     expect(container.querySelectorAll("[data-diff-line]").length).toBeGreaterThan(0);
   });
 
@@ -110,7 +103,6 @@ describe("ApplyPatchItem", () => {
         })}
       />,
     );
-    // All 4 filename toggles render, all start collapsed.
     const buttons = screen.getAllByRole("button", { expanded: false });
     expect(buttons.length).toBe(4);
   });
@@ -149,9 +141,6 @@ describe("ApplyPatchItem", () => {
   });
 
   it("coerces `lines: string[]` side shapes into strings for the diff viewer", () => {
-    // Some Codex builds ship before/after as { lines: string[] } instead
-    // of plain strings. The widget should not throw and should still
-    // surface the filename header.
     expect(() =>
       render(
         <ApplyPatchItem

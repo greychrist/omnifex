@@ -5,9 +5,8 @@ import path from 'node:path';
 import os from 'node:os';
 import type { AgentMessage } from '../services/agents/types';
 
-// A mod's delayed notification sent with `until_back` is thrown away if the
-// person returns to the session first (CLI 2.1.321 contract). The daemon's
-// evidence of a return is the user sending the session a message.
+// CLI 2.1.321: an `until_back` notification is dropped if the person returns
+// first; a sent message is the daemon's evidence of a return.
 
 const messageCbs: ((m: AgentMessage) => void)[] = [];
 

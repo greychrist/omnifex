@@ -4,12 +4,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// Every `git` the watcher runs is a short-lived process, and on macOS each one
-// makes syspolicyd log twice — ~3.4M errors a day at 20 spawns per 3 s tick,
-// idle. These tests count spawns: watches share one reader per repository,
-// polling stops when nobody is looking, and a plain tick never re-lists
-// worktrees.
-
 const gitCalls = vi.hoisted(() => [] as string[][]);
 const gitFiles = vi.hoisted(() => [] as string[]);
 const gitCwds = vi.hoisted(() => [] as string[]);
@@ -91,7 +85,6 @@ describe('git watcher — process churn', () => {
     await tick(3);
     expect(statusCalls()).toBe(3);
 
-    // Both still hear about a change.
     fs.writeFileSync(path.join(repo, 'dirty.txt'), 'x');
     send.mockClear();
     await tick();
@@ -263,13 +256,11 @@ describe('git watcher — process churn', () => {
     w.setVisible(b.watchId, false);
     gitCalls.length = 0;
 
-    // Hidden: no polling, and a working-tree edit does not wake it either.
     fs.writeFileSync(path.join(repo, 'dirty.txt'), 'x');
     execSync('git add dirty.txt', { cwd: repo, stdio: 'pipe' }); // touches .git/index
     await tick(4);
     expect(gitCalls).toEqual([]);
 
-    // Visible again: one immediate refresh, before any tick, with the change.
     send.mockClear();
     w.setVisible(b.watchId, true);
     await settle();
@@ -365,7 +356,6 @@ describe('git watcher — process churn', () => {
       await tick();
       expect(statusCalls()).toBe(1);
 
-      // A late close from the first connection must not hide it again.
       first.close();
       gitCalls.length = 0;
       await tick();

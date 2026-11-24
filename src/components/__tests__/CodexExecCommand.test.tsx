@@ -21,8 +21,7 @@ describe("ExecCommandItem", () => {
     const { container } = render(
       <ExecCommandItem message={makeMessage({ command: "ls -la" })} />,
     );
-    // The "$ " prefix and the command live as sibling text nodes inside
-    // one <code> element. Match by the <code>'s combined textContent.
+    // The "$ " prefix and the command are sibling text nodes in one <code>.
     const code = container.querySelector("code");
     expect(code?.textContent).toContain("$");
     expect(code?.textContent).toContain("ls -la");
@@ -76,11 +75,8 @@ describe("ExecCommandItem", () => {
         message={makeMessage({ command: "ls", stdout: longStdout })}
       />,
     );
-    // Initially collapsed — the long stdout body should not be visible.
     expect(screen.queryByText(longStdout)).toBeNull();
-    // The toggle button shows the char count.
     expect(screen.getByText(/500 chars/)).toBeTruthy();
-    // Click the stdout toggle.
     fireEvent.click(screen.getByRole("button", { name: /stdout/ }));
     expect(screen.getByText(longStdout)).toBeTruthy();
   });
@@ -139,7 +135,6 @@ describe("ExecCommandItem", () => {
 });
 
 beforeEach(() => {
-  // Reset clipboard between tests.
   Object.defineProperty(navigator, "clipboard", {
     value: { writeText: vi.fn().mockResolvedValue(undefined) },
     configurable: true,

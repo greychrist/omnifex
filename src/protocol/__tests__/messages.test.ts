@@ -11,11 +11,8 @@ import {
   type ServerMessage,
 } from '@/protocol';
 
-/**
- * One representative message per client method. Doubles as the round-trip
- * corpus and as the drift guard: a method added to CLIENT_METHODS without a
- * sample here fails `covers every declared method`.
- */
+// One sample per client method: a method without one fails `covers every
+// declared method`.
 const CLIENT_SAMPLES: ClientMessage[] = [
   { type: 'hello', requestId: 'r1', clientId: 'c1', clientKind: 'desktop', protocolVersion: PROTOCOL_VERSION },
   { type: 'project.list', requestId: 'r2' },
@@ -90,7 +87,6 @@ const SERVER_SAMPLES: ServerMessage[] = [
   { type: 'event', sessionId: 's1', seq: 46, kind: 'transcript', origin: 'tail', payload: { kind: 'queue-operation' } },
 ];
 
-/** JSON is the wire format; a round trip must survive it. */
 function wire(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value));
 }
@@ -131,11 +127,7 @@ describe('protocol messages', () => {
     });
 
     it('names every session-scoped push that carries a seq', () => {
-      // These three share ONE per-session sequence space so that a
-      // `session.subscribe { fromSeq }` replay covers state transitions and
-      // open permission requests, not just transcript events. A push added to
-      // the seq space without being listed here would be silently dropped
-      // from replay.
+      // These three share ONE per-session seq space, so a fromSeq replay covers them.
       expect([...SESSION_SCOPED_PUSHES].sort()).toEqual(['event', 'permission.request', 'session.state']);
       for (const sample of SERVER_SAMPLES) {
         if (!(SESSION_SCOPED_PUSHES as readonly string[]).includes(sample.type)) continue;
@@ -160,8 +152,6 @@ describe('protocol messages', () => {
         type: 'response',
         requestId: 'r',
         ok: false,
-        // An error response with no error body is malformed: the client would
-        // reject the promise with nothing to show.
       });
       expect(errRes.success).toBe(false);
     });
@@ -192,9 +182,6 @@ describe('protocol messages', () => {
     });
 
     it('does not accept an unknown sessionStatus — the axis is closed', () => {
-      // Unknown *fields* are tolerated; unknown *values* on a modelled axis are
-      // not. docs/session-lifecycle.md owns this enum, and a client that
-      // silently accepted 'running' here would resurrect the conflated-axis bug.
       expect(
         ServerMessageSchema.safeParse({
           type: 'session.state',
@@ -257,9 +244,8 @@ describe('protocol messages', () => {
     });
 
     it('tolerates a suggestion entry the CLI invented after this build', () => {
-      // The CLI ships setMode / addDirectories entries alongside addRules and
-      // adds new kinds without warning; dropping the whole response over one
-      // unrecognised entry would break Allow on a working session.
+      // The CLI ships setMode / addDirectories entries beside addRules and adds kinds
+      // without warning.
       const res = ClientMessageSchema.safeParse({
         type: 'permission.respond',
         requestId: 'r',
@@ -298,8 +284,6 @@ describe('protocol messages', () => {
     });
 
     it('carries attachments as bytes, not as local paths', () => {
-      // A web client has no filesystem the daemon can read. Modelling
-      // attachments as a path would work on the laptop and fail on the iPad.
       const msg = ClientMessageSchema.parse({
         type: 'turn.send',
         requestId: 'r',

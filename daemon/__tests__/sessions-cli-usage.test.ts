@@ -50,9 +50,7 @@ describe('CLI usage capture', () => {
     })]);
   });
 
-  // CLI >= 2.1.311 splits cache writes by TTL in its totals. The 1-hour count
-  // is kept so the unlogged remainder can be priced at the 1-hour rate; an
-  // older CLI's totals have no such field and none is invented.
+  // CLI >= 2.1.311 splits cache writes by TTL in its totals.
   it('keeps the 1-hour cache-write count when the CLI reports one', () => {
     const events: CliUsageEvent[] = [];
     const h = handle(() => ({}));

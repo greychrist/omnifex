@@ -5,11 +5,6 @@ import path from 'node:path';
 import os from 'node:os';
 import type { AgentMessage, AgentEngineExit } from '../services/agents/types';
 
-// The side chat lives exactly as long as the session's engine. When the
-// engine goes — it exits, the tab is stopped, or a fresh start replaces it —
-// clients must be told the thread is gone, and a question still in flight
-// must not bring it back when its rejection lands afterwards.
-
 const exitCbs: ((info: AgentEngineExit) => void)[] = [];
 const pendingRejects: ((e: Error) => void)[] = [];
 
@@ -69,7 +64,7 @@ describe('side chat — ends with the engine', () => {
     const { sessions, lastSideChat, start } = setup();
     void start();
     await sessions.askSideQuestion('t1', 'q');
-    // The engine's exit path: failAll queues the rejection, then exit callbacks run.
+    // failAll queues the rejection, then exit callbacks run.
     const reject = pendingRejects[0];
     for (const cb of exitCbs) cb({ code: 0 });
     reject(new Error('control_request aborted: engine exited'));

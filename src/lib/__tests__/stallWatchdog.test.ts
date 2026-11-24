@@ -62,8 +62,7 @@ describe('createStallWatchdog', () => {
     });
   });
 
-  // A hidden window is not a stalled one: its timers may be throttled, and a
-  // gap there is not evidence of anything.
+  // A hidden window's timers may be throttled; a gap there is no evidence.
   it('ignores a gap that spans a hidden window', () => {
     start();
     visible = false;
@@ -85,8 +84,6 @@ describe('writeWithRetry', () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  // The stall this exists to catch is the one that gets the daemon to drop
-  // the socket, so the first write usually lands on a dead connection.
   it('retries until the write lands', async () => {
     const write = vi.fn()
       .mockRejectedValueOnce(new Error('connection lost'))
@@ -111,8 +108,6 @@ describe('writeWithRetry', () => {
   });
 });
 
-// Every open tab is mounted, so the tab doing the work need not be the one on
-// screen: name the active tab, and rank every tab by transcript size.
 it('stallContext names the active tab and ranks tabs by transcript size', () => {
   expect(stallContext()).toEqual({
     activeTab: { id: 't2', type: 'projects', title: 'Projects', sessionId: null },

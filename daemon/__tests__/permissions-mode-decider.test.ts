@@ -1,10 +1,4 @@
 // @vitest-environment node
-//
-// The bottom-bar permission dropdown changes handle.permissionMode live, and
-// the decider reads it per-request (currentPermissionMode). These tests pin
-// the auto-decision behavior for each mode so "change the dropdown, nothing
-// happens" can't regress: the decider must actually act on the mode rather
-// than prompt identically for everything except bypassPermissions.
 import { describe, it, expect, vi } from 'vitest';
 import { createPermissionRequestHandler } from '../services/sessions/permissions';
 import type { SessionHandle } from '../services/sessions/types';
@@ -45,11 +39,8 @@ function handlerFor(mode: string) {
 }
 
 describe('permission-mode decider (auto allow/deny vs prompt)', () => {
-  // OmniFex's Bypass is always a Bypass launch (queries.ts setPermissionMode
-  // refuses it otherwise), and a CLI in bypassPermissions only asks about what
-  // it refuses to bypass. 2.1.326 began asking about more calls in bypass, not
-  // all of them typed `safetyCheck` (a command too long for the deny-rule
-  // check is `other`). Every Claude ask in Bypass therefore reaches the card.
+  // A CLI in bypassPermissions asks only about what it refuses to bypass, and
+  // since 2.1.326 not all of those are typed `safetyCheck`.
   it('bypassPermissions: prompts for any ask the CLI sends, whatever its reason type', () => {
     for (const decision_reason_type of [undefined, 'other', 'rule', 'hook', 'classifier']) {
       const { fn, handle, respondPermission } = handlerFor('bypassPermissions');
@@ -67,11 +58,7 @@ describe('permission-mode decider (auto allow/deny vs prompt)', () => {
     }
   });
 
-  // Bypass mode passes --permission-mode bypassPermissions, so what the CLI
-  // still sends is what it refuses to bypass, its safety checks among them. The decider
-  // answers in the human's place, so auto-allowing those removed the CLI's
-  // last safety net with nobody looking. Payload verbatim from CLI 2.1.281,
-  // bypassPermissions, `rm -rf "$(pwd)"`.
+  // Payload verbatim from CLI 2.1.281, bypassPermissions, `rm -rf "$(pwd)"`.
   describe('bypassPermissions: the CLI\'s safety checks reach the card', () => {
     const dangerousRm: AgentPermissionRequest = {
       agent: 'claude',
@@ -125,8 +112,6 @@ describe('permission-mode decider (auto allow/deny vs prompt)', () => {
       expect(handle.permissionQueue).toHaveLength(1);
     });
 
-    // dontAsk denies a safety check like anything else — denying is already
-    // the safe answer, and prompting would contradict the mode.
     it('dontAsk still denies it without prompting', () => {
       const { fn, handle, respondPermission } = handlerFor('dontAsk');
       fn(dangerousRm);
@@ -142,9 +127,8 @@ describe('permission-mode decider (auto allow/deny vs prompt)', () => {
     expect(handle.permissionQueue).toHaveLength(0);
   });
 
-  // In acceptEdits the CLI approves in-project edits itself; what it still
-  // sends is what it chose to ask a human about. Payloads below are verbatim
-  // shapes captured from CLI 2.1.280 in acceptEdits mode.
+  // In acceptEdits the CLI approves in-project edits itself. Payloads are
+  // verbatim from CLI 2.1.280.
   describe('acceptEdits: edits the CLI escalated reach the card', () => {
     function escalated(input: Record<string, unknown>, extra: Record<string, unknown>): AgentPermissionRequest {
       return {
@@ -188,10 +172,8 @@ describe('permission-mode decider (auto allow/deny vs prompt)', () => {
       expect(handle.permissionQueue).toHaveLength(1);
     });
 
-    // An ask the auto-mode classifier raised: the CLI's own test (2.1.329) is
-    // type 'classifier' || code 'classifier_transcript_too_long' ||
-    // `auto_modes_check_raised`. Reaches us only when the dropdown says
-    // acceptEdits but the CLI is still in auto (a lost set_permission_mode).
+    // The CLI's own test (2.1.329) for a classifier ask: type 'classifier' ||
+    // code 'classifier_transcript_too_long' || `auto_modes_check_raised`.
     it.each([
       ['type classifier', { decision_reason_type: 'classifier' }],
       ['code classifier_transcript_too_long', { decision_reason_code: 'classifier_transcript_too_long' }],
@@ -204,8 +186,6 @@ describe('permission-mode decider (auto allow/deny vs prompt)', () => {
     });
 
     it('still auto-allows an in-project edit the CLI did not escalate (mode out of sync)', () => {
-      // The decider enforces the dropdown even when the CLI never received
-      // set_permission_mode — the "kept asking after I set it" fix.
       const { fn, handle, respondPermission } = handlerFor('acceptEdits');
       fn(escalated({ file_path: '/Users/test/proj/src/a.ts' }, {}));
       expect(respondPermission).toHaveBeenCalledWith('req-esc', 'allow', expect.anything());
@@ -238,8 +218,8 @@ describe('permission-mode decider (auto allow/deny vs prompt)', () => {
     });
   });
 
-  // CLI 2.1.329's Artifact delete ask sends the same sentence as description
-  // and decision_reason; the card drew it twice.
+  // CLI 2.1.329's Artifact delete ask sends one sentence as both description and
+  // decision_reason.
   it('drops a decision_reason that repeats the description', () => {
     const { fn, sendToRenderer } = handlerFor('default');
     const line = 'Permanently delete "Pi-Tuitive Design System (test)"?';

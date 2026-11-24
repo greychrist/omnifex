@@ -29,10 +29,6 @@ const pair = (claude: ResolveSlot | null, codex: ResolveSlot | null = null): Res
 
 describe('renderCliReviewPrompt', () => {
   it('carries the whole procedure, not a slash-command invocation', () => {
-    // The procedure used to live in .claude/commands/cli-changelog-review.md,
-    // which is gitignored — so on any machine but the author's the drift
-    // warning fired a slash command the CLI had never heard of. The app now
-    // ships the prompt itself.
     const prompt = renderCliReviewPrompt('2.1.222', '2.1.224');
     expect(prompt).not.toMatch(/^\/cli-changelog-review/);
     expect(prompt).toContain('src/types/jsonl.ts');
@@ -69,7 +65,6 @@ describe('buildCliReviewLaunch', () => {
   });
 
   it('titles the tab for the job, not the folder', () => {
-    // Distinguishes it from an ordinary "omnifex" session tab at a glance.
     expect(buildCliReviewLaunch({ ...base, pair: pair(slot(account())) }).tab.title).toBe(
       'CLI 2.1.224 review',
     );
@@ -99,8 +94,6 @@ describe('buildCliReviewLaunch', () => {
   });
 
   it('refuses to auto-start when no Claude account routes the repo', () => {
-    // Silent accountless launches are exactly what the multi-account rules
-    // forbid; hand back a tab that shows the normal routing guidance instead.
     const result = buildCliReviewLaunch({ ...base, pair: pair(null, slot(account({ engine: 'codex' }))) });
     expect(result.hasAccount).toBe(false);
     expect(result.tab.initialSessionConfig).toBeUndefined();
@@ -109,7 +102,6 @@ describe('buildCliReviewLaunch', () => {
   });
 
   it('never routes the review to a Codex account', () => {
-    // The changelog under review is Claude Code's.
     const result = buildCliReviewLaunch({
       ...base,
       pair: pair(slot(account({ name: 'personal' })), slot(account({ name: 'codex-acct', engine: 'codex' }))),
@@ -121,8 +113,6 @@ describe('buildCliReviewLaunch', () => {
 
 describe('buildCliReviewLaunch — prompt', () => {
   it('always sends the shipped prompt for the drifted range', () => {
-    // There is no user override any more: the prompt repairs itself in the
-    // repo, and a saved copy would freeze it at whatever version was saved.
     const { tab } = buildCliReviewLaunch({
       repoDir: '/Users/x/Repos/personal/omnifex',
       reviewedVersion: '2.1.222',

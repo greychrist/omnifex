@@ -31,7 +31,6 @@ describe('SessionInspectorPanel — the turn row is the session\'s own axis', ()
     render(<SessionInspectorPanel {...base} turn={{ status: 'running', since: '2026-09-20T18:04:05.000Z' }} />);
     const row = screen.getByTestId('inspector-turn');
     expect(row.textContent).toMatch(/running/);
-    // The wall-clock the daemon stamped, not a renderer-local flag.
     expect(row.textContent).toMatch(/since/);
     expect(row.querySelector('time')?.getAttribute('datetime')).toBe('2026-09-20T18:04:05.000Z');
   });

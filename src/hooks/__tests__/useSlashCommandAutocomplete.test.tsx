@@ -7,7 +7,7 @@ import { localSlashCommands } from '@/lib/localSlashCommands';
 
 let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
-  // Hook console.log's on `/` detection — keep test output clean.
+  // The hook logs on `/` detection.
   consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 });
 afterEach(() => {
@@ -63,7 +63,6 @@ describe('useSlashCommandAutocomplete — trigger detection', () => {
 
   it('does NOT open the picker if the change shortened the text (i.e. user deleted)', () => {
     const { result } = renderHook(() => useSlashCommandAutocomplete());
-    // Simulates backspace: prev was longer than new.
     act(() => { result.current.handleTextChangeForSlash('/', 1, '/h'); });
     expect(result.current.showSlashCommandPicker).toBe(false);
   });
@@ -83,8 +82,6 @@ describe('useSlashCommandAutocomplete — query tracking while open', () => {
     const { result } = renderHook(() => useSlashCommandAutocomplete());
     act(() => { result.current.handleTextChangeForSlash('/', 1, ''); });
     act(() => { result.current.handleTextChangeForSlash('/co', 3, '/'); });
-    // Now the user types a space after, which separates the slash-token.
-    // Simulate cursor moved past the space → no `/` between cursor and trigger.
     act(() => { result.current.handleTextChangeForSlash('/co foo', 7, '/co'); });
     expect(result.current.showSlashCommandPicker).toBe(false);
     expect(result.current.slashCommandQuery).toBe('');
@@ -142,7 +139,6 @@ describe('useSlashCommandAutocomplete — selection', () => {
         ta,
       );
     });
-    // accepts_arguments drops afterCursor, leaving room for the user to type args.
     expect(setPrompt).toHaveBeenCalledWith('/echo ');
   });
 
@@ -192,7 +188,7 @@ describe('useSlashCommandAutocomplete — close', () => {
     act(() => { result.current.handleSlashCommandPickerClose(ta); });
     expect(result.current.showSlashCommandPicker).toBe(false);
     expect(result.current.slashCommandQuery).toBe('');
-    // Focus call is scheduled with setTimeout(...,0) — flush microtasks.
+    // Focus is scheduled with setTimeout(..., 0).
     return new Promise<void>((resolve) => {
       setTimeout(() => {
         expect(focusSpy).toHaveBeenCalled();
@@ -228,8 +224,6 @@ describe('local commands', () => {
     });
 
     expect(onLocalCommand).toHaveBeenCalledWith(recall.id);
-    // The CLI has never heard of /recall, so inserting it would send an
-    // unknown command. The trigger text is stripped instead.
     expect(setPrompt).toHaveBeenCalledWith('ask ');
   });
 

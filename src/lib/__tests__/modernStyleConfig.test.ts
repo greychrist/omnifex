@@ -21,7 +21,6 @@ describe('Modern style config', () => {
     expect(m.answerCardSaturation).toBe(100);
     expect(m.promptBrightness).toBe(100);
     expect(m.answerCardBrightness).toBe(100);
-    // The failed step is not a card: its color has no saturation of its own.
     expect(m).not.toHaveProperty('failedSaturation');
     expect(m.promptShadow).toBe(true);
     expect(m.answerCardShadow).toBe(true);
@@ -31,7 +30,6 @@ describe('Modern style config', () => {
     expect(m.stepIcons.command).toBe('Terminal');
     expect(m.stepIcons.tool).toBe('Wrench');
     expect(m.stepIcons.design).toBe('Palette');
-    // No color: every step draws in the built-in gray.
     expect(Object.values(m.stepColors).every((c) => c === null)).toBe(true);
     expect(Object.keys(m.stepColors).sort()).toEqual([...Object.keys(m.stepIcons)].sort());
   });
@@ -122,7 +120,6 @@ describe('Modern style config', () => {
       expect(v['--modern-answer-size']).toBe('14px');
       expect(v['--modern-answer-leading']).toBe('20px');
       expect(v['--modern-prompt-tint']).toBeNull();
-      // Unset: the stylesheet's own emerald and blue, at full strength.
       expect(v['--modern-final-hue']).toBeNull();
       expect(v['--modern-final-tint']).toBeNull();
       expect(v['--modern-prompt-hue']).toBeNull();
@@ -135,12 +132,10 @@ describe('Modern style config', () => {
     it('hands the prompt bubble the hue of its chosen tint', () => {
       const v = modernCssVars({ ...DEFAULT_MODERN, promptTint: '#0000ff' });
       expect(Number(v['--modern-prompt-hue'])).toBeCloseTo(264.1, 0);
-      // The tint itself still colors the bubble's shadow.
       expect(v['--modern-prompt-tint']).toBe('#0000ff');
     });
 
-    // White, grey or black has no hue — reading one off it gave a brown card.
-    // A neutral pick is a card with no tint, whatever the slider says.
+    // White, grey or black has no hue.
     it('draws a white, grey or black pick as an untinted card', () => {
       const v = modernCssVars({ ...DEFAULT_MODERN, promptTint: '#ffffff', answerCardColor: '#808080', answerCardSaturation: 150 });
       expect(v['--modern-prompt-saturation']).toBe('0');
@@ -167,7 +162,6 @@ describe('Modern style config', () => {
     it('hands the answer card the hue of its chosen color', () => {
       const v = modernCssVars({ ...DEFAULT_MODERN, answerCardColor: '#ff0000' });
       expect(Number(v['--modern-final-hue'])).toBeCloseTo(29.2, 0);
-      // The color itself tints its drop shadow, as the prompt's does.
       expect(v['--modern-final-tint']).toBe('#ff0000');
     });
 
@@ -190,8 +184,6 @@ describe('Modern answer style', () => {
 });
 
 describe('Modern answer line stylesheet', () => {
-  // The bar is the Answer chip's own green (bg-emerald-700) unless a color
-  // is set, and thin. The card's default hue and glow are that green too.
   it('draws a 2px bar in the chip green by default', async () => {
     const fs = await import('node:fs');
     const css = fs.readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
@@ -204,7 +196,6 @@ describe('Modern answer line stylesheet', () => {
 
 
 
-// The user prompt takes the same choice as the answer (Greg, 2026-11-19).
 describe('Modern user prompt style', () => {
   it('is the card by default; a saved line is kept and junk is dropped', () => {
     expect(createDefaultConfig().modern.promptStyle).toBe('card');

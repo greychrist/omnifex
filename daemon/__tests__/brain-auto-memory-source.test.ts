@@ -9,10 +9,7 @@ import {
   translateAutoMemory,
 } from '../services/brain/sources/auto-memory';
 
-/**
- * A redacted copy of a real auto-memory file. The format being already what it
- * is is the entire premise of this adapter, so the fixture is not invented.
- */
+// A redacted real auto-memory file, not an invented one.
 const REAL = `---
 name: project_nodepty_pty_leak
 description: Why node-pty is pinned to 1.2.0-beta.13 — fixes a pty leak
@@ -77,17 +74,10 @@ describe('translateAutoMemory', () => {
   const translated = translateAutoMemory(parseAutoMemory(REAL, 'x')!, opts);
 
   it('names the note after the source FILE so existing wikilinks still bind', () => {
-    // Memories link each other as [[project_native_module_abi.md]] and
-    // linkMatchesNote binds by final segment with .md stripped. Measured on the
-    // real corpus, 72 of 90 files have a `name:` that differs from the
-    // filename, so naming notes after `name` would break four fifths of them.
     expect(translated.relPath).toBe('Notes/project_nodepty_pty_leak.md');
   });
 
   it('never lets a name become part of the path', () => {
-    // Real values include "AWS cost reduction target ~$400/mo" — using one as a
-    // path created nested directories inside Notes/. Plan 4a's lesson at a
-    // different boundary: a name that came from outside is never a path.
     const nasty = parseAutoMemory(
       '---\nname: Don\'t grandfather tech debt via baselines/ratchets\n---\n\nbody\n',
       'feedback_no_tech_debt_baselining',
@@ -96,7 +86,6 @@ describe('translateAutoMemory', () => {
 
     expect(out.relPath).toBe('Notes/feedback_no_tech_debt_baselining.md');
     expect(out.relPath.split('/')).toHaveLength(2);
-    // Not lost, just not a path: it stays searchable as an alias.
     expect(out.note.frontmatter.aliases).toContain(
       "Don't grandfather tech debt via baselines/ratchets",
     );
@@ -110,10 +99,7 @@ describe('translateAutoMemory', () => {
   });
 
   it('records the memory type as an alias and the note type as Note', () => {
-    // `feedback` and `reference` have no NOTE_TYPES equivalent, and inventing
-    // one would fork the ontology for four values.
     expect(translated.note.frontmatter.type).toBe('Note');
-    // The name here equals the stem, so only the type is aliased.
     expect(translated.note.frontmatter.aliases).toEqual(['project']);
   });
 
@@ -130,16 +116,11 @@ describe('translateAutoMemory', () => {
   });
 
   it('never puts the origin session in sources', () => {
-    // merge() dedups by source key: a Note claiming session:ff79cd97 would make
-    // a later index of that transcript believe it was already covered, and the
-    // session's own note would never be written.
     expect(translated.note.frontmatter.sources).toEqual([opts.sourceKey]);
     expect(JSON.stringify(translated.note.frontmatter)).not.toContain('ff79cd97');
   });
 
   it('is byte-identical on a second translation', () => {
-    // No model is involved, so idempotency is provable on real output rather
-    // than against a stub that would make the assertion vacuous.
     expect(translateAutoMemory(parseAutoMemory(REAL, 'x')!, opts)).toEqual(translated);
   });
 
@@ -201,10 +182,6 @@ describe('auto-memory source', () => {
     expect((await source.discover()).map((i) => i.itemKey)).toEqual(['-repo-a/a.md']);
   });
 
-  /**
-   * Same rule as transcripts: the label is the real folder, recovered from a
-   * `cwd` rather than decoded from the encoded dir name.
-   */
   it('labels a memory with its project folder, recovered from a sibling transcript', async () => {
     writeMemory(personal, '-Users-dev-Repos-wombeats-ios', 'a.md', REAL);
     writeFileSync(

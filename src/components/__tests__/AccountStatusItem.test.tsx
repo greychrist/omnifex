@@ -112,8 +112,6 @@ describe('AccountStatusItem', () => {
       expect(screen.getByTestId('account-item-name').textContent).toBe('Personal');
     });
 
-    // The account's own color carries the icon, label and name, as it does on
-    // the badge — that is what makes it recognisable at a glance.
     it('wears the account color', () => {
       render(<AccountStatusItem {...base} />);
       expect(accountButton().style.color).toBe('rgb(59, 130, 246)');
@@ -144,13 +142,11 @@ describe('AccountStatusItem', () => {
       expect(screen.getByRole('img', { name: /sign-in expired/i })).toBeTruthy();
     });
 
-    // Nothing to attest: no shield, and no claim we haven't earned.
     it('shows no shield for an account with no expected email', () => {
       render(<AccountStatusItem {...base} verification={null} />);
       expect(screen.queryByRole('img')).toBeNull();
     });
 
-    // Two readouts, not one: account, a hairline, then usage under its own label.
     it('separates account and usage with a divider and labels the usage', () => {
       const { container } = render(<AccountStatusItem {...base} fiveHourRateLimit={fiveHour(42)} />);
       const divider = container.querySelector('[data-testid="account-usage-divider"]');
@@ -162,7 +158,6 @@ describe('AccountStatusItem', () => {
       expect(label?.className).toContain('opacity-70');
     });
 
-    // Dollars are a cost, not usage of a subscription's allowance.
     it('labels a cost-based account\'s readout "cost"', () => {
       render(<AccountStatusItem {...base} hasCost />);
       const button = usageButton();
@@ -170,8 +165,6 @@ describe('AccountStatusItem', () => {
       expect(button.getAttribute('aria-label')).toBe('cost, this session');
     });
 
-    // Block-level for the same reason as the other popover readouts: an
-    // inline-flex trigger opens a line box and sits ~1px high.
     it('makes both buttons block-level so they centre with the plain readouts', () => {
       render(<AccountStatusItem {...base} fiveHourRateLimit={fiveHour(42)} />);
       for (const b of [accountButton(), usageButton()]) {
@@ -190,7 +183,6 @@ describe('AccountStatusItem', () => {
       expect(usageButton().querySelector('svg.lucide-calendar-days')).toBeTruthy();
     });
 
-    // A size step under the bar's other glyphs: two of them sit side by side.
     it('draws the window icons a size smaller than the bar\'s other icons', () => {
       render(<AccountStatusItem {...base} fiveHourRateLimit={fiveHour(42)} sevenDayRateLimit={sevenDay(18)} />);
       for (const sel of ['svg.lucide-clock', 'svg.lucide-calendar-days']) {
@@ -221,8 +213,6 @@ describe('AccountStatusItem', () => {
       expect(screen.getByTestId('account-item-usage').className).toContain(cls);
     });
 
-    // Pulses only when red, like the thinking readout; only that window.
-    // Yellow starts at 50%, so pulsing there would run all week.
     it.each([
       [30, false],
       [60, false],
@@ -239,8 +229,6 @@ describe('AccountStatusItem', () => {
       expect(screen.getByTestId('account-item-usage').classList.contains('animate-pulse')).toBe(true);
     });
 
-    // Max dropped the 5-hour window; an account without one shows the week
-    // alone rather than a permanent dash.
     it('shows only the week when the account has no 5-hour window', () => {
       render(<AccountStatusItem {...base} fiveHourRateLimit={null} sevenDayRateLimit={sevenDay(18)} />);
       expect(screen.queryByTestId('account-item-usage')).toBeNull();
@@ -265,7 +253,6 @@ describe('AccountStatusItem', () => {
     });
   });
 
-  // CLI >= 2.1.318 reports when the stored sign-in ends.
   describe('sign-in expiry', () => {
     const inDays = (d: number) => new Date(Date.now() + d * 24 * 60 * 60 * 1000 + 60_000).toISOString();
 

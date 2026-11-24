@@ -31,8 +31,6 @@ describe('AttentionSlot', () => {
   it('renders nothing at all when the queue is empty', () => {
     const { container } = render(<AttentionSlot queue={[]} onDismiss={() => {}} />);
 
-    // Not "renders an empty box": the slot sits in a flex column above the
-    // composer, so an empty wrapper would still push the layout.
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -108,8 +106,6 @@ describe('AttentionSlot', () => {
   });
 
   it('clamps the cursor when the queue shrinks under it', () => {
-    // Resolving the item you were looking at must not leave the slot pointing
-    // past the end of the queue and rendering nothing.
     const { rerender } = render(
       <AttentionSlot queue={[action('a'), action('b')]} onDismiss={() => {}} />,
     );

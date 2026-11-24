@@ -26,7 +26,6 @@ describe('BackButton', () => {
     expect((await screen.findByRole('tooltip')).textContent).toBe('Back to Projects');
   });
 
-  // One look for every back button; only the size differs.
   it('wears the same chrome at every size, and the same as the button beside it in a session', () => {
     renderIn(
       <>
@@ -47,7 +46,7 @@ describe('BackButton', () => {
   });
 
   // The sessions page, Project Settings and the file picker sit under no
-  // TooltipProvider; the button must not depend on one.
+  // TooltipProvider.
   it('renders with no TooltipProvider above it', () => {
     render(<BackButton label="Back to Projects" onClick={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Back to Projects' })).toBeTruthy();

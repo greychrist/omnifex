@@ -5,17 +5,13 @@ import path from 'node:path';
 import os from 'node:os';
 import { createJsonlTail, type JsonlTailHandle } from '../services/sessions/jsonl-tail';
 
-// Cooperative settle: the tail uses setInterval + statSync with a 100ms poll
-// interval, so we need at least one full poll cycle plus margin per assertion. 300ms
-// is a safe upper bound that keeps the suite well under 5s wall time.
+// The tail polls every 100ms; 300ms covers a full cycle plus margin.
 function wait(ms = 300): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// Poll `predicate` until it returns true or `timeoutMs` elapses. Used in
-// place of a fixed sleep so the suite doesn't get flaky under parallel
-// load — when many test files run concurrently, fs.watchFile's polling
-// granularity degrades and a single 300ms sleep starts missing events.
+// fs.watchFile's polling degrades under parallel load, so poll rather than
+// sleep a fixed time.
 async function waitUntil(predicate: () => boolean, timeoutMs = 3000): Promise<boolean> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -109,10 +105,8 @@ describe('createJsonlTail', () => {
   });
 
   it('does not corrupt a multibyte UTF-8 codepoint split across two drains', async () => {
-    // The CLI flushes the JSONL incrementally. If a drain boundary lands in the
-    // middle of a multibyte character, a naive string-based pendingTail loses the
-    // dangling bytes (decoded to U+FFFD) and the line is corrupted/dropped —
-    // which leaves a background dispatch stuck `running`.
+    // The CLI flushes JSONL incrementally, so a drain boundary can split a
+    // codepoint.
     fs.writeFileSync(jsonlPath, '');
     tail = createJsonlTail({
       jsonlPath,
@@ -125,7 +119,6 @@ describe('createJsonlTail', () => {
     const json = JSON.stringify(obj);
     const buf = Buffer.from(json + '\n', 'utf8');
 
-    // Cut one byte into the first multibyte char so the boundary is mid-codepoint.
     const splitAt = Buffer.from(json.slice(0, json.indexOf(marker)), 'utf8').length + 1;
     fs.appendFileSync(jsonlPath, buf.subarray(0, splitAt));
     await wait(); // let a poll cycle drain the partial bytes
@@ -151,9 +144,8 @@ describe('createJsonlTail', () => {
   });
 
   it('ignores queue-operation lines that do not carry task-notification XML', async () => {
-    // The CLI's queue mechanism is used for many things (user prompt queueing,
-    // dequeue events, etc.). Only enqueues carrying <task-notification> are
-    // closure carriers; the rest must not pollute the renderer stream.
+    // The CLI queues many things; only enqueues carrying <task-notification> are
+    // carriers.
     fs.writeFileSync(jsonlPath, '');
     start();
     fs.appendFileSync(
@@ -167,9 +159,6 @@ describe('createJsonlTail', () => {
   });
 
   it('starts tailing from current end-of-file (does not re-emit pre-existing lines)', async () => {
-    // Historical carriers are loaded via loadSessionHistory; the tail is for
-    // live additions only. Pre-existing content must not be forwarded
-    // (otherwise the renderer would see the carrier twice).
     fs.writeFileSync(
       jsonlPath,
       JSON.stringify({
@@ -182,7 +171,6 @@ describe('createJsonlTail', () => {
     await wait();
     expect(received).toHaveLength(0);
 
-    // Newly appended carriers DO get forwarded.
     fs.appendFileSync(
       jsonlPath,
       JSON.stringify({
@@ -196,9 +184,7 @@ describe('createJsonlTail', () => {
   });
 
   it('handles file that does not exist yet (waits, then forwards once it appears)', async () => {
-    // Session start fires before the CLI writes its first line, so the tail
-    // must tolerate an absent file. Once the file appears with content, the
-    // carrier is forwarded.
+    // Session start fires before the CLI writes its first line.
     start();
     await wait();
     expect(received).toHaveLength(0);
@@ -214,8 +200,7 @@ describe('createJsonlTail', () => {
         },
       }) + '\n',
     );
-    // ENOENT path polls every 200ms; allow a couple of poll cycles plus
-    // the watchFile arming time. Tolerant of parallel-test slowdown.
+    // The ENOENT path polls every 200ms.
     await waitUntil(() => received.length >= 1, 2500);
     expect(received).toHaveLength(1);
   });
@@ -264,8 +249,6 @@ describe('createJsonlTail', () => {
   });
 
   it('handles file truncation by resuming from offset 0', async () => {
-    // Belt and braces — if some external process rotates / truncates the
-    // JSONL, the tail must not get stuck reading past the new EOF.
     fs.writeFileSync(jsonlPath, '');
     start();
     fs.appendFileSync(
@@ -279,7 +262,7 @@ describe('createJsonlTail', () => {
     await waitUntil(() => received.length >= 1);
     expect(received).toHaveLength(1);
 
-    fs.writeFileSync(jsonlPath, ''); // truncate
+    fs.writeFileSync(jsonlPath, '');
     await wait();
     fs.appendFileSync(
       jsonlPath,
@@ -325,10 +308,8 @@ describe('createJsonlTail', () => {
     expect(received).toHaveLength(0);
   });
 
-  // The CLI moves a live session's transcript when it enters a worktree
-  // (EnterWorktree): projects/<repo>/<id>.jsonl becomes
-  // projects/<repo>--claude-worktrees-<name>/<id>.jsonl, the same file with
-  // records appended. Session 7277e428 went blind at exactly that rename.
+  // EnterWorktree moves the transcript: projects/<repo>/<id>.jsonl becomes
+  // projects/<repo>--claude-worktrees-<name>/<id>.jsonl, records appended.
   describe('when the CLI moves the file', () => {
     let movedPath: string;
 

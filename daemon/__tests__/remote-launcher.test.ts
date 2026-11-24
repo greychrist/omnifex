@@ -98,7 +98,6 @@ describe('remote launcher', () => {
     expect(a).toEqual(DOWN);
     expect(b).toEqual(DOWN);
     expect(probe).toHaveBeenCalledTimes(1);
-    // Not cached: a daemon started by hand later is picked up.
     probe.mockResolvedValueOnce(same());
     expect(await launcher.ensure()).toEqual(UP);
   });
@@ -109,7 +108,6 @@ describe('remote launcher', () => {
       expect(await launcher.ensure()).toEqual(UP);
       expect(stop).toHaveBeenCalledWith(CONFIG);
       expect(spawn).toHaveBeenCalledTimes(1);
-      // stop is issued before spawn, and spawn only after a null probe
       expect(stop.mock.invocationCallOrder[0]).toBeLessThan(spawn.mock.invocationCallOrder[0]);
       expect(probe).toHaveBeenCalledTimes(5);
       expect(logs).toContain('daemon is another build and idle; replacing it');
@@ -197,10 +195,6 @@ describe('remote launcher', () => {
       expect(stop).not.toHaveBeenCalled();
     });
 
-    // The incident: `npm start` killed the daemon the INSTALLED app's live
-    // sessions were running in. Same version, different bundle, so the stamp
-    // mismatched and the dev app retired a daemon it had never started —
-    // every CLI process with it. A dev build is a guest on this port.
     it("never retires another install's daemon", async () => {
       const { launcher, stop, spawn, logs } = makeStamped(
         [{ version: APP, build: '100', script: '/Applications/OmniFex.app/omnifex-server.js', inFlight: 0 }],
@@ -236,8 +230,6 @@ describe('remote launcher', () => {
     });
 
     it('treats a daemon that reports no script as not ours', async () => {
-      // Pre-0.4.167 daemon: it cannot prove where it came from, and a dev app
-      // guessing wrong costs live sessions. It gets to keep the port.
       const { launcher, stop } = makeStamped([stamped('100')], '200', {
         appScript: '/repo/.vite/build/omnifex-server.js',
       });
@@ -246,8 +238,6 @@ describe('remote launcher', () => {
     });
 
     it('the installed app keeps full authority over the port', async () => {
-      // Packaged: no stamp, and a version mismatch is a real upgrade — replace
-      // it wherever it was started from (the app may have been moved).
       const { launcher, stop, spawn } = makeStamped(
         [{ version: '0.4.9', script: '/Volumes/old/OmniFex.app/omnifex-server.js', inFlight: 0 }, null, same()],
         undefined,
@@ -351,12 +341,8 @@ describe('remote launcher', () => {
   });
 });
 
-/**
- * On a tailnet host the daemon also listens on loopback, and the Mac app must
- * load from there: WebKit runs plain http on a non-loopback address in its
- * EnhancedSecurity process — no JIT, ~5x slower JavaScript — and gives it no
- * secure context (no async clipboard). Loopback is "potentially trustworthy".
- */
+// WebKit runs plain http on a non-loopback address without JIT or a secure
+// context.
 describe('remote launcher on a tailnet host', () => {
   const TAILNET = { host: '100.64.1.2', port: 47700 } as ServerConfig;
   const LOOPBACK_HEALTH = 'http://127.0.0.1:47700/healthz';
@@ -399,9 +385,7 @@ describe('remote launcher on a tailnet host', () => {
     expect(await launcher.restart()).toEqual({ url: 'ws://127.0.0.1:47700/ws', outdated: false });
   });
 
-  // A daemon started before Tailscale came up listens on loopback only. The
-  // launcher computes the tailnet address now, finds nothing there, and used
-  // to spawn a second daemon beside the running one.
+  // A daemon started before Tailscale came up listens on loopback only.
   it('finds a daemon that answers only on loopback instead of spawning another', async () => {
     let spawned = 0;
     const probe = vi.fn(async (url: string) => (url === LOOPBACK_HEALTH ? same() : null));

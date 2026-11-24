@@ -3,9 +3,7 @@ import { createBackgroundTaskTracker } from '../services/sessions/background-tas
 
 describe('createBackgroundTaskTracker', () => {
   it('resolves an agent notification back to the agent that started', () => {
-    // `task_notification` carries no task_type, so without the `task_started`
-    // it followed there is no way to know an agent (rather than a shell)
-    // just finished, nor what it was called.
+    // `task_notification` carries no task_type.
     const tracker = createBackgroundTaskTracker();
     tracker.started({ kind: 'taskStarted', taskId: 'a53f', taskType: 'local_agent', description: 'Adversarial pre-push review' });
     expect(tracker.resolveAgent('a53f')).toEqual({ description: 'Adversarial pre-push review' });
@@ -22,10 +20,7 @@ describe('createBackgroundTaskTracker', () => {
   });
 
   it('resolves only once, so a resumed agent re-notifies but a replayed one does not', () => {
-    // The CLI re-emits `task_started` for an agent it wakes with the
-    // completion of a task the agent was waiting on, and the notification
-    // that follows is a real second finish. Consuming the entry keeps a
-    // duplicate notification for the same finish from firing twice.
+    // The CLI re-emits `task_started` for an agent it wakes.
     const tracker = createBackgroundTaskTracker();
     tracker.started({ kind: 'taskStarted', taskId: 'a53f', taskType: 'local_agent', description: 'Re-review' });
     expect(tracker.resolveAgent('a53f')).toEqual({ description: 'Re-review' });
@@ -41,7 +36,6 @@ describe('createBackgroundTaskTracker', () => {
     expect(tracker.resolveAgent('a53f')).toEqual({ description: 'Adversarial pre-push review' });
   });
 
-  // Open tasks of every kind — shells included — gate the auto-recap.
   it('counts open tasks of every type until each finishes', () => {
     const tracker = createBackgroundTaskTracker();
     expect(tracker.openCount()).toBe(0);

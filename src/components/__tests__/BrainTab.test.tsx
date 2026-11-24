@@ -27,8 +27,6 @@ vi.mock('@/contexts/AccountsContext', () => ({
   }),
 }));
 
-// The panes have their own tests; here they only report what they were handed,
-// which is what makes the account-scoping assertions below meaningful.
 vi.mock('@/components/brain/BrainNotesTable', () => ({
   BrainNotesTable: (
     {
@@ -52,8 +50,6 @@ vi.mock('@/components/brain/BrainNotesTable', () => ({
   ),
 }));
 vi.mock('@/components/brain/BrainNoteViewer', () => ({
-  // Exposes the close callback as a button, so a test can fire what the real
-  // viewer's ✕ fires.
   BrainNoteViewer: ({ onClose }: { onClose?: () => void }) => (
     <div data-testid="note-viewer">
       <button type="button" aria-label="close the note" onClick={onClose} />
@@ -64,8 +60,6 @@ vi.mock('@/components/brain/BrainVaultSetup', () => ({
   BrainVaultSetup: () => <div data-testid="vault-setup" />,
 }));
 vi.mock('@/components/brain/BrainSources', () => ({
-  // Exposes the vault-changed callback as a button, so a test can fire the
-  // thing an indexing run or a Refresh press fires.
   BrainSources: (
     { accountId, onVaultChanged }: { accountId: number | null; onVaultChanged?: () => void },
   ) => (
@@ -83,18 +77,13 @@ vi.mock('@/components/brain/BrainQueuePanel', () => ({
   ),
 }));
 vi.mock('@/components/brain/BrainStatsPanel', () => ({
-  // Reports the nonce it was handed: the real panel's fetch effect keys on it,
-  // so "did BrainTab bump it?" is the whole question.
   BrainStatsPanel: ({ accountId, nonce }: { accountId: number | null; nonce?: number }) => (
     <div data-testid="stats" data-nonce={String(nonce ?? 'undefined')}>{String(accountId)}</div>
   ),
 }));
 
-// Radix's Select renders a button-plus-portal that jsdom cannot drive. These
-// stand-ins keep the same contract — a current value, items that report their
-// own value on press, and a trigger that renders whatever it was given — which
-// is what this file tests: what the account switcher DOES, and that the
-// trigger carries the badge, not how Radix paints either.
+// Radix's Select is a button plus portal jsdom cannot drive; these stand-ins
+// keep its contract.
 const SelectValueCtx = React.createContext<(v: string) => void>(() => undefined);
 vi.mock('@/components/ui/select', () => ({
   Select: ({
@@ -126,8 +115,6 @@ vi.mock('@/components/ui/select', () => ({
   },
 }));
 
-// AccountBadge reaches for ThemeProvider; its own rendering is covered by
-// AccountBadge.test.tsx. Here it only needs to report which account it got.
 vi.mock('@/components/AccountBadge', () => ({
   AccountBadge: ({ name }: { name: string }) => <span data-testid="account-badge">{name}</span>,
 }));
@@ -140,8 +127,6 @@ function status(over: Partial<BrainVaultStatus> = {}): BrainVaultStatus {
   };
 }
 
-/** A listing row. Only `relPath` is asserted on here — the table has its
- *  own tests for what it does with the rest. */
 function noteMeta(relPath: string): BrainNoteMeta {
   return {
     relPath,
@@ -162,11 +147,6 @@ describe('BrainTab', () => {
     vi.mocked(api.brainListNoteMeta).mockResolvedValue([noteMeta('Notes/A.md'), noteMeta('Notes/B.md')]);
   });
 
-  /**
-   * The viewer is rendered off the selection, so closing it has to give the
-   * table its width back — splitter and all. A close that left an empty pane
-   * and a divider behind would be a close in name only.
-   */
   it('opens the note pane on select and puts it away on close', async () => {
     render(<BrainTab />);
     await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
@@ -186,17 +166,9 @@ describe('BrainTab', () => {
     await waitFor(() => { expect(api.brainStatus).toHaveBeenCalledWith(7); });
   });
 
-  /**
-   * The stats bar reads `brain_stats`, which the Sources pane cannot reach: it
-   * is a sibling, not a child. So an indexing run updated the rows and left
-   * "Spent indexing" showing a figure from before the spend — and pressing
-   * Refresh in Sources did not help, because it only re-lists that pane. The
-   * only thing that ever corrected it was closing and reopening the tab.
-   */
   it('refreshes the stats bar when the sources pane reports a vault change', async () => {
     render(<BrainTab />);
     const before = (await screen.findByTestId('stats')).getAttribute('data-nonce');
-    // The pane only exists on its own tab; the default is Notes.
     fireEvent.click(await screen.findByRole('tab', { name: /^sources$/i }));
 
     fireEvent.click(await screen.findByRole('button', { name: /fire vault changed/i }));
@@ -207,14 +179,11 @@ describe('BrainTab', () => {
   });
 
   it('never leaves the stats nonce undefined', async () => {
-    // Passing no nonce at all is the bug this guards: the panel defaults it to
-    // 0, so its fetch effect never re-runs and the figures freeze on mount.
     render(<BrainTab />);
     const stats = await screen.findByTestId('stats');
     expect(stats.getAttribute('data-nonce')).not.toBe('undefined');
   });
 
-  /** The header's note count comes from the vault status, not from stats. */
   it('re-reads the vault status on a vault change, so the note count keeps up', async () => {
     render(<BrainTab />);
     await waitFor(() => { expect(api.brainStatus).toHaveBeenCalledWith(7); });
@@ -241,18 +210,6 @@ describe('BrainTab', () => {
     });
   });
 
-  /**
-   * The flash this pins.
-   *
-   * `useBrainVault` clears `status` to null synchronously on switch, by design.
-   * `needsSetup` derives from `status`, so while the read is in flight it is
-   * false — "unknown yet" fell through to the HEALTHY branch. On an
-   * unconfigured account every switch therefore rendered
-   * setup → notes+stats → setup, a full pane swap and back, right under the
-   * header where "no vault" is shown.
-   *
-   * Unknown is not healthy. Until the status lands, neither branch may render.
-   */
   it('renders neither the panes nor the stats bar while the status is unknown', async () => {
     let resolveStatus: (s: BrainVaultStatus) => void = () => {};
     vi.mocked(api.brainStatus).mockReturnValue(
@@ -262,7 +219,6 @@ describe('BrainTab', () => {
     render(<BrainTab />);
     await waitFor(() => { expect(api.brainStatus).toHaveBeenCalledWith(7); });
 
-    // Mid-flight: the healthy branch must not be showing.
     expect(screen.queryByTestId('note-list')).toBeNull();
     expect(screen.queryByTestId('stats')).toBeNull();
     expect(screen.queryByTestId('vault-setup')).toBeNull();
@@ -310,8 +266,6 @@ describe('BrainTab', () => {
     render(<BrainTab />);
     await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
 
-    // Without this route the rebuild and disconnect controls would only be
-    // reachable by first BREAKING the vault.
     fireEvent.click(screen.getByRole('tab', { name: /settings/i }));
     expect(screen.getByTestId('vault-setup')).toBeTruthy();
     expect(screen.getByTestId('automation-settings')).toBeTruthy();
@@ -328,10 +282,6 @@ describe('BrainTab', () => {
   });
 
   it('forces Settings and disables the other tabs while a vault needs setup', async () => {
-    // The old shell REPLACED the page with the setup panel, which hid the
-    // account switcher too — so a broken vault stranded the user on the very
-    // account they wanted to leave. Now it is a tab, and the rest are refused
-    // rather than removed.
     vi.mocked(api.brainStatus).mockResolvedValue(status({ configured: false, path: null, exists: false }));
     render(<BrainTab />);
     await waitFor(() => { expect(screen.getByTestId('vault-setup')).toBeTruthy(); });
@@ -339,27 +289,10 @@ describe('BrainTab', () => {
     expect(screen.getByRole<HTMLButtonElement>('tab', { name: /^notes$/i }).disabled).toBe(true);
     expect(screen.getByRole<HTMLButtonElement>('tab', { name: /^sources$/i }).disabled).toBe(true);
     expect(screen.getByRole<HTMLButtonElement>('tab', { name: /settings/i }).disabled).toBe(false);
-    // The way out of a broken vault stays reachable.
     expect(screen.getByTestId('account-select')).toBeTruthy();
-    // Four zeroes would read as a fact rather than as an absence.
     expect(screen.queryByTestId('stats')).toBeNull();
   });
 
-  /**
-   * The header summary is the element the flash was reported next to, so it is
-   * pinned here — but note what this does and does not show.
-   *
-   * `headerSummary` reads `status` and `loading`, which are set on different
-   * ticks: on switch `status` clears synchronously while `loading` is still
-   * false, so there is a committed render where it returns ''. This test was
-   * written expecting to catch that and it passed unchanged — React flushes
-   * the passive effect that sets `loading` before the browser paints, so the
-   * blank frame is committed but never seen. The reported flash was the pane
-   * swap above, not this.
-   *
-   * Kept as a guard: the summary must go straight to 'loading…' and then to
-   * the answer, never through a blank.
-   */
   it('does not blank the header summary between accounts', async () => {
     let resolveStatus: (s: BrainVaultStatus) => void = () => {};
     vi.mocked(api.brainStatus).mockReturnValue(
@@ -403,19 +336,12 @@ describe('BrainTab', () => {
     expect(screen.getByTestId('sources').textContent).toBe('7');
 
     fireEvent.click(screen.getByTestId('account-option-work'));
-    // Landing back on notes after a switch is deliberate: the sources list is
-    // a scan of another account's config dir, and silently re-running it under
-    // a new account reads as if the previous list simply updated.
     await waitFor(() => { expect(screen.getByTestId('note-list')).toBeTruthy(); });
   });
 });
 
-// The page was restyled to match Projects: a hero title and blurb above a
-// single card, the vault's own name and count at the card's top left, and the
-// account selector at its top right.
 describe('BrainTab — account switcher placement', () => {
-  // Its own setup: the suite above scopes `beforeEach` to its own describe, so
-  // without this the status mock returns undefined and nothing renders.
+  // The suite above scopes its beforeEach to its own describe.
   beforeEach(() => {
     cleanup();
     vi.clearAllMocks();
@@ -429,9 +355,7 @@ describe('BrainTab — account switcher placement', () => {
 
     const title = screen.getByRole('heading', { level: 1, name: 'Brain' });
     expect(title).toBeTruthy();
-    // A blurb saying what the page is for, the way Projects does.
     expect(screen.getByText(/vault of what you have already worked on/i)).toBeTruthy();
-    // The working surface sits below the hero, not beside it.
     expect(title.compareDocumentPosition(screen.getByTestId('account-select'))
       & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -440,13 +364,11 @@ describe('BrainTab — account switcher placement', () => {
     render(<BrainTab />);
     await screen.findByTestId('account-select');
 
-    // "personal Brain (2 notes)" — the shape "Recent Projects (12)" uses.
     const heading = await screen.findByRole('heading', { level: 2 });
     expect(heading.textContent).toContain('personal Brain');
     await waitFor(() => {
       expect(screen.getByTestId('brain-summary').textContent).toBe('2 notes');
     });
-    // Selector to the right of the name, in the same header row.
     expect(heading.compareDocumentPosition(screen.getByTestId('account-select'))
       & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -472,9 +394,6 @@ describe('BrainTab — account switcher placement', () => {
   });
 
   it('keeps the switcher reachable on a vault that needs setup', async () => {
-    // The band the stats live in is hidden during setup. If the switcher were
-    // hidden with it, an account whose vault is unconfigured would strand the
-    // user there with no way to switch away.
     vi.mocked(api.brainStatus).mockResolvedValue(status({ configured: false }));
     render(<BrainTab />);
     await screen.findByTestId('vault-setup');

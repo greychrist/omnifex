@@ -50,8 +50,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  // Auto-cleanup is not enabled in this config, so renders would otherwise
-  // pile up in document.body and every query would match N times.
+  // Auto-cleanup is not enabled in this config, so renders would pile up in
+  // document.body.
   cleanup();
   delete (window as unknown as { __omnifexRemote?: unknown }).__omnifexRemote;
 });
@@ -74,8 +74,6 @@ describe('TabStatusPopover — detached sessions', () => {
   });
 
   it('opens a tab bound to that session when clicked', async () => {
-    // The whole point: the tab is gone, the session is not, and clicking
-    // reconnects rather than doing nothing.
     setDaemon([WIN_SESSION], [WIN_PROJECT]);
     await openPopover();
     await waitFor(() => { expect(screen.getByText('WIN')).toBeTruthy(); });
@@ -92,8 +90,7 @@ describe('TabStatusPopover — detached sessions', () => {
   });
 
   it('hands the tab the session to resume, not just its id', async () => {
-    // AgentSession resumes only when it is given `sessionData`; a tab with a
-    // bare `sessionId` rendered the New Session panel instead.
+    // AgentSession resumes only when given `sessionData`.
     setDaemon([WIN_SESSION], [WIN_PROJECT]);
     await openPopover();
     await waitFor(() => { expect(screen.getByText('WIN')).toBeTruthy(); });
@@ -111,7 +108,6 @@ describe('TabStatusPopover — detached sessions', () => {
     mockTabs = [{ id: 'tab-1', type: 'chat', order: 0, sessionId: WIN_SESSION.sessionId }];
     setDaemon([WIN_SESSION], [WIN_PROJECT]);
     await openPopover();
-    // Bound to a tab here, so it is not a detached row at all.
     await waitFor(() => { expect(listTabStatuses).toHaveBeenCalled(); });
     expect(screen.queryByText('No path')).toBeNull();
     expect(addTab).not.toHaveBeenCalled();
@@ -215,7 +211,6 @@ describe('TabStatusPopover — closing a detached session', () => {
     expect(closes).toHaveLength(1);
     fireEvent.click(closes[0]);
     await waitFor(() => { expect(kills(requests)).toEqual([{ sessionId: 'orphan' }]); });
-    // Closing is not opening.
     expect(addTab).not.toHaveBeenCalled();
   });
 

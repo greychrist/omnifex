@@ -12,8 +12,8 @@ describe('infoPlist', () => {
   const plist = infoPlist({ name: 'OmniFex', bundleId: 'com.omnifex.app', version: '0.5.0' });
 
   it('names the Swift executable and keeps the bundle id the Electron app had', () => {
-    // Same id, so the one other person's install updates in place and keeps
-    // its notification permission (both keyed on the id).
+    // Same id, so an existing install updates in place and keeps its notification
+    // permission.
     expect(plist).toMatch(/<key>CFBundleIdentifier<\/key>\s*<string>com\.omnifex\.app<\/string>/);
     expect(plist).toMatch(/<key>CFBundleExecutable<\/key>\s*<string>OmniFex<\/string>/);
   });

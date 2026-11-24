@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-//
-// The Modern chat format: prompt bubbles, prose, and each run of work folded
-// into one Chain of Thought that opens onto the regular tool rows.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
@@ -90,7 +87,6 @@ describe('ClaudeTranscript — Modern chat format', () => {
     const header = screen.getByRole('button', { name: /Worked in 2 steps/ });
     expect(header).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByText('green')).toBeInTheDocument();
-    // Folded: no tool rows drawn yet.
     expect(container.querySelectorAll('[data-stream-row]')).toHaveLength(0);
   });
 
@@ -99,7 +95,6 @@ describe('ClaudeTranscript — Modern chat format', () => {
     const footer = container.querySelector('[data-turn-footer]') as HTMLElement;
     expect(footer).toHaveTextContent('Done · 1s · 1 step');
     expect(footer.querySelector('svg')?.getAttribute('class')).toMatch(/\btext-emerald-700\b/);
-    // Always shown, not part of the hover row.
     expect(footer.className).not.toMatch(/opacity-0/);
   });
 
@@ -110,11 +105,8 @@ describe('ClaudeTranscript — Modern chat format', () => {
     expect(chips).toHaveLength(1);
     const chip = chips[0] as HTMLElement;
     expect(chip).toHaveTextContent('Answer');
-    // The context rail's own badge pair (ContextTimelineTick), so the two
-    // greens side by side are one green.
     expect(chip.className).toMatch(/\bbg-emerald-700\b/);
     expect(chip.className).toMatch(/\btext-white\b/);
-    // Above the answer, in the same message.
     const answer = screen.getByText('green').closest('.modern-answer') as HTMLElement;
     expect(chip.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText('Looking first.').closest('.group')?.querySelector('[data-final-chip]')).toBeNull();
@@ -123,12 +115,9 @@ describe('ClaudeTranscript — Modern chat format', () => {
   it('sets the answer that ends the turn in a tinted card under its chip, with its Done line', () => {
     const rows = [...messages.slice(0, 1), assistant('a0', [{ type: 'text', text: 'Looking first.' }]), ...messages.slice(1)];
     const { container } = renderModern(false, rows);
-    // Tint and border are `.modern-format .modern-final-card` in styles.css:
-    // the `* { border-color }` reset beats every border-color utility.
     const cards = container.querySelectorAll('.modern-final-card');
     expect(cards).toHaveLength(1);
     const card = cards[0];
-    // The chip heads the card from outside it, directly above.
     const chip = container.querySelector('[data-final-chip]') as HTMLElement;
     expect(card.contains(chip)).toBe(false);
     expect(chip.nextElementSibling).toBe(card);
@@ -165,7 +154,6 @@ describe('ClaudeTranscript — Modern chat format', () => {
   it('opens onto the steps, and a step onto its output alone', () => {
     const { container } = renderModern();
     fireEvent.click(screen.getByRole('button', { name: /Worked in 2 steps/ }));
-    // A finished thought is shadcn's Reasoning line, closed until opened.
     expect(screen.queryByText('Check the regex first.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /^Thought/ }));
     expect(screen.getByText('Check the regex first.')).toBeInTheDocument();
@@ -175,7 +163,6 @@ describe('ClaudeTranscript — Modern chat format', () => {
   });
 
   it('keeps the run open while the turn is still working on it', () => {
-    // Mid-turn: the work is the last thing in the transcript, a tool running.
     renderModern(true, messages.slice(0, 3));
     expect(screen.getByText('Working', { selector: '.modern-shimmer' })).toBeInTheDocument();
     expect(screen.getByText('Running npm test', { selector: '.modern-shimmer' })).toBeInTheDocument();
@@ -225,8 +212,7 @@ describe('ClaudeTranscript — Modern chat format', () => {
 
   it('sets the answer at the example\'s size: 14px on a 20px line', () => {
     renderModern();
-    // Sized by `.modern-format .modern-answer` in styles.css (jsdom applies
-    // no stylesheet; the 14px/20px was measured in a browser).
+    // jsdom applies no stylesheet; the 14px/20px was measured in a browser.
     const answer = screen.getByText('green').closest('.prose');
     expect(answer?.className).toContain('modern-answer');
     expect(answer?.closest('.modern-format')).not.toBeNull();
@@ -302,7 +288,6 @@ describe('ClaudeTranscript — Modern chat format', () => {
     } as unknown as JsonlNode;
     const { container } = renderModern(true, [prompt, slash], () => {}, false, 'Compacting context');
     expect(screen.getByText('Compacting context', { selector: '.modern-shimmer' })).toBeInTheDocument();
-    // The command is a bubble, not the classic Slash Command card.
     expect(screen.getByText('/compact')).toBeInTheDocument();
     expect(container.querySelectorAll('[data-stream-row]')).toHaveLength(0);
   });
@@ -339,9 +324,6 @@ describe('ClaudeTranscript — Modern chat format', () => {
     expect(container.querySelectorAll('[data-stream-row]')).toHaveLength(0);
   });
 
-  // The rail lives in the transcript's left gutter, outside the chat frame:
-  // the frame is a backdrop that does not scroll, and the scroller spans the
-  // gutter too, so the rail still scrolls with its rows.
   it('puts the context rail outside the chat frame, in the left gutter', () => {
     gauges.timelineOn = true;
     const { container } = renderModern();
@@ -361,8 +343,6 @@ describe('ClaudeTranscript — Modern chat format', () => {
     expect(container.querySelector('[data-timeline-gutter]')).toBeNull();
   });
 
-  // Live rows are not timeline rows (they render nothing most of the time),
-  // but with the rail on they still need its inset to stay inside the frame.
   it('keeps the streaming answer inside the chat frame when the rail is on', () => {
     gauges.timelineOn = true;
     useClaudeSessionStore.getState().setInflightAssistantText('tab-1', 'u', 'Streaming along', null);
@@ -381,8 +361,6 @@ describe('ClaudeTranscript — Modern chat format', () => {
 });
 
 describe('ClaudeTranscript — Standard and Expanded', () => {
-  // A kind hidden in Standard (nested memory): Standard leaves it out;
-  // Expanded shows every record.
   const nested = {
     kind: 'attachment', sessionId: 's', receivedAt: '2026-10-28T10:00:02Z',
     raw: { type: 'attachment', uuid: 'n1', attachment: { type: 'nested_memory', path: '/r/src/CLAUDE.md', content: { path: '/r/src/CLAUDE.md' } } },

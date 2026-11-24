@@ -9,9 +9,6 @@ describe('fireAndLog', () => {
   it('returns a sync void-returning function suitable for JSX handlers / setTimeout / addEventListener', () => {
     const wrapped = fireAndLog('test', async () => 'ok');
     const result = wrapped();
-    // The whole point: the wrapped form returns void, not Promise<unknown>.
-    // (TypeScript already enforces this via the signature; the runtime
-    // assertion documents the contract.)
     expect(result).toBeUndefined();
   });
 
@@ -45,9 +42,6 @@ describe('fireAndLog', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(errSpy).not.toHaveBeenCalled();
   });
-
-  // ── logAndForget — sister helper for floating-promises ─────────────
-  // (kept inside the same describe block since they share the helper file)
 
   it('logAndForget catches rejection of an already-initiated promise', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);

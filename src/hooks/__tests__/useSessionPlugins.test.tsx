@@ -14,9 +14,8 @@ beforeEach(() => {
 });
 
 describe('useSessionPlugins', () => {
-  // Before system:init, main can only answer with reload_plugins, which
-  // re-runs every mod's session.start. So nothing is asked until the
-  // session has an init, or the panel that needs the list is open.
+  // Before system:init the only source is reload_plugins, which re-runs every
+  // mod's session.start.
   it('asks for nothing until enabled', () => {
     const { result } = renderHook(() => useSessionPlugins('tab1', 'a', false));
     expect(sessionPlugins).not.toHaveBeenCalled();
@@ -29,7 +28,6 @@ describe('useSessionPlugins', () => {
     expect(sessionPlugins).toHaveBeenCalledWith('tab1', false);
   });
 
-  // A restart is a new process with a new plugin list.
   it('loads again when the reload key changes', async () => {
     const { rerender } = renderHook(({ k }) => useSessionPlugins('tab1', k, true), { initialProps: { k: 'a' } });
     await waitFor(() => { expect(sessionPlugins).toHaveBeenCalledTimes(1); });

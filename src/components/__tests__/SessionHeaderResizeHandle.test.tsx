@@ -10,8 +10,6 @@ const grip = () => screen.getByTestId('header-resize-grip');
 
 describe('SessionHeaderResizeHandle', () => {
   describe('affordance', () => {
-    // The old handle was a 2px hairline with no grip — findable only by
-    // knowing it was there.
     it('renders a visible grip, not just a hit area', () => {
       render(<SessionHeaderResizeHandle resizing={false} />);
       expect(grip()).toBeTruthy();

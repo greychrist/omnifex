@@ -131,9 +131,6 @@ describe('summary sweep', () => {
   });
 });
 
-// Every five minutes this walks every project dir of every account. Sync, it
-// held the daemon's one event loop — and every live session's stream — for
-// the whole walk.
 describe('summary sweep I/O', () => {
   it('walks, stats and reads without sync fs calls', async () => {
     writeSession({ uuid: U1, ageMs: 30 * MIN });
