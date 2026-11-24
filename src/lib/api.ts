@@ -357,11 +357,18 @@ export interface SessionGitSnapshot {
   foundCount: number;
 }
 
+type IpcRecord = Record<string, unknown>;
+
+function isIpcRecord(value: unknown): value is IpcRecord {
+  return value !== null && typeof value === 'object';
+}
+
 /** Defensive normalizer for a path snapshot crossing the IPC boundary. */
-function normalizePathSnapshot(data: any, fallbackPath: string): PathSnapshot {
+function normalizePathSnapshot(raw: unknown, fallbackPath: string): PathSnapshot {
+  const data = isIpcRecord(raw) ? raw : undefined;
   return {
     path: typeof data?.path === 'string' ? data.path : fallbackPath,
-    branch: data?.branch ?? null,
+    branch: (data?.branch ?? null) as string | null,
     changed: typeof data?.changed === 'number' ? data.changed : 0,
     untracked: typeof data?.untracked === 'number' ? data.untracked : 0,
     error: typeof data?.error === 'string' ? data.error : null,
@@ -1896,7 +1903,7 @@ export const api = {
   // via a FIFO queue (sessions/permissions.ts), NOT by request id — so no
   // requestId is sent. Don't reintroduce one expecting request-targeted
   // dispatch; that contract doesn't exist until the queue matches by id.
-  async respondPermission(tabId: string, behavior: string, updatedInput?: any, updatedPermissions?: any[]): Promise<void> {
+  async respondPermission(tabId: string, behavior: string, updatedInput?: unknown, updatedPermissions?: unknown[]): Promise<void> {
     return apiCall("session_respond_permission", { tabId, behavior, updatedInput, updatedPermissions });
   },
 
@@ -2837,16 +2844,19 @@ export const api = {
   ): () => void {
     return window.electronAPI.onEvent(
       `session-git-changed:${watchId}`,
-      (data: any) => {
-        if (!data || typeof data !== 'object') return;
+      (data: unknown) => {
+        if (!isIpcRecord(data)) return;
         const repos: RepoSnapshot[] = Array.isArray(data.repos)
-          ? data.repos.map((r: any) => ({
-              name: typeof r?.name === 'string' ? r.name : '',
-              root: normalizePathSnapshot(r?.root, ''),
-              worktrees: Array.isArray(r?.worktrees)
-                ? r.worktrees.map((w: any) => normalizePathSnapshot(w, ''))
-                : [],
-            }))
+          ? (data.repos as unknown[]).map((item) => {
+              const r = isIpcRecord(item) ? item : undefined;
+              return {
+                name: typeof r?.name === 'string' ? r.name : '',
+                root: normalizePathSnapshot(r?.root, ''),
+                worktrees: Array.isArray(r?.worktrees)
+                  ? (r.worktrees as unknown[]).map((w) => normalizePathSnapshot(w, ''))
+                  : [],
+              };
+            })
           : [];
         callback({ repos, foundCount: typeof data.foundCount === 'number' ? data.foundCount : 0 });
       },
@@ -2978,8 +2988,8 @@ export const api = {
    */
   async storageUpdateRow(
     tableName: string,
-    primaryKeyValues: Record<string, any>,
-    updates: Record<string, any>
+    primaryKeyValues: Record<string, unknown>,
+    updates: Record<string, unknown>
   ): Promise<void> {
     try {
       await apiCall<void>("storage_update_row", {
@@ -3001,7 +3011,7 @@ export const api = {
    */
   async storageDeleteRow(
     tableName: string,
-    primaryKeyValues: Record<string, any>
+    primaryKeyValues: Record<string, unknown>
   ): Promise<void> {
     try {
       await apiCall<void>("storage_delete_row", {
@@ -3022,7 +3032,7 @@ export const api = {
    */
   async storageInsertRow(
     tableName: string,
-    values: Record<string, any>
+    values: Record<string, unknown>
   ): Promise<number> {
     try {
       return await apiCall<number>("storage_insert_row", {
@@ -3369,8 +3379,8 @@ export const api = {
   ): () => void {
     return window.electronAPI.onEvent(
       'session-summary:updated',
-      (data: any) => {
-        if (!data || typeof data !== 'object' || typeof data.sessionUuid !== 'string') return;
+      (data: unknown) => {
+        if (!isIpcRecord(data) || typeof data.sessionUuid !== 'string') return;
         callback({ sessionUuid: data.sessionUuid });
       },
     );
@@ -3409,10 +3419,9 @@ export const api = {
   ): () => void {
     return window.electronAPI.onEvent(
       'session-summary:generating',
-      (data: any) => {
+      (data: unknown) => {
         if (
-          !data ||
-          typeof data !== 'object' ||
+          !isIpcRecord(data) ||
           typeof data.sessionUuid !== 'string' ||
           typeof data.generating !== 'boolean'
         ) {
@@ -3445,7 +3454,7 @@ export const api = {
     // No isDefault parameter — there is no notion of a default account.
     // Account binding is via path rules / project overrides; failure to
     // resolve surfaces as a NoAccountError. See electron/services/accounts.ts.
-    const params: Record<string, any> = { name: opts.name, configDir: opts.configDir, engine: opts.engine };
+    const params: Record<string, unknown> = { name: opts.name, configDir: opts.configDir, engine: opts.engine };
     if (opts.subscriptionLabel !== undefined) params.subscriptionLabel = opts.subscriptionLabel;
     if (opts.hasCost !== undefined) params.hasCost = opts.hasCost;
     if (opts.color !== undefined) params.color = opts.color;
@@ -3472,7 +3481,7 @@ export const api = {
       expectedEmail?: string | null;
     },
   ): Promise<void> {
-    const params: Record<string, any> = { id, name: opts.name, configDir: opts.configDir };
+    const params: Record<string, unknown> = { id, name: opts.name, configDir: opts.configDir };
     if (opts.subscriptionLabel !== undefined) params.subscriptionLabel = opts.subscriptionLabel;
     if (opts.hasCost !== undefined) params.hasCost = opts.hasCost;
     if (opts.color !== undefined) params.color = opts.color;
@@ -3594,7 +3603,7 @@ export const api = {
   onSessionInFlightCount(cb: (count: number) => void): () => void {
     return window.electronAPI.onEvent(
       'session-inflight-count',
-      (data: any) => { cb(typeof data?.count === 'number' ? data.count : 0); },
+      (data: unknown) => { cb(isIpcRecord(data) && typeof data.count === 'number' ? data.count : 0); },
     );
   },
 
@@ -3605,16 +3614,16 @@ export const api = {
       tabs?: { tabId: string; status: string }[];
     }) => void,
   ): () => void {
-    return window.electronAPI.onEvent('updater:install-status', cb as any);
+    return window.electronAPI.onEvent('updater:install-status', cb as (...args: unknown[]) => void);
   },
 
   /** A click on an OS notification: `id` is the one it was raised with. */
   onNotificationClicked(cb: (data: { tabId?: string | null; id?: string | null }) => void): () => void {
-    return window.electronAPI.onEvent('notification-clicked', cb as any);
+    return window.electronAPI.onEvent('notification-clicked', cb as (...args: unknown[]) => void);
   },
 
   onUpdateProgress(callback: (data: { percent: number; bytesDownloaded: number; totalBytes: number }) => void): () => void {
-    return window.electronAPI.onEvent('updater:progress', callback as any);
+    return window.electronAPI.onEvent('updater:progress', callback as (...args: unknown[]) => void);
   },
 
   // ── Tab Status ────────────────────────────────────────────────
@@ -3652,7 +3661,7 @@ export const api = {
   onTabStatusesChanged(cb: (summaries: TabStatusSummary[]) => void): () => void {
     return window.electronAPI.onEvent(
       'tab-status:changed',
-      (data: any) => { cb(Array.isArray(data) ? data : []); },
+      (data: unknown) => { cb(Array.isArray(data) ? (data as TabStatusSummary[]) : []); },
     );
   },
 
@@ -3669,8 +3678,8 @@ export const api = {
   },
   /** Fires with the repo's main checkout whenever its pins change. */
   onBranchColorsChanged(cb: (repoPath: string) => void): () => void {
-    return window.electronAPI.onEvent('branch-colors-changed', (data: any) => {
-      if (typeof data?.repoPath === 'string') cb(data.repoPath);
+    return window.electronAPI.onEvent('branch-colors-changed', (data: unknown) => {
+      if (isIpcRecord(data) && typeof data.repoPath === 'string') cb(data.repoPath);
     });
   },
 
@@ -3701,8 +3710,8 @@ export const api = {
     await apiCall('remove_project_repo', { projectPath, repoPath });
   },
   onProjectReposChanged(cb: (projectPath: string) => void): () => void {
-    return window.electronAPI.onEvent('project-repos-changed', (data: any) => {
-      if (typeof data?.projectPath === 'string') cb(data.projectPath);
+    return window.electronAPI.onEvent('project-repos-changed', (data: unknown) => {
+      if (isIpcRecord(data) && typeof data.projectPath === 'string') cb(data.projectPath);
     });
   },
   async listGitBranches(projectPath: string): Promise<string[]> {
@@ -3836,11 +3845,11 @@ export const api = {
   ): () => void {
     return window.electronAPI.onEvent(
       'codex-auth-status-changed',
-      (data: any) => {
-        if (!data || typeof data !== 'object') return;
+      (data: unknown) => {
+        if (!isIpcRecord(data)) return;
         if (data.configDir !== configDir) return;
         const status = data.status;
-        if (!status || typeof status.authenticated !== 'boolean') return;
+        if (!isIpcRecord(status) || typeof status.authenticated !== 'boolean') return;
         callback({
           authenticated: status.authenticated,
           email: typeof status.email === 'string' ? status.email : undefined,
@@ -4033,12 +4042,12 @@ export const api = {
 
   /** Progress frames for the run in flight; `null` means it ended. */
   onBrainRunProgress(callback: (run: BrainRun | null) => void): () => void {
-    return window.electronAPI.onEvent('brain-run-progress', (data: any) => {
+    return window.electronAPI.onEvent('brain-run-progress', (data: unknown) => {
       if (data === null || data === undefined) {
         callback(null);
         return;
       }
-      if (typeof data !== 'object' || typeof data.total !== 'number') return;
+      if (typeof data !== 'object' || typeof (data as { total?: unknown }).total !== 'number') return;
       callback(data as BrainRun);
     });
   },

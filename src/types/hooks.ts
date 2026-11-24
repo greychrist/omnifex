@@ -360,7 +360,7 @@ export function groupedHookEvents(): [HookEventGroup, HookEvent[]][] {
 
 export interface ClaudeSettingsWithHooks {
   hooks?: HooksConfiguration;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface HookValidationError {

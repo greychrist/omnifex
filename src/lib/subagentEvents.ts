@@ -408,7 +408,7 @@ function isAsyncLaunchEnrichment(raw: unknown): boolean {
 function toolResultText(content: unknown): string | undefined {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return undefined;
-  const first = content.find((b) => (b as { type?: unknown })?.type === 'text');
+  const first: unknown = content.find((b) => (b as { type?: unknown })?.type === 'text');
   const text = (first as { text?: unknown } | undefined)?.text;
   return typeof text === 'string' ? text : undefined;
 }
@@ -446,7 +446,7 @@ function resumedAgentId(raw: unknown, blockContent: unknown): string | null {
 function isAsyncLaunchText(content: unknown): boolean {
   if (typeof content === 'string') return content.startsWith(ASYNC_LAUNCH_ACK_PREFIX);
   if (!Array.isArray(content)) return false;
-  const first = content.find((b) => (b as { type?: unknown })?.type === 'text');
+  const first: unknown = content.find((b) => (b as { type?: unknown })?.type === 'text');
   const text = (first as { text?: unknown } | undefined)?.text;
   return typeof text === 'string' && text.startsWith(ASYNC_LAUNCH_ACK_PREFIX);
 }

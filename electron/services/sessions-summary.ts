@@ -138,6 +138,17 @@ export interface ExtractedTranscript {
   messageCount: number;
 }
 
+interface TranscriptEntry {
+  isMeta?: boolean;
+  type?: string;
+  message?: { content?: unknown };
+}
+
+function isTextPart(c: unknown): c is { type: 'text'; text: string } {
+  const part = c as { type?: unknown; text?: unknown } | null | undefined;
+  return part?.type === 'text' && typeof part.text === 'string';
+}
+
 /**
  * Walk a JSONL string and return a flat USER/ASSISTANT transcript.
  *
@@ -160,9 +171,9 @@ export function extractTranscript(jsonlContent: string): ExtractedTranscript {
 
   for (const rawLine of jsonlContent.split('\n')) {
     if (!rawLine.trim() || isRequestReplayLine(rawLine)) continue;
-    let entry: any;
+    let entry: TranscriptEntry | null;
     try {
-      entry = JSON.parse(rawLine);
+      entry = JSON.parse(rawLine) as TranscriptEntry | null;
     } catch {
       continue;
     }
@@ -176,9 +187,7 @@ export function extractTranscript(jsonlContent: string): ExtractedTranscript {
       else if (Array.isArray(content)) {
         // tool_result rows have content as an array of objects; only treat
         // it as user text if there's a plain text element.
-        const textPart = content.find(
-          (c: any) => c?.type === 'text' && typeof c.text === 'string',
-        );
+        const textPart = (content as unknown[]).find(isTextPart);
         if (textPart) text = textPart.text;
       }
       if (!text) continue;
@@ -193,9 +202,9 @@ export function extractTranscript(jsonlContent: string): ExtractedTranscript {
     if (entry.type === 'assistant') {
       const content = entry.message?.content;
       if (!Array.isArray(content)) continue;
-      const textParts = content
-        .filter((c: any) => c?.type === 'text' && typeof c.text === 'string')
-        .map((c: any) => c.text)
+      const textParts = (content as unknown[])
+        .filter(isTextPart)
+        .map((c) => c.text)
         .join('\n');
       if (!textParts) continue;
       lines.push(`ASSISTANT: ${textParts}`);

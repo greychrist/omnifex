@@ -105,7 +105,7 @@ function readClaudeJson(p: string): Record<string, unknown> {
     throw err;
   }
   try {
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>;
     }

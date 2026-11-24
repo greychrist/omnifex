@@ -138,7 +138,7 @@ export interface Services {
    *  See `services/model-pricing.ts` for why it is a delta and not a seed. */
   modelPricing?: {
     list(): unknown;
-    upsert(input: Record<string, unknown>): unknown;
+    upsert(input: unknown): unknown;
     remove(id: number): unknown;
     shipped(): unknown;
   };
@@ -564,7 +564,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_get_side_chat: wrapWith((p: Record<string, unknown>) => sessions?.getSideChat((p?.tabId ?? p?.tab_id) as string) ?? { exchanges: [] }),
     session_suggest_title: wrapWith((p: Record<string, unknown>) => sessions?.suggestTitle((p?.tabId ?? p?.session_id) as string, (p?.description ?? '') as string) ?? null),
     session_set_permission_mode: wrapWith((p: Record<string, unknown>) => sessions?.setPermissionMode((p?.tabId ?? p?.session_id) as string, (p?.mode ?? p?.permissionMode) as string) ?? null),
-    session_set_effort: wrapWith((p: Record<string, unknown>) => sessions?.setEffort((p?.tabId ?? p?.session_id) as string, (p?.level ?? p?.effort) as any) ?? null),
+    session_set_effort: wrapWith((p: Record<string, unknown>) => sessions?.setEffort((p?.tabId ?? p?.session_id) as string, p?.level ?? p?.effort) ?? null),
     session_account_info: wrapWith((p: Record<string, unknown>) => sessions?.getAccountInfo((p?.tabId ?? p?.session_id) as string) ?? null),
     session_context_usage: wrapWith((p: Record<string, unknown>) => sessions?.getContextUsage((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_task_output: wrapWith((p: Record<string, unknown>) => sessions?.getTaskOutput((p?.tabId ?? p?.session_id) as string, (p?.taskId ?? p?.task_id) as string) ?? null),

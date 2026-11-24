@@ -68,7 +68,7 @@ const prompt = (i: number): JsonlNode => ({
  */
 function Harness({ messages, tick, viewMode = 'expanded' }: { messages: JsonlNode[]; tick: number; viewMode?: 'expanded' | 'standard' }) {
   // Stable identities, exactly as AgentSession must supply them.
-  const onResend = React.useRef(() => {}).current;
+  const onResend = React.useCallback(() => {}, []);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const isNearBottomRef = React.useRef(true);
   return (

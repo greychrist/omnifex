@@ -965,7 +965,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
     try {
       const content = fs.readFileSync(settingsPath, 'utf-8');
-      const parsed = JSON.parse(content);
+      const parsed: unknown = JSON.parse(content);
       if (typeof parsed === 'object' && parsed !== null) {
         return parsed as Record<string, unknown>;
       }
@@ -1070,7 +1070,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       if (!fs.existsSync(settingsPath)) return {};
       try {
         const content = fs.readFileSync(settingsPath, 'utf-8');
-        const parsed = JSON.parse(content);
+        const parsed: unknown = JSON.parse(content);
         if (typeof parsed === 'object' && parsed !== null) {
           return ((parsed as Record<string, unknown>).hooks as Record<string, unknown>) ?? {};
         }
@@ -1101,7 +1101,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       try {
         if (fs.existsSync(settingsPath)) {
           const content = fs.readFileSync(settingsPath, 'utf-8');
-          const parsed = JSON.parse(content);
+          const parsed: unknown = JSON.parse(content);
           if (typeof parsed === 'object' && parsed !== null) {
             existing = parsed as Record<string, unknown>;
           }
@@ -1173,9 +1173,10 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     let env: NodeJS.ProcessEnv;
     try {
       env = buildClaudeEnv(configDir);
-    } catch (err: any) {
-      console.error('[claude] getCliUsage refused:', err?.message);
-      return `Failed to fetch usage: ${err?.message ?? 'configDir invalid'}`;
+    } catch (err) {
+      const message = (err as Error | undefined)?.message;
+      console.error('[claude] getCliUsage refused:', message);
+      return `Failed to fetch usage: ${message ?? 'configDir invalid'}`;
     }
 
     try {
@@ -1184,11 +1185,12 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
         ['-p', '/usage', '--output-format', 'json'],
         { timeout: 15000, env },
       );
-      const parsed = JSON.parse(output.trim());
+      const parsed = JSON.parse(output.trim()) as { result?: string };
       return parsed.result ?? 'No usage data returned';
-    } catch (err: any) {
-      console.error('[claude] getCliUsage failed:', err?.message);
-      return `Failed to fetch usage: ${err?.message ?? 'unknown error'}`;
+    } catch (err) {
+      const message = (err as Error | undefined)?.message;
+      console.error('[claude] getCliUsage failed:', message);
+      return `Failed to fetch usage: ${message ?? 'unknown error'}`;
     }
   }
 

@@ -103,7 +103,7 @@ function Harness({
   jumpTo?: { uuid: string; nonce: number } | null;
   nearBottom?: React.RefObject<boolean>;
 }) {
-  const onResend = React.useRef(() => {}).current;
+  const onResend = React.useCallback(() => {}, []);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const ownNearBottom = React.useRef(true);
   return (

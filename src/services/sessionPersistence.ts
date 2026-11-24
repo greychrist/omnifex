@@ -92,7 +92,7 @@ export class SessionPersistenceService {
   static getSessionIndex(): string[] {
     try {
       const index = localStorage.getItem(SESSION_INDEX_KEY);
-      return index ? JSON.parse(index) : [];
+      return index ? (JSON.parse(index) as string[]) : [];
     } catch (error) {
       console.error('Failed to get session index:', error);
       return [];

@@ -73,7 +73,7 @@ describe('useLoadingState', () => {
 
   it('forwards arguments to the wrapped async function', async () => {
     const fn = vi.fn(async (a: number, b: number) => a + b);
-    const { result } = renderHook(() => useLoadingState<number>(fn));
+    const { result } = renderHook(() => useLoadingState<number, [number, number]>(fn));
     let value = 0;
     await act(async () => { value = await result.current.execute(2, 3); });
     expect(value).toBe(5);

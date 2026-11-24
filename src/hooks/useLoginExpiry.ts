@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { onAccountSignedIn } from "@/lib/accountSignIn";
 import { loginExpiryState, type LoginExpiryState } from "@/lib/loginExpiry";
@@ -24,7 +24,7 @@ export function useLoginExpiry(configDir: string | null): LoginExpiryHook {
   // `fresh` makes the next fetch bypass the daemon cache.
   const [request, setRequest] = useState({ n: 0, fresh: false });
   const dirRef = useRef(configDir);
-  dirRef.current = configDir;
+  useLayoutEffect(() => { dirRef.current = configDir; });
 
   const refresh = useCallback(() => {
     if (dirRef.current === null) return;

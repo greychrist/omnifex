@@ -50,25 +50,31 @@ export const getLanguage = (path: string) => {
  * Extract text content from a tool result object.
  * Handles the various shapes that result.content can take.
  */
-export const extractResultContent = (result: any): string => {
-  if (!result) return '';
-  if (typeof result.content === 'string') {
-    return result.content;
+export const extractResultContent = (result: unknown): string => {
+  if (!result || typeof result !== 'object') return '';
+  const content = (result as { content?: unknown }).content;
+  if (typeof content === 'string') {
+    return content;
   }
-  if (result.content && typeof result.content === 'object') {
-    if (result.content.text) {
-      return result.content.text;
+  if (content && typeof content === 'object') {
+    const text = (content as { text?: unknown }).text;
+    if (text) {
+      return text as string;
     }
-    if (Array.isArray(result.content)) {
+    if (Array.isArray(content)) {
       // Image blocks are drawn as images beneath the widget (StreamMessage,
       // extractToolResultImages). Stringified, a screenshot's base64 became
       // one unbreakable line WebKit spent seconds per layout measuring.
-      return result.content
-        .filter((c: any) => !(c && typeof c === 'object' && c.type === 'image'))
-        .map((c: any) => (typeof c === 'string' ? c : c.text || JSON.stringify(c)))
+      return (content as unknown[])
+        .filter((c) => !(c && typeof c === 'object' && (c as { type?: unknown }).type === 'image'))
+        .map((c) => {
+          if (typeof c === 'string') return c;
+          const t = (c as { text?: unknown }).text;
+          return t ? (t as string) : JSON.stringify(c);
+        })
         .join('\n');
     }
-    return JSON.stringify(result.content, null, 2);
+    return JSON.stringify(content, null, 2);
   }
   return '';
 };

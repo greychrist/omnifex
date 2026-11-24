@@ -15,7 +15,7 @@
  * which is the whole of "cleared on tab close".
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   deriveSessionSignals,
   BOUNDARY_SNOOZE_TOKENS,
@@ -65,7 +65,7 @@ export function useSessionSignals(input: SessionSignalsInput): SessionSignals {
   const [state, setState] = useState<SignalState>(EMPTY_SIGNAL_STATE);
 
   const handlersRef = useRef(input.handlers);
-  handlersRef.current = input.handlers;
+  useLayoutEffect(() => { handlersRef.current = input.handlers; });
 
   const snoozeBoundary = useCallback(() => {
     setState((s) => snooze(s, BOUNDARY_KEY, BOUNDARY_SNOOZE_TOKENS));

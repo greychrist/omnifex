@@ -126,7 +126,7 @@ export class TabPersistenceService {
         return { tabs: [], activeTabId: null };
       }
 
-      const serializedTabs: SerializedTab[] = JSON.parse(savedTabsJson);
+      const serializedTabs = JSON.parse(savedTabsJson) as SerializedTab[];
       
       // Deserialize tabs
       const tabs: Tab[] = serializedTabs.map(serialized => ({

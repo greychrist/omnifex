@@ -8,6 +8,18 @@ import { SelectComponent } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { fireAndLog } from "@/lib/fireAndLog";
 
+interface McpJsonServerEntry {
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+interface McpJsonImport {
+  mcpServers?: Record<string, unknown>;
+  type?: string;
+  command?: string;
+}
+
 interface MCPImportExportProps {
   /**
    * Callback when import is completed
@@ -67,9 +79,9 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
       } else {
         onImportCompleted(result.imported_count, result.failed_count);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Failed to import from Claude Desktop:", error);
-      onError(error.toString() || "Failed to import from Claude Desktop");
+      onError(String(error) || "Failed to import from Claude Desktop");
     } finally {
       setImportingDesktop(false);
     }
@@ -87,9 +99,9 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
       const content = await file.text();
       
       // Parse the JSON to validate it
-      let jsonData;
+      let jsonData: McpJsonImport;
       try {
-        jsonData = JSON.parse(content);
+        jsonData = JSON.parse(content) as McpJsonImport;
       } catch {
         onError("Invalid JSON file. Please check the format.");
         return;
@@ -103,11 +115,12 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
 
         for (const [name, config] of Object.entries(jsonData.mcpServers)) {
           try {
+            const entry = config as McpJsonServerEntry;
             const serverConfig = {
               type: "stdio",
-              command: (config as any).command,
-              args: (config as any).args || [],
-              env: (config as any).env || {}
+              command: entry.command,
+              args: entry.args || [],
+              env: entry.env || {}
             };
             
             const result = await api.mcpAddJson(name, JSON.stringify(serverConfig), importScope, configDir);

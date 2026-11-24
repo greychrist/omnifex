@@ -809,7 +809,7 @@ export const TabContent: React.FC = () => {
   
   // Listen for events to open sessions in tabs
   useEffect(() => {
-    const handleOpenSessionInTab = (event: CustomEvent) => {
+    const handleOpenSessionInTab = (event: CustomEvent<{ session: Session }>) => {
       const { session } = event.detail;
       
       // Check if tab already exists for this session
@@ -840,12 +840,12 @@ export const TabContent: React.FC = () => {
       }
     };
 
-    const handleCloseTab = (event: CustomEvent) => {
+    const handleCloseTab = (event: CustomEvent<{ tabId: string }>) => {
       const { tabId } = event.detail;
       logAndForget('tab-content:close-tab', closeTab(tabId));
     };
 
-    const handleClaudeSessionSelected = (event: CustomEvent) => {
+    const handleClaudeSessionSelected = (event: CustomEvent<{ session: Session }>) => {
       const { session } = event.detail;
       // Check if there's an existing tab for this session
       const existingTab = findTabBySessionId(session.id);

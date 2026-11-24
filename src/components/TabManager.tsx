@@ -400,7 +400,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
 
   // Listen for tab switch events
   useEffect(() => {
-    const handleSwitchToTab = (event: CustomEvent) => {
+    const handleSwitchToTab = (event: CustomEvent<{ tabId: string }>) => {
       const { tabId } = event.detail;
       switchToTab(tabId);
     };
@@ -441,7 +441,7 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
       }
     };
 
-    const handleTabByIndex = (event: CustomEvent) => {
+    const handleTabByIndex = (event: CustomEvent<{ index: number }>) => {
       const { index } = event.detail;
       if (tabs[index]) {
         switchToTab(tabs[index].id);

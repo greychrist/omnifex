@@ -57,7 +57,7 @@ describe('useApiCall — happy path', () => {
 
   it('forwards arguments to the wrapped function', async () => {
     const fn = vi.fn(async (a: number, b: number) => a * b);
-    const { result } = renderHook(() => useApiCall<number>(fn));
+    const { result } = renderHook(() => useApiCall<number, [number, number]>(fn));
     await act(async () => { await result.current.call(3, 4); });
     expect(fn).toHaveBeenCalledWith(3, 4);
     expect(result.current.data).toBe(12);

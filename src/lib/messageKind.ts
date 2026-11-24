@@ -316,7 +316,7 @@ export function classifyStandaloneKind(
     if (content.length > 0) {
       let sawText = false;
       let allSystemContext = true;
-      for (const block of content) {
+      for (const block of content as ({ type?: unknown; text?: unknown } | null)[]) {
         if (block?.type === 'text') {
           sawText = true;
           if (!isSystemContextText(typeof block.text === 'string' ? block.text : '')) {

@@ -64,7 +64,7 @@ function loadStoredColWidths(): Record<ResizableColKey, number> {
   try {
     const raw = localStorage.getItem(COL_WIDTHS_STORAGE_KEY);
     if (!raw) return DEFAULT_COL_WIDTHS;
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as Partial<Record<ResizableColKey, unknown>> | null;
     if (!parsed || typeof parsed !== "object") return DEFAULT_COL_WIDTHS;
     return {
       time: clampWidth(parsed.time, DEFAULT_COL_WIDTHS.time),

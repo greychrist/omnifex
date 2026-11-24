@@ -32,7 +32,7 @@ export function createAsyncChannel<T>(maxSize?: number): AsyncChannel<T> {
       if (resolve) {
         const r = resolve;
         resolve = null;
-        r({ value: undefined as any, done: true });
+        r({ value: undefined, done: true });
       }
     },
 
@@ -44,7 +44,7 @@ export function createAsyncChannel<T>(maxSize?: number): AsyncChannel<T> {
             return Promise.resolve({ value: queue.shift()!, done: false });
           }
           if (closed) {
-            return Promise.resolve({ value: undefined as any, done: true });
+            return Promise.resolve({ value: undefined, done: true });
           }
           return new Promise<IteratorResult<T>>((r) => {
             resolve = r;

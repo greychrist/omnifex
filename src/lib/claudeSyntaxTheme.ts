@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { ThemeMode } from '@/contexts/ThemeContext';
 
 /**
@@ -7,7 +8,7 @@ import { ThemeMode } from '@/contexts/ThemeContext';
  * @param theme - The current theme mode
  * @returns Prism syntax highlighting theme object
  */
-export const getClaudeSyntaxTheme = (theme: ThemeMode): any => {
+export const getClaudeSyntaxTheme = (theme: ThemeMode): Record<string, CSSProperties> => {
   const themes = {
     gray: {
       base: '#e3e8f0',
@@ -53,7 +54,6 @@ export const getClaudeSyntaxTheme = (theme: ThemeMode): any => {
       wordWrap: 'normal',
       lineHeight: '1.5',
       MozTabSize: '4',
-      OTabSize: '4',
       tabSize: '4',
       WebkitHyphens: 'none',
       MozHyphens: 'none',
@@ -73,7 +73,6 @@ export const getClaudeSyntaxTheme = (theme: ThemeMode): any => {
       wordWrap: 'normal',
       lineHeight: '1.5',
       MozTabSize: '4',
-      OTabSize: '4',
       tabSize: '4',
       WebkitHyphens: 'none',
       MozHyphens: 'none',

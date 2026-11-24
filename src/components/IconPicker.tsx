@@ -333,7 +333,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({
   const [hoveredIcon, setHoveredIcon] = useState<string | null>(null);
 
   // Filter icons based on search query
-  const filteredCategories = useMemo(() => {
+  const filteredCategories = useMemo((): Record<string, readonly IconItem[]> => {
     if (!searchQuery.trim()) return ICON_CATEGORIES;
 
     const query = searchQuery.toLowerCase();

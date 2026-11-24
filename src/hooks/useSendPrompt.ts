@@ -40,7 +40,7 @@ interface UseSendPromptArgs {
     firstMessageTime: number | null;
     modelChanges: { from: string; to: string; timestamp: number }[];
     wasResumed: boolean;
-    [key: string]: any;
+    [key: string]: unknown;
   }>;
   startPersistentSession: (resumeId?: string) => Promise<void>;
   pickGerund: () => string;

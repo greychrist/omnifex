@@ -64,16 +64,20 @@ interface ColumnInfo {
 interface TableData {
   table_name: string;
   columns: ColumnInfo[];
-  rows: Record<string, any>[];
+  rows: Record<string, CellValue>[];
   total_rows: number;
   page: number;
   page_size: number;
   total_pages: number;
 }
 
+type CellValue = string | number | bigint | boolean | object | null | undefined;
+
+type InputCellValue = string | number | null | undefined;
+
 interface QueryResult {
   columns: string[];
-  rows: any[][];
+  rows: CellValue[][];
   rows_affected?: number;
   last_insert_rowid?: number;
 }
@@ -92,9 +96,9 @@ export const StorageTab: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Dialog states
-  const [editingRow, setEditingRow] = useState<Record<string, any> | null>(null);
-  const [newRow, setNewRow] = useState<Record<string, any> | null>(null);
-  const [deletingRow, setDeletingRow] = useState<Record<string, any> | null>(null);
+  const [editingRow, setEditingRow] = useState<Record<string, CellValue> | null>(null);
+  const [newRow, setNewRow] = useState<Record<string, CellValue> | null>(null);
+  const [deletingRow, setDeletingRow] = useState<Record<string, CellValue> | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showSqlEditor, setShowSqlEditor] = useState(false);
   const [sqlQuery, setSqlQuery] = useState("");
@@ -117,7 +121,7 @@ export const StorageTab: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const result = await api.storageListTables();
+      const result: TableInfo[] = await api.storageListTables();
       setTables(result);
       if (result.length > 0 && !selectedTableRef.current) {
         setSelectedTable(result[0].name);
@@ -139,7 +143,7 @@ export const StorageTab: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const result = await api.storageReadTable(
+      const result: TableData = await api.storageReadTable(
         selectedTable,
         page,
         pageSize,
@@ -185,11 +189,11 @@ export const StorageTab: React.FC = () => {
   /**
    * Get primary key values for a row
    */
-  const getPrimaryKeyValues = (row: Record<string, any>): Record<string, any> => {
+  const getPrimaryKeyValues = (row: Record<string, CellValue>): Record<string, CellValue> => {
     if (!tableData) return {};
     
     const pkColumns = tableData.columns.filter(col => col.pk);
-    const pkValues: Record<string, any> = {};
+    const pkValues: Record<string, CellValue> = {};
     
     pkColumns.forEach(col => {
       pkValues[col.name] = row[col.name];
@@ -201,7 +205,7 @@ export const StorageTab: React.FC = () => {
   /**
    * Handle row update
    */
-  const handleUpdateRow = async (updates: Record<string, any>) => {
+  const handleUpdateRow = async (updates: Record<string, CellValue>) => {
     if (!editingRow || !selectedTable) return;
 
     try {
@@ -241,7 +245,7 @@ export const StorageTab: React.FC = () => {
   /**
    * Handle new row insertion
    */
-  const handleInsertRow = async (values: Record<string, any>) => {
+  const handleInsertRow = async (values: Record<string, CellValue>) => {
     if (!selectedTable) return;
 
     try {
@@ -264,7 +268,7 @@ export const StorageTab: React.FC = () => {
     try {
       setLoading(true);
       setSqlError(null);
-      const result = await api.storageExecuteSql(sqlQuery);
+      const result: QueryResult = await api.storageExecuteSql(sqlQuery);
       setSqlResult(result);
       
       // Refresh tables and data if it was a non-SELECT query
@@ -312,7 +316,7 @@ export const StorageTab: React.FC = () => {
   /**
    * Format cell value for display
    */
-  const formatCellValue = (value: any, maxLength = 100): string => {
+  const formatCellValue = (value: CellValue, maxLength = 100): string => {
     if (value === null) return "NULL";
     if (value === undefined) return "";
     if (typeof value === "boolean") return value ? "true" : "false";
@@ -617,7 +621,7 @@ export const StorageTab: React.FC = () => {
                     <Input
                       id={`edit-${column.name}`}
                       type={getInputType(column)}
-                      value={editingRow[column.name] ?? ""}
+                      value={(editingRow[column.name] as InputCellValue) ?? ""}
                       onChange={(e) =>
                         { setEditingRow({
                           ...editingRow,
@@ -689,7 +693,7 @@ export const StorageTab: React.FC = () => {
                     <input
                       type="checkbox"
                       id={`new-${column.name}`}
-                      checked={newRow[column.name] || false}
+                      checked={(newRow[column.name] as boolean | undefined) || false}
                       onChange={(e) =>
                         { setNewRow({
                           ...newRow,
@@ -702,7 +706,7 @@ export const StorageTab: React.FC = () => {
                     <Input
                       id={`new-${column.name}`}
                       type={getInputType(column)}
-                      value={newRow[column.name] ?? ""}
+                      value={(newRow[column.name] as InputCellValue) ?? ""}
                       onChange={(e) =>
                         { setNewRow({
                           ...newRow,

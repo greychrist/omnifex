@@ -36,7 +36,7 @@ export interface PermissionsIOService {
 function readPerms(filePath: string): { allow: string[]; deny: string[] } {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(content);
+    const parsed = JSON.parse(content) as { permissions?: { allow?: string[]; deny?: string[] } };
     const perms = parsed.permissions ?? {};
     return { allow: perms.allow ?? [], deny: perms.deny ?? [] };
   } catch {
@@ -123,9 +123,9 @@ export function createPermissionsIOService(): PermissionsIOService {
     const filePath = resolveFilePath(scope, resolvedConfigDir, projectPath);
 
     // Read existing settings
-    let settings: Record<string, any> = {};
+    let settings: { permissions?: Partial<Record<'allow' | 'deny', string[]>> } & Record<string, unknown> = {};
     try {
-      settings = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      settings = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as typeof settings;
     } catch {
       // New file — start from empty object
     }

@@ -95,7 +95,7 @@ function conversation(turns: number): JsonlNode[] {
 }
 
 function Harness({ messages, viewMode }: { messages: JsonlNode[]; viewMode: 'expanded' | 'standard' }) {
-  const onResend = React.useRef(() => {}).current;
+  const onResend = React.useCallback(() => {}, []);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const isNearBottomRef = React.useRef(true);
   return (

@@ -1,10 +1,10 @@
 import { useState, useCallback } from 'react';
 
-interface LoadingState<T> {
+interface LoadingState<T, A extends unknown[]> {
   data: T | null;
   isLoading: boolean;
   error: Error | null;
-  execute: (...args: any[]) => Promise<T>;
+  execute: (...args: A) => Promise<T>;
   reset: () => void;
 }
 
@@ -12,15 +12,15 @@ interface LoadingState<T> {
  * Custom hook for managing loading states with error handling
  * Reduces boilerplate code for async operations
  */
-export function useLoadingState<T>(
-  asyncFunction: (...args: any[]) => Promise<T>
-): LoadingState<T> {
+export function useLoadingState<T, A extends unknown[] = []>(
+  asyncFunction: (...args: A) => Promise<T>
+): LoadingState<T, A> {
   const [data, setData] = useState<T | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
   const execute = useCallback(
-    async (...args: any[]): Promise<T> => {
+    async (...args: A): Promise<T> => {
       try {
         setIsLoading(true);
         setError(null);

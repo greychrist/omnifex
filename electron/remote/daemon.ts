@@ -29,7 +29,7 @@ import { createLoggingOptions } from '../logging-options';
 import { createSessionCloseWork } from '../session-close-work';
 import { createSessionJsonlPathResolver } from '../session-jsonl-path';
 import { createDatabase, ensureDefaultSettings } from '../services/database';
-import { createAccountsService } from '../services/accounts';
+import { createAccountsService, type AccountEngine, type SessionDefaults } from '../services/accounts';
 import { createClaudeBinaryService } from '../services/claude-binary';
 import {
   createClaudeCliReviewService,
@@ -131,6 +131,47 @@ import { createRemoteHandlers, type RpcHandler } from './handlers';
 import { createRemoteServer, type RemoteServerLogger } from './server';
 import { resolveWebRoot } from './webroot';
 import { createPushService, pushPayloadFor } from './push';
+
+interface AccountWire {
+  id: number;
+  name: string;
+  configDir?: string;
+  config_dir?: string;
+  engine?: AccountEngine;
+  subscriptionLabel?: string;
+  subscription_label?: string;
+  hasCost?: boolean;
+  has_cost?: boolean;
+  color?: string;
+  icon?: string;
+  sessionDefaults?: SessionDefaults | null;
+  session_defaults?: SessionDefaults | null;
+  cliPath?: string | null;
+  cli_path?: string | null;
+  expectedEmail?: string | null;
+  expected_email?: string | null;
+  summarizeOnClose?: boolean;
+  summarize_on_close?: boolean;
+  summaryModel?: string | null;
+  summary_model?: string | null;
+}
+
+interface PathRuleWire {
+  accountId?: number;
+  account_id?: number;
+  pathPrefix?: string;
+  path_prefix?: string;
+  priority?: number;
+}
+
+interface UsageRangeWire {
+  start_date?: string;
+  end_date?: string;
+}
+
+type ClaudeServiceApi = ReturnType<typeof createClaudeService>;
+type ClaudeArg<K extends keyof ClaudeServiceApi, I extends number = 0> =
+  ClaudeServiceApi[K] extends (...args: infer A) => unknown ? A[I] : never;
 
 export interface DaemonOptions {
   config: ServerConfig;
@@ -299,8 +340,8 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
         generateVapidKeys: () => webpush.generateVAPIDKeys(),
         subject: 'mailto:omnifex@localhost',
         send: async (sub, payload) => {
-          const vapid = JSON.parse(fs.readFileSync(path.join(config.stateDir, 'push.json'), 'utf8')).vapid as {
-            publicKey: string; privateKey: string; subject: string;
+          const { vapid } = JSON.parse(fs.readFileSync(path.join(config.stateDir, 'push.json'), 'utf8')) as {
+            vapid: { publicKey: string; privateKey: string; subject: string };
           };
           try {
             await webpush.sendNotification(
@@ -675,12 +716,11 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   // The IPC handler map, reached through rpc.invoke
   // ---------------------------------------------------------------------------
 
-  /* eslint-disable @typescript-eslint/no-explicit-any -- the handler interface is loosely typed at the IPC edge */
   const handlerMap = getHandlerMap({
     database: db,
     modelPricing: {
       list: () => modelPricingService.list(),
-      upsert: (input: any) => modelPricingService.upsert(input),
+      upsert: (input: Parameters<typeof modelPricingService.upsert>[0]) => modelPricingService.upsert(input),
       remove: (id: number) => modelPricingService.remove(id),
       shipped: () => modelPricingService.shipped(),
     },
@@ -696,26 +736,26 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     allowRawSql: isDevDaemon(process.env),
     accounts: {
       list: () => accountsService.listAccounts(),
-      create: (data: any) => {
+      create: (data: AccountWire) => {
         const acct = accountsService.createAccount({
           name: data.name,
-          configDir: data.configDir ?? data.config_dir,
+          configDir: (data.configDir ?? data.config_dir) as string,
           engine: data.engine,
           subscriptionLabel: data.subscriptionLabel ?? data.subscription_label,
           hasCost: data.hasCost ?? data.has_cost,
           color: data.color,
           icon: data.icon,
-          sessionDefaults: data.sessionDefaults ?? data.session_defaults,
+          sessionDefaults: (data.sessionDefaults ?? data.session_defaults) as SessionDefaults | undefined,
           cliPath: data.cliPath ?? data.cli_path ?? null,
           expectedEmail: data.expectedEmail ?? data.expected_email ?? null,
         });
         accountWatchers.sync();
         return acct;
       },
-      update: (_id: any, data: any) => {
+      update: (_id: unknown, data: AccountWire) => {
         accountsService.updateAccount(data.id, {
           name: data.name,
-          configDir: data.configDir ?? data.config_dir,
+          configDir: (data.configDir ?? data.config_dir) as string,
           subscriptionLabel: data.subscriptionLabel ?? data.subscription_label,
           hasCost: data.hasCost ?? data.has_cost,
           color: data.color,
@@ -725,27 +765,31 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
           cliPath: data.cliPath ?? data.cli_path ?? null,
           expectedEmail:
             'expectedEmail' in data || 'expected_email' in data
-              ? ((data.expectedEmail ?? data.expected_email ?? null) as string | null)
+              ? (data.expectedEmail ?? data.expected_email ?? null)
               : undefined,
         });
         accountWatchers.sync();
       },
-      updateSummarySettings: (data: any) =>
+      updateSummarySettings: (data: AccountWire) =>
         accountsService.updateSummarySettings(
           data.id,
           !!(data.summarizeOnClose ?? data.summarize_on_close),
-          (data.summaryModel ?? data.summary_model ?? null) as string | null,
+          data.summaryModel ?? data.summary_model ?? null,
         ),
-      delete: (id: any) => {
+      delete: (id: number) => {
         accountsService.deleteAccount(id);
         accountWatchers.sync();
       },
       listPathRules: () => accountsService.listPathRules(),
-      addPathRule: (rule: any) =>
-        accountsService.addPathRule(rule.accountId ?? rule.account_id, rule.pathPrefix ?? rule.path_prefix, rule.priority),
-      removePathRule: (id: any) => accountsService.removePathRule(id),
+      addPathRule: (rule: PathRuleWire) =>
+        accountsService.addPathRule(
+          (rule.accountId ?? rule.account_id) as number,
+          (rule.pathPrefix ?? rule.path_prefix) as string,
+          rule.priority,
+        ),
+      removePathRule: (id: number) => accountsService.removePathRule(id),
       resolveForProject: (projectPath: string) => accountsService.resolve(projectPath),
-      setProjectOverride: (projectPath: string, accountId: any) => accountsService.setProjectOverride(projectPath, accountId),
+      setProjectOverride: (projectPath: string, accountId: number) => accountsService.setProjectOverride(projectPath, accountId),
       listProjectOverrides: () => accountsService.listProjectOverrides(),
       discoverAccounts: () => accountsService.discoverAccounts(),
       scanForNewAccounts: async () => {
@@ -758,25 +802,26 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     },
     claude: {
       listProjects: () => claudeService.listProjects(),
-      createProject: (data: any) => claudeService.createProject(data?.path ?? data),
+      createProject: (data: { path?: string } | string) =>
+        claudeService.createProject(((data as { path?: string } | null)?.path ?? data) as string),
       getProjectSessions: (projectId, projectPath) => claudeService.getProjectSessions(projectId, projectPath),
       loadSessionHistory: (sessionId, projectId, projectPath) => claudeService.loadSessionHistory(sessionId, projectId, projectPath),
       deleteSession: (sessionId, projectId, projectPath) => claudeService.deleteSession(sessionId, projectId, projectPath),
       deleteProject: (args) => claudeService.deleteProject(args),
       setProjectPinned: (args) => claudeService.setProjectPinned(args),
       getHomeDirectory: () => claudeService.getHomeDirectory(),
-      getSettings: (o?: any) => claudeService.getClaudeSettings(o),
-      getDefaultModel: (o?: any) => claudeService.getDefaultModel(o),
-      saveSettings: (settings: any, o?: any) => claudeService.saveClaudeSettings(settings, o),
-      getSystemPrompt: (o?: any) => claudeService.getSystemPrompt(o),
-      saveSystemPrompt: (prompt: any, o?: any) => claudeService.saveSystemPrompt(typeof prompt === 'string' ? prompt : String(prompt ?? ''), o),
+      getSettings: (o?: ClaudeArg<'getClaudeSettings'>) => claudeService.getClaudeSettings(o),
+      getDefaultModel: (o?: ClaudeArg<'getDefaultModel'>) => claudeService.getDefaultModel(o),
+      saveSettings: (settings: ClaudeArg<'saveClaudeSettings'>, o?: ClaudeArg<'saveClaudeSettings', 1>) => claudeService.saveClaudeSettings(settings, o),
+      getSystemPrompt: (o?: ClaudeArg<'getSystemPrompt'>) => claudeService.getSystemPrompt(o),
+      saveSystemPrompt: (prompt: string | null | undefined, o?: ClaudeArg<'saveSystemPrompt', 1>) => claudeService.saveSystemPrompt(typeof prompt === 'string' ? prompt : String(prompt ?? ''), o),
       checkVersion: () => claudeService.checkClaudeVersion(),
       readClaudeMdFile: (filePath) => claudeService.readClaudeMdFile(filePath),
       saveClaudeMdFile: (filePath, content) => claudeService.saveClaudeMdFile(filePath, content),
-      getHooksConfig: (scope, o?: any) => claudeService.getHooksConfig(scope as 'user' | 'project', o),
-      updateHooksConfig: (scope, cfg: any, o?: any) => claudeService.updateHooksConfig(scope as 'user' | 'project', cfg, o),
+      getHooksConfig: (scope, o?: ClaudeArg<'getHooksConfig', 1>) => claudeService.getHooksConfig(scope as 'user' | 'project', o),
+      updateHooksConfig: (scope, cfg: ClaudeArg<'updateHooksConfig', 1>, o?: ClaudeArg<'updateHooksConfig', 2>) => claudeService.updateHooksConfig(scope as 'user' | 'project', cfg, o),
       validateHookCommand: (command) => claudeService.validateHookCommand(command),
-      getMergedHooksConfig: (projectPath, o?: any) => claudeService.getMergedHooksConfig(projectPath, o),
+      getMergedHooksConfig: (projectPath, o?: ClaudeArg<'getMergedHooksConfig', 1>) => claudeService.getMergedHooksConfig(projectPath, o),
       getCliUsage: (configDir?: string) => claudeService.getCliUsage(configDir),
     },
     sessions: {
@@ -792,11 +837,12 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       // Persisted once the CLI accepts it, so a resume respawns in the mode
       // the session was left in rather than the one it was launched with.
       setPermissionMode: async (id, mode) => {
-        await sessionsService.setPermissionMode(id, mode as any);
+        await sessionsService.setPermissionMode(id, mode as Parameters<typeof sessionsService.setPermissionMode>[1]);
         sessionLog.updateOptions(id, { permissionMode: mode });
       },
-      setEffort: (id, level) => sessionsService.setEffort(id, level as any),
-      applyPermissions: (id, permissions) => sessionsService.applyPermissions(id, permissions as any),
+      setEffort: (id, level) => sessionsService.setEffort(id, level as Parameters<typeof sessionsService.setEffort>[1]),
+      applyPermissions: (id, permissions) =>
+        sessionsService.applyPermissions(id, permissions as Parameters<typeof sessionsService.applyPermissions>[1]),
       getAccountInfo: (id) => sessionsService.getAccountInfo(id),
       getContextUsage: (id) => sessionsService.getContextUsage(id),
       getTaskOutput: (id, taskId) => sessionsService.getTaskOutput(id, taskId),
@@ -836,16 +882,18 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     },
     usage: {
       getStats: () => usageService.getUsageStats(),
-      getByDateRange: (p: any) => usageService.getUsageByDateRange(p?.start_date ?? '', p?.end_date ?? ''),
-      getSessionStats: (p?: any) => usageService.getSessionStats(p?.since, p?.until, p?.order),
-      getDetails: (p?: any) => usageService.getUsageDetails(p?.limit),
-      getStatsByAccount: (p?: any) => usageService.getStatsByAccount(p?.start_date, p?.end_date),
+      getByDateRange: (p?: UsageRangeWire) => usageService.getUsageByDateRange(p?.start_date ?? '', p?.end_date ?? ''),
+      getSessionStats: (p?: { since?: string; until?: string; order?: string }) =>
+        usageService.getSessionStats(p?.since, p?.until, p?.order),
+      getDetails: (p?: { limit?: number }) => usageService.getUsageDetails(p?.limit),
+      getStatsByAccount: (p?: UsageRangeWire) => usageService.getStatsByAccount(p?.start_date, p?.end_date),
     },
     rateLimits: {
       getSnapshots: () => rateLimitsService.getSnapshots(),
       getSnapshotsByAccount: (name) => rateLimitsService.getSnapshotsByAccount(name),
       getSettings: () => rateLimitsService.getSettings(),
-      updateSettings: (partial: any) => rateLimitsService.updateSettings(partial ?? {}),
+      updateSettings: (partial?: Parameters<typeof rateLimitsService.updateSettings>[0]) =>
+        rateLimitsService.updateSettings(partial ?? {}),
     },
     usageRunner: {
       run: (name) => usageRunnerService.run(name),
@@ -859,35 +907,36 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       runUpdate: () => claudeCliReviewService.runUpdate(),
     },
     mcp: {
-      add: (data: any) => mcpService.add(data),
+      add: (data: Parameters<typeof mcpService.add>[0]) => mcpService.add(data),
       list: (configDir) => mcpService.list(configDir),
       get: (name, configDir) => mcpService.get(name, configDir),
       remove: (name, configDir) => mcpService.remove(name, configDir),
-      addJson: (data: any) => mcpService.addJson(data),
+      addJson: (data: Parameters<typeof mcpService.addJson>[0]) => mcpService.addJson(data),
       addFromClaudeDesktop: (scope, configDir) => mcpService.addFromClaudeDesktop(scope, configDir),
       serve: () => mcpService.serve(),
       testConnection: (name, configDir) => mcpService.testConnection(name, configDir),
       resetProjectChoices: () => mcpService.resetProjectChoices(),
       getServerStatus: (configDir) => mcpService.getServerStatus(configDir),
       readProjectConfig: (projectPath) => mcpService.readProjectConfig(projectPath),
-      saveProjectConfig: (projectPath, cfg: any) => mcpService.saveProjectConfig(projectPath, cfg),
+      saveProjectConfig: (projectPath, cfg: Parameters<typeof mcpService.saveProjectConfig>[1]) =>
+        mcpService.saveProjectConfig(projectPath, cfg),
     },
     slashCommands: {
       list: (projectPath, configDir) => slashCommandsService.list(projectPath, configDir),
       get: (commandId, configDir) => slashCommandsService.get(commandId, configDir),
-      save: (data: any) => slashCommandsService.save(data),
+      save: (data: Parameters<typeof slashCommandsService.save>[0]) => slashCommandsService.save(data),
       delete: (commandId, projectPath, configDir) => slashCommandsService.delete(commandId, projectPath, configDir),
     },
     sessionsSummary: sessionsSummaryService,
     logging: {
-      writeBatch: (entries: any) => loggingService.writeBatch(entries),
-      query: (p: any) => loggingService.query(p),
-      count: (p: any) => loggingService.count(p ?? {}),
+      writeBatch: (entries: Parameters<typeof loggingService.writeBatch>[0]) => loggingService.writeBatch(entries),
+      query: (p: Parameters<typeof loggingService.query>[0]) => loggingService.query(p),
+      count: (p?: Parameters<typeof loggingService.count>[0]) => loggingService.count(p ?? {}),
       prune: (olderThan) => loggingService.prune(olderThan),
     },
     proxy: {
       getSettings: () => proxyService.getSettings(),
-      saveSettings: (data: any) => proxyService.saveSettings(data),
+      saveSettings: (data: Parameters<typeof proxyService.saveSettings>[0]) => proxyService.saveSettings(data),
     },
     permissionsIO: permissionsIOService,
     models: {
@@ -942,7 +991,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       loginExpiry: (configDir, opts) => loginExpiryService.get(configDir, opts),
     },
   } satisfies Required<Services>) as Record<string, RpcHandler>;
-  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // ---------------------------------------------------------------------------
   // Handlers, permission timeout, listen

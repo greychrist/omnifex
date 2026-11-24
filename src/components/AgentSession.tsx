@@ -9,7 +9,7 @@ import {
 import { SessionInspectorPanel } from "@/components/SessionInspectorPanel";
 import { Button } from "@/components/ui/button";
 import { BackButton } from "@/components/ui/back-button";
-import { api, type Session, type RateLimitSnapshot, type Account, type ResolvePair, type AccountMismatch } from "@/lib/api";
+import { api, type Session, type RateLimitSnapshot, type Account, type ResolvePair, type AccountMismatch, type SessionAccountInfo, type SessionContextUsage, type SessionModelInfo, type SessionSlashCommand } from "@/lib/api";
 import { AttentionSlot } from "@/components/AttentionSlot";
 import { SignalBadge } from "@/components/signals/SignalBadge";
 import { SignalEventLog } from "@/components/signals/SignalEventLog";
@@ -119,7 +119,7 @@ import { decideResumeSeed } from "@/lib/resumeSeedDecision";
 import { decideAutoStart, decideRebindTarget, shouldShowNewSessionPanel } from "@/lib/sessionAutoStart";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useSessionLifecycle } from "@/hooks/useSessionLifecycle";
-import { useSendPrompt, type SendPromptOptions } from "@/hooks/useSendPrompt";
+import { useSendPrompt, type SendPromptOptions, type QueuedPromptItem } from "@/hooks/useSendPrompt";
 import { usePublishTabStatus } from "@/hooks/usePublishTabStatus";
 import { useRenderProfile } from "@/hooks/useRenderProfile";
 import { useTabContext } from "@/contexts/TabContext";
@@ -127,11 +127,43 @@ import { useTabContext } from "@/contexts/TabContext";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 import { clearInflightBuffer } from "@/lib/inflightCoalescer";
 import { useTabSession, useClaudeSessionStore, useTabSessionTitle } from "@/stores/claudeSessionStore";
-import type { PermissionSuggestion } from "@/lib/types/permissionRequest";
+import type { PermissionRequestPayload, PermissionSuggestion } from "@/lib/types/permissionRequest";
 
 // Random gerund words like Claude Code CLI — hoisted to module scope so
 // pickGerund has a stable identity that effects/callbacks can list as a
 // dep without recreating on every render.
+interface SyntheticEnvelope {
+  type?: unknown;
+}
+
+interface PermissionRequestWire {
+  request_id: string;
+  kind?: PermissionRequestPayload['kind'];
+  tool_name: string;
+  tool_input?: Record<string, unknown>;
+  title?: string;
+  display_name?: string;
+  description?: string;
+  decision_reason?: string;
+  blocked_path?: string;
+  directory_grant?: string[] | null;
+  permission_suggestions?: PermissionSuggestion[];
+  suppress_always_allow_rule?: unknown;
+  agent?: PermissionRequestPayload['agent'];
+  summary?: string;
+  codex_payload?: unknown;
+}
+
+interface StreamEventWire {
+  uuid: string;
+  parent_tool_use_id: string | null;
+  event?: {
+    type?: string;
+    delta?: { type?: string; text?: unknown; thinking?: unknown };
+    content_block?: { type?: string };
+  };
+}
+
 const GERUNDS = [
   "Honking", "Pondering", "Musing", "Cogitating", "Ruminating", "Brewing",
   "Noodling", "Puzzling", "Tinkering", "Scheming", "Conjuring", "Percolating",
@@ -1438,8 +1470,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       // permissions service. Not a JSONL record; classifier doesn't know it.
       // Codex variants ride the same channel with `kind: 'patch' | 'exec'`,
       // `agent: 'codex'`, and the raw approval params on `codex_payload`.
-      if (raw && typeof raw === 'object' && (raw as any).type === 'permission_request') {
-        const msg = raw as any;
+      const envelope = raw && typeof raw === 'object' ? (raw as SyntheticEnvelope) : null;
+      if (envelope?.type === 'permission_request') {
+        const msg = envelope as PermissionRequestWire;
         setPendingPermission({
           requestId: msg.request_id,
           kind: msg.kind,
@@ -1462,8 +1495,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
 
       // permission_withdrawn — the CLI took back the request on screen (an
       // interrupted turn). Synthetic like permission_request; never transcript.
-      if (raw && typeof raw === 'object' && (raw as any).type === 'permission_withdrawn') {
-        const requestId = String((raw as any).request_id ?? '');
+      if (envelope?.type === 'permission_withdrawn') {
+        const requestId = String((envelope as { request_id?: string }).request_id ?? '');
         setPendingPermission((current) => withoutWithdrawnPermission(current, requestId));
         return;
       }
@@ -1471,8 +1504,8 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       // stream_event — CLI iterator overlay channel (token partials).
       // Not in JSONL; route partials to the inflight coalescer for the
       // typewriter effect. Subagent partials and non-text deltas drop.
-      if (raw && typeof raw === 'object' && (raw as any).type === 'stream_event') {
-        const m = raw as any;
+      if (envelope?.type === 'stream_event') {
+        const m = envelope as StreamEventWire;
         if (m.parent_tool_use_id != null) return;
         const event = m.event;
         if (
@@ -1606,12 +1639,12 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
             },
             persistSession: ({ sessionId, projectId, projectPath: pp, messageCount }) =>
               { SessionPersistenceService.saveSession(sessionId, projectId, pp, messageCount); },
-            setSdkAccountInfo: (info) => { ctx.setSdkAccountInfo(info as any); },
-            setContextUsage: (usage) => { ctx.setContextUsage(usage as any); },
-            setSupportedModels: (models) => { ctx.setSupportedModels(models as any); },
-            setSupportedCommands: (commands) => { setSupportedCommands(commands as any); },
-            queuedPromptsRef: ctx.queuedPromptsRef as any,
-            setQueuedPrompts: ctx.setQueuedPrompts as any,
+            setSdkAccountInfo: (info) => { ctx.setSdkAccountInfo(info as SessionAccountInfo | null); },
+            setContextUsage: (usage) => { ctx.setContextUsage(usage as SessionContextUsage | null); },
+            setSupportedModels: (models) => { ctx.setSupportedModels(models as SessionModelInfo[]); },
+            setSupportedCommands: (commands) => { setSupportedCommands(commands as SessionSlashCommand[]); },
+            queuedPromptsRef: ctx.queuedPromptsRef as { current: QueuedPromptItem[] },
+            setQueuedPrompts: ctx.setQueuedPrompts as (next: QueuedPromptItem[]) => void,
             turnRunningRef,
             editingPromptIdRef,
             queueHeldRef,

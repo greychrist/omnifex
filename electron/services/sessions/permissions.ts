@@ -157,9 +157,10 @@ function directoryGrantFor(payload: {
   permission_suggestions?: unknown[];
 }): string[] | null {
   if (!payload.blocked_path) return null;
-  const fromCli = payload.permission_suggestions?.find(
-    (s: any) => s?.type === 'addDirectories' && Array.isArray(s.directories) && s.directories.length > 0,
-  ) as { directories: unknown[] } | undefined;
+  const fromCli = payload.permission_suggestions?.find((s) => {
+    const entry = s as { type?: unknown; directories?: unknown } | null | undefined;
+    return entry?.type === 'addDirectories' && Array.isArray(entry.directories) && entry.directories.length > 0;
+  }) as { directories: unknown[] } | undefined;
   const dirs = fromCli?.directories.filter((d): d is string => typeof d === 'string' && d.length > 0);
   return dirs && dirs.length > 0 ? dirs : [path.dirname(payload.blocked_path)];
 }
@@ -181,9 +182,9 @@ function summarizeRequest(
   const hint = (hints?.title || hints?.displayName || '').trim();
   if (hint) return truncate(hint);
 
-  const input = toolInput ?? {};
-  if (toolName === 'Bash' && typeof (input as any).command === 'string') {
-    return truncate(`$ ${(input as any).command}`);
+  const input: Record<string, unknown> = toolInput ?? {};
+  if (toolName === 'Bash' && typeof input.command === 'string') {
+    return truncate(`$ ${input.command}`);
   }
   if (
     (toolName === 'Write' ||
@@ -191,18 +192,18 @@ function summarizeRequest(
       toolName === 'MultiEdit' ||
       toolName === 'Read' ||
       toolName === 'NotebookEdit') &&
-    typeof (input as any).file_path === 'string'
+    typeof input.file_path === 'string'
   ) {
-    return truncate(`${toolName} ${(input as any).file_path}`);
+    return truncate(`${toolName} ${input.file_path}`);
   }
-  if (toolName === 'WebFetch' && typeof (input as any).url === 'string') {
-    return truncate(`WebFetch ${(input as any).url}`);
+  if (toolName === 'WebFetch' && typeof input.url === 'string') {
+    return truncate(`WebFetch ${input.url}`);
   }
   if (
     (toolName === 'Glob' || toolName === 'Grep') &&
-    typeof (input as any).pattern === 'string'
+    typeof input.pattern === 'string'
   ) {
-    return truncate(`${toolName} ${(input as any).pattern}`);
+    return truncate(`${toolName} ${input.pattern}`);
   }
   return toolName;
 }
@@ -220,9 +221,11 @@ export function permissionNotificationContent(
   hints?: { title?: string; displayName?: string },
 ): { body: string; subtitle: string } {
   if (toolName === 'AskUserQuestion') {
-    const questions = (toolInput as any)?.questions;
+    const questions = toolInput?.questions;
     const first =
-      Array.isArray(questions) && questions.length > 0 ? questions[0] : undefined;
+      Array.isArray(questions) && questions.length > 0
+        ? (questions[0] as { question?: unknown } | null | undefined)
+        : undefined;
     const text = typeof first?.question === 'string' ? first.question.trim() : '';
     return {
       subtitle: 'Answer Needed:',
@@ -233,6 +236,14 @@ export function permissionNotificationContent(
     subtitle: 'Permission Request:',
     body: summarizeRequest(toolName, toolInput, hints),
   };
+}
+
+interface PermissionSuggestion {
+  type?: string;
+  destination?: string;
+  behavior?: string;
+  rules?: unknown;
+  [key: string]: unknown;
 }
 
 /** Map the CLI's destination string to our settings-file scope. */
@@ -276,17 +287,18 @@ function formatRule(r: { toolName: string; ruleContent?: string }): string {
  * Pure function, returns a new array; never mutates input.
  */
 export function augmentPermissionsWithSession(
-  updates: any[] | undefined,
-): any[] | undefined {
+  updates: PermissionSuggestion[] | undefined,
+): PermissionSuggestion[] | undefined {
   if (!updates) return updates;
-  const out: any[] = [];
+  const out: PermissionSuggestion[] = [];
   for (const u of updates) {
     out.push(u);
+    const update = u as PermissionSuggestion | null | undefined;
     // Rules only. A folder grant (`addDirectories`) needs no twin: CLI
     // 2.1.280 applies it to the running session at any destination and writes
     // `additionalDirectories` to disk itself (verified: a localSettings-only
     // grant stopped the next write in the same session from asking).
-    if (u?.type === 'addRules' && u.destination !== 'session') {
+    if (update?.type === 'addRules' && update.destination !== 'session') {
       out.push({ ...u, destination: 'session' });
     }
   }
@@ -371,19 +383,23 @@ export function buildDefaultRule(
  *
  * Pure function, returns a new array; never mutates input.
  */
-function hasRuleSuggestion(suggestions: any[] | undefined): boolean {
-  return !!suggestions?.some(
-    (s: any) =>
-      s?.type === 'addRules' &&
-      Array.isArray(s.rules) &&
-      s.rules.some((r: any) => r && typeof r.toolName === 'string' && r.toolName.trim()),
-  );
+function hasRuleSuggestion(suggestions: unknown[] | undefined): boolean {
+  return !!suggestions?.some((s) => {
+    const entry = s as { type?: unknown; rules?: unknown } | null | undefined;
+    return (
+      entry?.type === 'addRules' &&
+      Array.isArray(entry.rules) &&
+      (entry.rules as ({ toolName?: unknown } | null | undefined)[]).some(
+        (r) => r && typeof r.toolName === 'string' && r.toolName.trim(),
+      )
+    );
+  });
 }
 
 export function withDefaultRuleSuggestion(
-  suggestions: any[] | undefined,
+  suggestions: PermissionSuggestion[] | undefined,
   defaultRule: ParsedRule | null,
-): any[] | undefined {
+): PermissionSuggestion[] | undefined {
   if (hasRuleSuggestion(suggestions) || !defaultRule) return suggestions;
   return [
     {
@@ -507,7 +523,7 @@ export function createPermissionRequestHandler(
     });
 
     const entry: PendingPermission & {
-      payload: any;
+      payload: QueuedPermissionPayload;
       toolInput: Record<string, unknown>;
     } = {
       requestId,
@@ -546,7 +562,7 @@ export function createPermissionRequestHandler(
       tool_name?: string;
       input?: Record<string, unknown>;
       tool_use_id?: string;
-      permission_suggestions?: unknown[];
+      permission_suggestions?: PermissionSuggestion[];
       blocked_path?: string;
       decision_reason?: string;
       decision_reason_type?: string;
@@ -654,7 +670,7 @@ export function createPermissionRequestHandler(
     // and rule suggestions on the queue entry so respondPermission can
     // build the PermissionResult without re-parsing.
     const entry: PendingPermission & {
-      payload: any;
+      payload: QueuedPermissionPayload;
       toolInput: Record<string, unknown>;
     } = {
       requestId,
@@ -686,9 +702,18 @@ export function createPermissionRequestHandler(
 // AskUserQuestion left unanswered (CLI 2.1.312+)
 // ---------------------------------------------------------------------------
 
+interface QueuedPermissionPayload {
+  kind?: 'tool' | 'patch' | 'exec';
+  summary?: string;
+  tool_name: string;
+  tool_input?: Record<string, unknown>;
+  title?: string;
+  display_name?: string;
+}
+
 type QueuedPermission = PendingPermission & {
   toolInput?: Record<string, unknown>;
-  payload?: { kind?: 'tool' | 'patch' | 'exec'; tool_name?: string };
+  payload?: QueuedPermissionPayload;
 };
 
 /**
@@ -842,17 +867,22 @@ export function respondPermission(
   // (not the augmented array) so we don't double-write the session twin.
   if (behavior === 'allow' && persistPermissionRule && updatedPermissions) {
     for (const suggestion of updatedPermissions) {
-      const scope = scopeForDestination((suggestion as any).destination);
+      const loose = suggestion as {
+        destination?: string;
+        rules?: ({ toolName?: unknown; ruleContent?: string } | null | undefined)[];
+        behavior?: string;
+      };
+      const scope = scopeForDestination(loose.destination);
       if (!scope) continue;
-      const rules = (suggestion as any).rules ?? [];
-      const suggBehavior = (suggestion as any).behavior === 'deny' ? 'deny' : 'allow';
+      const rules = loose.rules ?? [];
+      const suggBehavior = loose.behavior === 'deny' ? 'deny' : 'allow';
       for (const r of rules) {
         if (!r || typeof r.toolName !== 'string' || !r.toolName.trim()) continue;
         try {
           persistPermissionRule({
             scope,
             behavior: suggBehavior,
-            rule: formatRule(r),
+            rule: formatRule({ toolName: r.toolName, ruleContent: r.ruleContent }),
             configDir: handle.configDir,
             projectPath: handle.projectPath,
           });
@@ -883,7 +913,7 @@ function showNextPermission(
 ): void {
   if (handle.permissionQueue.length === 0) return;
   const next = handle.permissionQueue[0];
-  const nextPayload = (next as any).payload;
+  const nextPayload = (next as PendingPermission & { payload: QueuedPermissionPayload }).payload;
   sendToRenderer(`agent-output:${tabId}`, nextPayload);
 
   // Notify the user about the next permission in the queue

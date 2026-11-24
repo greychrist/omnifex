@@ -55,7 +55,7 @@ function loadFromStorage(): Registry {
       cache = {};
       return cache;
     }
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') {
       // Existing entries from the original v1 schema only had {title,
       // updatedAt}; the new optional fields will simply be undefined on

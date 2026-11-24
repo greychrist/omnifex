@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { JsonlNode } from '@/types/jsonl';
 import type { SessionStatus } from '@/lib/api';
 import { sessionAuthFailure, type SessionAuthFailure } from '@/lib/sessionDerivedState';
@@ -43,7 +43,7 @@ export function useSessionAuthExpiry(opts: {
 
   // Read at event time, so the listener subscribes once per account.
   const latest = useRef({ failure, turnRunning, restart });
-  latest.current = { failure, turnRunning, restart };
+  useLayoutEffect(() => { latest.current = { failure, turnRunning, restart }; });
 
   useEffect(() => {
     if (!configDir) return undefined;

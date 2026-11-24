@@ -185,8 +185,8 @@ export function useSessionLifecycle({
 
     const errorUnlisten = window.electronAPI.onEvent(
       `agent-error:${tabId}`,
-      (payload: any) => {
-        if (isIgnorableStderr(payload)) return;
+      (payload: unknown) => {
+        if (isIgnorableStderr(payload as string)) return;
         console.error("[ClaudeCodeSession] stderr:", payload);
       },
     );

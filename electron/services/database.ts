@@ -20,10 +20,9 @@ export function toActionableNativeModuleError(err: unknown): Error {
   if (msg.includes('NODE_MODULE_VERSION')) {
     const hint =
       'better-sqlite3 was built for the wrong runtime ABI. ' +
-      'Run `npm run rebuild:electron` before `npm start`, ' +
-      'or run `npm test` first (its pretest hook rebuilds for Node).';
+      'Native modules must be built for Node 26: run `nvm use` then `npm rebuild`.';
     const wrapped = new Error(`${hint}\n\nOriginal error: ${msg}`);
-    (wrapped as any).cause = err;
+    (wrapped as Error & { cause?: unknown }).cause = err;
     return wrapped;
   }
   return err instanceof Error ? err : new Error(msg);

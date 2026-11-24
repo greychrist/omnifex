@@ -44,9 +44,9 @@ export function detectSkillInjection(
   // this runs `content` is always an array (or the message has no content).
   const content = getContent(message);
   if (!content) return null;
-  const hasToolResult = content.some((c: any) => c?.type === 'tool_result');
+  const hasToolResult = content.some((c) => (c as { type?: unknown } | null)?.type === 'tool_result');
   if (hasToolResult) return null;
-  const hasText = content.some((c: any) => c?.type === 'text');
+  const hasText = content.some((c) => (c as { type?: unknown } | null)?.type === 'text');
   if (!hasText) return null;
 
   const tu = transcriptIndex(allMessages).toolUses.get(sourceToolUseID);

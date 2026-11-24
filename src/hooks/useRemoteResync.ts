@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 /**
  * Reload a tab's transcript when the remote shim says it missed events the
@@ -16,7 +16,7 @@ import { useEffect, useRef } from 'react';
  */
 export function useRemoteResync(tabId: string, reload: () => void): void {
   const reloadRef = useRef(reload);
-  reloadRef.current = reload;
+  useLayoutEffect(() => { reloadRef.current = reload; });
 
   useEffect(() => {
     if (!window.__omnifexRemote?.client) return;

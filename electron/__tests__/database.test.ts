@@ -467,8 +467,9 @@ describe('toActionableNativeModuleError', () => {
     const wrapped = toActionableNativeModuleError(original);
 
     expect(wrapped).not.toBe(original);
-    expect(wrapped.message).toMatch(/npm run rebuild:electron/);
-    expect(wrapped.message).toMatch(/npm test/);
+    expect(wrapped.message).toMatch(/Node 26/);
+    expect(wrapped.message).not.toMatch(/rebuild:electron|pretest/);
+    expect(wrapped.message).toMatch(/npm rebuild/);
     expect(wrapped.message).toContain('Original error:');
   });
 

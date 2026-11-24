@@ -92,7 +92,7 @@ export function parseAnswerPayload(
   // First try JSON — covers the structured-payload path if a future CLI
   // change starts shipping the raw `updatedInput` through.
   try {
-    const parsed = JSON.parse(text);
+    const parsed: unknown = JSON.parse(text);
     if (parsed && typeof parsed === 'object' && (parsed as { answers?: unknown }).answers) {
       return parseAnswerPayload(parsed, questions);
     }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, type IdentityVerdict } from "@/lib/api";
 
 export interface AccountVerdictState {
@@ -47,7 +47,7 @@ export function useAccountVerdict(configDir: string | null): AccountVerdictState
   // Ref indirection so `recheck` stays referentially stable — callers pass it
   // to onClick without re-triggering their own effects.
   const configDirRef = useRef(configDir);
-  configDirRef.current = configDir;
+  useLayoutEffect(() => { configDirRef.current = configDir; });
 
   const recheck = useCallback(() => {
     if (configDirRef.current === null) return;

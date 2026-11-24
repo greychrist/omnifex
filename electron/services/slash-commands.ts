@@ -396,8 +396,8 @@ export function createSlashCommandsService(): SlashCommandsService {
 
     try {
       fs.unlinkSync(filePath);
-    } catch (e: any) {
-      throw new Error(`Could not delete command: ${e.message}`);
+    } catch (e) {
+      throw new Error(`Could not delete command: ${(e as Error).message}`);
     }
 
     return `Deleted command: ${commandId}`;

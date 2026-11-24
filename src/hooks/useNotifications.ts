@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 interface NotificationPayload {
   tab_id: string;
@@ -19,22 +19,22 @@ interface NotificationPayload {
 export function useNotifications(
   activeTabId: string | null,
   setActiveTab: (id: string) => void,
-  updateTab: (id: string, updates: Record<string, any>) => void
+  updateTab: (id: string, updates: { hasUnreadResult: boolean }) => void
 ) {
   const activeTabIdRef = useRef(activeTabId);
-  activeTabIdRef.current = activeTabId;
-
   const setActiveTabRef = useRef(setActiveTab);
-  setActiveTabRef.current = setActiveTab;
-
   const updateTabRef = useRef(updateTab);
-  updateTabRef.current = updateTab;
+  useLayoutEffect(() => {
+    activeTabIdRef.current = activeTabId;
+    setActiveTabRef.current = setActiveTab;
+    updateTabRef.current = updateTab;
+  });
 
   useEffect(() => {
     // Listen for notification events from backend to update tab badges
     const unlistenNotification = window.electronAPI.onEvent(
       "claude-notification",
-      (payload: any) => {
+      (payload: unknown) => {
         const { tab_id, origin } = payload as NotificationPayload;
         // Mark non-active tabs with unread badge
         if (origin !== 'mod' && tab_id !== activeTabIdRef.current) {

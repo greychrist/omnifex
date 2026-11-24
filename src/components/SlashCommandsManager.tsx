@@ -330,7 +330,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
           </div>
         </div>
         {scopeFilter === 'all' && (
-          <Select value={selectedScope} onValueChange={(value: any) => { setSelectedScope(value); }}>
+          <Select value={selectedScope} onValueChange={(value) => { setSelectedScope(value as typeof selectedScope); }}>
             <SelectTrigger className="w-[150px]">
               <SelectValue />
             </SelectTrigger>

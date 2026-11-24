@@ -167,8 +167,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
     try {
       const filePath = await api.downloadUpdate(t.downloadUrl, t.assetName);
       setUpdateState({ status: 'ready', filePath, version: t.version });
-    } catch (e: any) {
-      console.log(`[updater] download failed message=${String((e?.message ?? e) as unknown)}`);
+    } catch (e) {
+      console.log(`[updater] download failed message=${String((e as { message?: unknown } | null)?.message ?? e)}`);
       setUpdateState({ status: 'error', failed: 'download', ...t });
     }
   }, []);
@@ -425,9 +425,9 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       await api.installUpdate(filePath, version, force ? { force: true } : undefined);
       // executeInstall calls app.quit() on success — we never reach here.
       setUpdateState({ status: 'idle' });
-    } catch (err: any) {
+    } catch (err) {
        
-      console.log(`[updater] installUpdate failed message=${String((err?.message ?? err) as unknown)}`);
+      console.log(`[updater] installUpdate failed message=${String((err as { message?: unknown } | null)?.message ?? err)}`);
       // Cancel rejects the pending install too — main's wait loop throws
       // WaitCancelled on its next poll, after handleCancelInstall has already
       // put the button back to 'ready'. That is the user's choice, not a

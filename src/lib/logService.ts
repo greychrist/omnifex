@@ -32,7 +32,7 @@ export function formatLogArgs(args: unknown[]): string {
     .map((a) => {
       if (typeof a === 'string') return a;
       if (a instanceof Error) return formatError(a);
-      return JSON.stringify(a, (_key, value) =>
+      return JSON.stringify(a, (_key: string, value: unknown) =>
         value instanceof Error
           ? { name: value.name, message: value.message, stack: value.stack }
           : value,
@@ -75,26 +75,26 @@ class LogService {
     this.initialized = true;
 
     // Wrap console methods
-    console.error = (...args: any[]) => {
+    console.error = (...args: unknown[]) => {
       this.originalConsole.error(...args);
       this.captureConsole('error', args);
     };
-    console.warn = (...args: any[]) => {
+    console.warn = (...args: unknown[]) => {
       this.originalConsole.warn(...args);
       this.captureConsole('warn', args);
     };
-    console.info = (...args: any[]) => {
+    console.info = (...args: unknown[]) => {
       this.originalConsole.info(...args);
       this.captureConsole('info', args);
     };
-    console.debug = (...args: any[]) => {
+    console.debug = (...args: unknown[]) => {
       this.originalConsole.debug(...args);
       this.captureConsole('debug', args);
     };
 
     // Listen for backend log events
     try {
-      this.backendLogUnlisten = window.electronAPI.onEvent('backend-log', (payload: any) => {
+      this.backendLogUnlisten = window.electronAPI.onEvent('backend-log', (payload: unknown) => {
         const { level, category, message, timestamp } = payload as {
           level: string;
           category: string;
@@ -126,7 +126,7 @@ class LogService {
     }, FLUSH_INTERVAL_MS);
   }
 
-  private captureConsole(level: LogLevel, args: any[]): void {
+  private captureConsole(level: LogLevel, args: unknown[]): void {
     const message = formatLogArgs(args);
 
     // Filter noise

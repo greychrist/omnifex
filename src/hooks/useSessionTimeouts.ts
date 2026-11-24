@@ -40,7 +40,8 @@ export function useSessionTimeouts({
   const [_loadingStartTime, setLoadingStartTime] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [timedOutMessageIndex, setTimedOutMessageIndex] = useState<number | null>(null);
-  const lastMessageTimeRef = useRef<number>(Date.now());
+  const [mountedAt] = useState(() => Date.now());
+  const lastMessageTimeRef = useRef<number>(mountedAt);
 
   // Latest-messages ref so the watchdog timeout reads the current array
   // when it fires, without needing the messages array itself in the

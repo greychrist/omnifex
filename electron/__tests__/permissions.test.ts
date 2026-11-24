@@ -15,7 +15,7 @@ describe('augmentPermissionsWithSession', () => {
         destination: 'localSettings',
       },
     ];
-    const out = augmentPermissionsWithSession(input as any) ?? [];
+    const out = augmentPermissionsWithSession(input) ?? [];
     expect(out).toHaveLength(2);
     expect(out[0].destination).toBe('localSettings');
     expect(out[1].destination).toBe('session');
@@ -29,7 +29,7 @@ describe('augmentPermissionsWithSession', () => {
       { type: 'addRules', rules: [{ toolName: 'Read' }], behavior: 'allow', destination: 'projectSettings' },
       { type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'ls:*' }], behavior: 'allow', destination: 'userSettings' },
     ];
-    const out = augmentPermissionsWithSession(input as any) ?? [];
+    const out = augmentPermissionsWithSession(input) ?? [];
     expect(out).toHaveLength(4);
     expect(out.filter((u: any) => u.destination === 'session')).toHaveLength(2);
   });
@@ -38,7 +38,7 @@ describe('augmentPermissionsWithSession', () => {
     const input = [
       { type: 'addRules', rules: [{ toolName: 'Edit' }], behavior: 'allow', destination: 'session' },
     ];
-    const out = augmentPermissionsWithSession(input as any) ?? [];
+    const out = augmentPermissionsWithSession(input) ?? [];
     expect(out).toHaveLength(1);
     expect(out[0]).toEqual(input[0]);
   });
@@ -49,7 +49,7 @@ describe('augmentPermissionsWithSession', () => {
       { type: 'addDirectories', directories: ['/tmp'], destination: 'projectSettings' },
       { type: 'addRules', rules: [{ toolName: 'Edit' }], behavior: 'allow', destination: 'localSettings' },
     ];
-    const out = augmentPermissionsWithSession(input as any) ?? [];
+    const out = augmentPermissionsWithSession(input) ?? [];
     // Only the addRules entry gets a session duplicate; setMode and addDirectories are passed through unchanged.
     expect(out).toHaveLength(4);
     const addRulesEntries = out.filter((u: any) => u.type === 'addRules');
@@ -63,7 +63,7 @@ describe('augmentPermissionsWithSession', () => {
     const input = [
       { type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'rm:*' }], behavior: 'deny', destination: 'localSettings' },
     ];
-    const out = augmentPermissionsWithSession(input as any) ?? [];
+    const out = augmentPermissionsWithSession(input) ?? [];
     expect(out).toHaveLength(2);
     expect(out[1].destination).toBe('session');
     expect(out[1].behavior).toBe('deny');
@@ -79,7 +79,7 @@ describe('augmentPermissionsWithSession', () => {
       { type: 'addRules', rules: [{ toolName: 'Edit' }], behavior: 'allow', destination: 'localSettings' },
     ];
     const snapshot = JSON.parse(JSON.stringify(input));
-    augmentPermissionsWithSession(input as any);
+    augmentPermissionsWithSession(input);
     expect(input).toEqual(snapshot);
   });
 });
@@ -150,14 +150,14 @@ describe('withDefaultRuleSuggestion', () => {
   it('keeps the CLI setMode suggestion and adds the rule alongside it', () => {
     // A file-edit request arrives with ONLY setMode:acceptEdits. Replacing the
     // array would throw away the CLI's actual recommendation.
-    const out = withDefaultRuleSuggestion([setMode] as any, defaultRule) ?? [];
+    const out = withDefaultRuleSuggestion([setMode], defaultRule) ?? [];
     expect(out).toHaveLength(2);
     expect(out).toContainEqual(setMode);
     expect(out.some((s: any) => s.type === 'addRules')).toBe(true);
   });
 
   it('puts the rule suggestion first so the card reads it as the primary action', () => {
-    const out = withDefaultRuleSuggestion([setMode] as any, defaultRule) ?? [];
+    const out = withDefaultRuleSuggestion([setMode], defaultRule) ?? [];
     expect((out[0]).type).toBe('addRules');
     expect((out[0]).rules).toEqual([defaultRule]);
     expect((out[0]).destination).toBe('localSettings');
@@ -171,7 +171,7 @@ describe('withDefaultRuleSuggestion', () => {
 
   it('adds the rule when the CLI sent an addRules entry with an empty rules array', () => {
     const empty = { type: 'addRules', rules: [], behavior: 'allow', destination: 'localSettings' };
-    const out = withDefaultRuleSuggestion([empty] as any, defaultRule) ?? [];
+    const out = withDefaultRuleSuggestion([empty], defaultRule) ?? [];
     expect((out[0]).rules).toEqual([defaultRule]);
     expect(out).toHaveLength(2);
   });

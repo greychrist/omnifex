@@ -141,9 +141,10 @@ export function buildMarkdownComponents(
     // trees onto one wrapped line. Keep the default <pre> in that case so
     // prose can style it as a normal code card.
     pre({ node, children, ...props }) {
-      const codeChild = (node as any)?.children?.[0];
-      const className: string =
-        codeChild?.properties?.className?.[0] ?? "";
+      const codeChild = node?.children[0];
+      const classNames = codeChild?.type === "element" ? codeChild.properties.className : undefined;
+      const first: unknown = Array.isArray(classNames) ? classNames[0] : undefined;
+      const className = typeof first === "string" ? first : "";
       const isTagged = className.startsWith("language-");
       if (isTagged) {
         return <>{children}</>;
