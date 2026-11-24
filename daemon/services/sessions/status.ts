@@ -1,10 +1,4 @@
-// Sessions module — status emitter (sessionStatus + the turn axis).
-//
-// Main process owns both axes the session can answer for itself: is the CLI
-// process up (`sessionStatus`), and is it working on a prompt (`turn`). The
-// renderer mirrors them; it does not derive either from the transcript.
-//
-// See `docs/session-lifecycle.md` for the model.
+// The renderer mirrors both axes; neither is derived from the transcript.
 
 import { IDLE_TURN, type SessionHandle, type SessionStatus, type SendToRenderer, type TurnState } from './types';
 
@@ -12,11 +6,7 @@ export interface SessionStatusEvent {
   sessionStatus: SessionStatus;
 }
 
-/**
- * Apply a partial transition to a handle and announce it on
- * `session-status:<tabId>`. A session that stops or errors cannot still be
- * working, so those transitions close the turn too.
- */
+// A session that stops or errors cannot still be working, so those transitions close the turn too.
 export function setStatus(
   handle: SessionHandle,
   patch: { sessionStatus?: SessionStatus },
@@ -30,10 +20,7 @@ export function setStatus(
   if (next === 'stopped' || next === 'error') setTurn(handle, 'idle', tabId, sendToRenderer);
 }
 
-/**
- * Flip the turn axis and announce it on `session-turn:<tabId>`. Idempotent:
- * re-opening a running turn keeps its original `since`.
- */
+// Idempotent: re-opening a running turn keeps its original `since`.
 export function setTurn(
   handle: SessionHandle,
   status: TurnState['status'],

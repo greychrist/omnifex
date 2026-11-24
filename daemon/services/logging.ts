@@ -3,10 +3,6 @@ import type { LogLevel, LogSource } from './log-sources';
 
 export type { LogLevel, LogSource };
 
-// ---------------------------------------------------------------------------
-// Public interfaces
-// ---------------------------------------------------------------------------
-
 export interface LogEntry {
   timestamp: string;
   level: LogLevel;
@@ -16,15 +12,7 @@ export interface LogEntry {
   metadata?: string;
 }
 
-/**
- * Columns the renderer can sort on. Kept narrow on purpose — anything
- * passed for `orderBy` that isn't in this union is rejected by the
- * service and the query falls back to the default (timestamp DESC).
- * That serves two purposes: (1) preserves the previous behavior for
- * callers that don't specify a sort, and (2) closes the SQL-injection
- * surface that an unfiltered string-substitution into ORDER BY would
- * open.
- */
+/** Closed union: ORDER BY is never built from a caller string. */
 export type LogOrderBy = 'timestamp' | 'level' | 'source' | 'category' | 'message';
 export type LogOrderDir = 'asc' | 'desc';
 
@@ -36,16 +24,7 @@ export interface LogQueryFilters {
   until?: string;
   limit?: number;
   offset?: number;
-  /**
-   * Column to sort by. Default: `timestamp`.
-   *
-   * `level` sorts by severity (error > warn > info > debug), not
-   * alphabetically — alphabetical level ordering would put `debug` first
-   * and `warn` last, which is the opposite of what a user triaging the
-   * Log tab wants.
-   */
   orderBy?: LogOrderBy;
-  /** Sort direction. Default: `desc`. */
   orderDir?: LogOrderDir;
 }
 
@@ -54,75 +33,27 @@ export interface LogQueryResult {
   total: number;
 }
 
-/**
- * Optional construction-time options for {@link createLoggingService}.
- *
- * `shouldAccept` is evaluated once per entry on every `writeBatch` call —
- * returning `false` drops the entry before it hits SQLite. Use it to gate
- * known-noisy info/debug streams (claude-hooks, usage-runner) behind a
- * user setting without sprinkling guards across every call site.
- */
 export interface LoggingServiceOptions {
   shouldAccept?: (entry: LogEntry) => boolean;
-  /**
-   * Fired once per error-level entry that survives `shouldAccept` and is
-   * successfully persisted. Used by the daemon to broadcast a renderer toast
-   * so the user can correlate the error with whatever they were just doing.
-   *
-   * Handler exceptions are swallowed — a misbehaving observer must never
-   * break the write path.
-   */
+  /** Handler exceptions are swallowed: an observer must never break the write path. */
   onError?: (entry: LogEntry) => void;
 }
 
 export interface LoggingService {
   writeBatch(entries: LogEntry[]): void;
   query(filters: LogQueryFilters): LogQueryResult;
-  /**
-   * Return the total number of entries matching the given filters.
-   * Accepts the same filter shape as {@link query}, but ignores
-   * `limit` / `offset` (count is a total, not a page).
-   */
   count(filters: LogQueryFilters): number;
-  /**
-   * Delete log entries older than the given cutoff.
-   *
-   * - `olderThan` may be an ISO timestamp, a relative duration
-   *   (`"1d"`, `"1w"`, `"1m"`, `"1h"`), or omitted entirely.
-   * - If omitted, all entries are deleted.
-   *
-   * When anything was deleted, the database file is compacted afterwards so
-   * the freed space returns to the filesystem rather than sitting on SQLite's
-   * internal freelist — see `reclaimDiskSpace`. A prune that removes nothing
-   * skips the compaction.
-   *
-   * Returns the number of rows removed.
-   */
   prune(olderThan?: string): number;
 }
-
-// ---------------------------------------------------------------------------
-// Duration parsing for prune()
-// ---------------------------------------------------------------------------
 
 const DURATION_UNIT_MS: Record<string, number> = {
   h: 60 * 60 * 1000,
   d: 24 * 60 * 60 * 1000,
   w: 7 * 24 * 60 * 60 * 1000,
-  m: 30 * 24 * 60 * 60 * 1000, // month ≈ 30d
+  m: 30 * 24 * 60 * 60 * 1000,
 };
 
-/**
- * Parse an olderThan string into an ISO cutoff timestamp.
- * Accepts:
- *   - A full ISO timestamp (`2024-01-01T00:00:00Z`) → returned as-is.
- *   - A short duration (`1d`, `2w`, `1m`, `6h`) → computed relative to now.
- *
- * Returns null if the input is not recognized, in which case prune()
- * should fall back to "delete nothing" behavior to avoid accidental wipes.
- */
 function parseOlderThan(input: string): string | null {
-  // Try ISO first (cheap: contains 'T' or '-' in expected positions)
   if (input.includes('T') || /^\d{4}-\d{2}-\d{2}/.test(input)) {
     const parsed = new Date(input);
     if (!isNaN(parsed.getTime())) {
@@ -130,7 +61,6 @@ function parseOlderThan(input: string): string | null {
     }
   }
 
-  // Try duration (e.g. "1d", "2w", "30d", "12h")
   const match = /^(\d+)([hdwm])$/.exec(input);
   if (match) {
     const amount = Number(match[1]);
@@ -143,10 +73,6 @@ function parseOlderThan(input: string): string | null {
 
   return null;
 }
-
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
 
 export function createLoggingService(
   db: Database,
@@ -182,10 +108,7 @@ export function createLoggingService(
 
     insertMany(entries);
 
-    // Notify observers about error-level entries after the transaction
-    // commits, so handlers see only durable state. A misbehaving handler
-    // must not break logging — each callback is isolated in its own
-    // try/catch.
+    // After commit, so handlers see only durable state.
     if (onError) {
       for (const entry of entries) {
         if (entry.level !== 'error') continue;
@@ -198,10 +121,6 @@ export function createLoggingService(
     }
   }
 
-  /**
-   * Build the WHERE clause and bound parameters for a filter set.
-   * Shared between query() and count() so filter semantics can't drift.
-   */
   function buildWhere(filters: LogQueryFilters): {
     whereClause: string;
     params: unknown[];
@@ -244,18 +163,8 @@ export function createLoggingService(
     return { whereClause, params };
   }
 
-  // SQL fragments per sortable column. Whitelisting columns this way is
-  // the only safe path: we never substitute a caller-supplied string into
-  // ORDER BY directly. Each builder returns a complete clause for both
-  // direction values.
-  //
-  // - `level` uses a CASE expression so DESC lands errors at the top
-  //   (alphabetical level ordering would put `debug` first and `warn`
-  //   last — the opposite of what a user triaging the log wants).
-  // - `category` keeps NULL/empty rows pinned to the bottom regardless
-  //   of direction: an extra ASC-ordered "is empty" tag column puts real
-  //   categories first; the user-chosen direction then orders within
-  //   the non-empty bucket.
+  // Whitelisted builders: never substitute a caller string into ORDER BY.
+  // `level` sorts by severity; empty categories stay last in either direction.
   const ORDER_BY_SQL: Record<LogOrderBy, (dir: 'ASC' | 'DESC') => string> = {
     timestamp: (dir) => `timestamp ${dir}`,
     level: (dir) =>
@@ -278,9 +187,7 @@ export function createLoggingService(
       ? ORDER_BY_SQL[requested]
       : ORDER_BY_SQL.timestamp;
     const dir = filters.orderDir === 'asc' ? 'ASC' : 'DESC';
-    // Tie-breakers: newest first, then id DESC. Keeps page boundaries
-    // stable when many rows share the same value on the primary sort
-    // column (very common for `level` / `source`).
+    // Tie-breakers keep page boundaries stable.
     return `${builder(dir)}, timestamp DESC, id DESC`;
   }
 
@@ -319,36 +226,12 @@ export function createLoggingService(
   }
 
   /**
-   * Give the deleted rows' disk space back to the filesystem.
-   *
-   * Deleting rows does not shrink a SQLite file. The pages move to an internal
-   * freelist and are reused by future writes, but the file itself only ever
-   * grows — `auto_vacuum` is NONE, and switching it on would itself require a
-   * full VACUUM. Greg's greychrist.db reached 2.15 GB holding 36 MB of live
-   * data: 98.3% freelist, left behind by a prune months earlier.
-   *
-   * Two steps, and the second is not optional. The database runs in WAL mode
-   * (`database.ts:841`), so VACUUM's rewrite lands in the `-wal` file and the
-   * main file keeps its old size until the WAL is checkpointed back and
-   * truncated. VACUUM alone leaves the user looking at an unchanged file.
-   *
-   * Cost scales with the rows *kept*, not the rows deleted, because VACUUM
-   * rewrites the live data. That is the right way round for this operation:
-   * the user has just chosen how much to retain, and a trim that leaves the
-   * file its old size is the bug being fixed here.
-   *
-   * Never allowed to fail the prune. The rows are already gone by the time we
-   * get here, so a VACUUM that cannot run (no temp space, an enclosing
-   * transaction) must be reported and stepped over, not thrown.
+   * VACUUM, then checkpoint: in WAL mode the main file keeps its size until the WAL is truncated.
+   * Never fails the prune: the rows are already gone.
    */
   function reclaimDiskSpace(): void {
     try {
-      // Databases created before `auto_vacuum = INCREMENTAL` became the default
-      // (database.ts) are still NONE, and SQLite only honours a change to that
-      // mode during a full VACUUM. We are about to run one regardless, so the
-      // conversion is free here — and it is the only place it can happen
-      // without blocking app startup on a VACUUM of the user's whole database.
-      // Already-INCREMENTAL databases are unaffected.
+      // The only cheap place to convert pre-INCREMENTAL databases: SQLite changes auto_vacuum only during a full VACUUM.
       raw.pragma('auto_vacuum = INCREMENTAL');
       raw.exec('VACUUM');
       raw.pragma('wal_checkpoint(TRUNCATE)');
@@ -357,9 +240,6 @@ export function createLoggingService(
         {
           timestamp: new Date().toISOString(),
           level: 'warn',
-          // 'backend' rather than a new 'logging' source: this fires only when
-          // VACUUM itself is impossible, and a whole taxonomy entry would sit
-          // empty in the LogTab dropdown forever.
           source: 'backend',
           message: 'log prune succeeded but reclaiming disk space failed',
           metadata: JSON.stringify({
@@ -371,15 +251,13 @@ export function createLoggingService(
   }
 
   function prune(olderThan?: string): number {
-    // No cutoff → delete everything.
     if (olderThan === undefined) {
       const result = raw.prepare(`DELETE FROM app_logs`).run();
       if (result.changes > 0) reclaimDiskSpace();
       return result.changes;
     }
 
-    // Unparseable cutoff → treat as "delete nothing" to avoid accidental wipes.
-    // (Callers that want to delete all should pass `undefined` explicitly.)
+    // Unparseable: delete nothing. Callers wanting everything pass undefined.
     const cutoff = parseOlderThan(olderThan);
     if (cutoff === null) {
       return 0;
@@ -388,8 +266,7 @@ export function createLoggingService(
     const result = raw
       .prepare(`DELETE FROM app_logs WHERE timestamp < ?`)
       .run(cutoff);
-    // Skipped when nothing was deleted: VACUUM rewrites the whole database, so
-    // a no-op prune must not pay for one.
+    // A no-op prune must not pay for a whole-database VACUUM.
     if (result.changes > 0) reclaimDiskSpace();
     return result.changes;
   }

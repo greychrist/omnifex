@@ -1,24 +1,8 @@
-// Sessions module — mods (Claude Code >= 2.1.287)
-//
-// A mod is a plugin whose `hooks/hooks.json` names a hooks module under
-// `modules`: TypeScript the CLI runs inside its own process, unsandboxed. In
-// a stream-json session nothing a mod draws reaches OmniFex, but every hook
-// still runs — including ones that approve a tool call before OmniFex's
-// permission decider is asked. That is why the Session context panel lists
-// mods apart from plugins, led by what each one can do.
-//
-// What a mod can do comes from `claude plugin validate --json`: the CLI's own
-// static read of the module, printed as a `hooks:` and a `calls:` note — the
-// same list the docs tell a user to check before installing one. Running it
-// is ~0.5 s, so the inspector caches per plugin and hooks.json mtime.
-
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { buildClaudeEnv } from '../util/claude-env';
 
-// The shapes are the renderer's too (the Session context panel reads them), so
-// they live in src/ with the labels, and both sides import one definition.
 import type { ModCapability, ModInspection } from '../../../src/lib/mods';
 export type { ModCapability, ModInspection };
 
@@ -36,7 +20,6 @@ export function readModModules(
   }
 }
 
-/** Split on commas that are not inside a `{matcher}` or a `(via …)` note. */
 function splitTopLevel(list: string): string[] {
   const out: string[] = [];
   let depth = 0;
@@ -102,12 +85,10 @@ export function modCapabilities(hooks: string[], calls: string[]): ModCapability
   return ORDER.filter((c) => has.has(c));
 }
 
-/** `configDir` is the session's account: validate runs under it, as the
- *  session's own CLI does. */
+// Validate runs under the session's account, as its CLI does.
 export type ModInspector = (pluginPath: string, configDir: string) => Promise<ModInspection | null>;
 
 export function createModInspector(deps: {
-  /** Runs `claude plugin validate --json <pluginPath>` and resolves its stdout. */
   run: (pluginPath: string, configDir: string) => Promise<string>;
   mtimeMs?: (file: string) => number;
 }): ModInspector {
@@ -136,11 +117,7 @@ export function createModInspector(deps: {
 
 const VALIDATE_TIMEOUT_MS = 15_000;
 
-/**
- * `claude plugin validate --json <dir>` against the binary sessions launch.
- * A plugin with errors exits non-zero but still prints its report, so stdout
- * is kept whenever there is one.
- */
+// A plugin with errors exits non-zero but still prints its report, so stdout is kept.
 export function createValidateRunner(
   resolveBinary: () => string | null,
 ): (pluginPath: string, configDir: string) => Promise<string> {

@@ -1,17 +1,3 @@
-// Standalone model-catalog service — answers "which models can this account
-// use?" for a given CLAUDE_CONFIG_DIR without requiring a live session.
-//
-// The catalog is persisted to SQLite (`model_catalog`, migration v12) so the
-// renderer's pickers are warm at app start. Rows are keyed by config dir and
-// invalidated when the CLI version changes; rows older than the TTL are
-// served immediately while a background refresh runs. Cold/invalidated
-// lookups fall back to the live fetch: a short-lived ClaudeCliEngine whose
-// `initialize` control_request returns the model catalog. Live sessions also
-// write their init-time catalog through `upsertCatalog` (see
-// sessions/runtime.ts), so accounts in active use never need the ephemeral
-// spawn. The tab-scoped sessions.getSupportedModels path still covers the
-// in-session case.
-
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { discoverClaudeBinary } from './claude-binary';
@@ -20,45 +6,24 @@ import { createClaudeCliEngine } from './agents/claude-cli-engine';
 import type { Database } from './database';
 
 export interface ModelInfo {
-  /** Stable model identifier (e.g. "claude-sonnet-4-6"). */
   value?: string;
-  /** Display name shown in the picker. */
   displayName?: string;
-  /** Optional one-line description. */
   description?: string;
   [k: string]: unknown;
 }
 
 export interface ModelsService {
-  /** Live ephemeral-engine fetch. Prefer getCatalog(), which caches. */
   listSupported(configDir: string): Promise<ModelInfo[]>;
-  /** Cached catalog: persisted row when valid, live fetch otherwise. */
   getCatalog(configDir: string): Promise<ModelInfo[]>;
-  /** Live fetch now, bypassing the cache (the picker's Refresh). Falls back
-   *  to the persisted row when the fetch fails. */
   refreshCatalog(configDir: string): Promise<ModelInfo[]>;
-  /** Persist a catalog (live-session write-through and internal refresh). */
   upsertCatalog(configDir: string, models: ModelInfo[]): void;
 }
 
 export interface ModelsServiceOptions {
-  /** Max ms to wait for the CLI init handshake before giving up. */
   timeoutMs?: number;
-  /** Row age before a background refresh is kicked. Default 24 h. */
   ttlMs?: number;
-  /** Injectable clock for tests. Default Date.now. */
   nowFn?: () => number;
-  /**
-   * Injectable CLI-version probe for tests. Default runs `claude --version`
-   * on the resolved binary, re-run whenever the binary on disk changes.
-   * `null` means "undeterminable" — cached rows then match any version.
-   */
   cliVersionFn?: () => string | null;
-  /**
-   * The claude binary to spawn. main and the daemon wire this to
-   * `ClaudeBinaryService.findBestBinary()` so the binary picked in Settings
-   * wins; unset, this falls back to plain discovery.
-   */
   resolveClaudeBinary?: () => string | null;
 }
 
@@ -94,9 +59,7 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
     });
 
     try {
-      // cwd is best-effort: anything readable will do — the CLI won't read
-      // the project on this handshake. tmpdir is universal and doesn't leak
-      // the user's working directory into the request.
+      // tmpdir: the CLI doesn't read the project on this handshake, and it doesn't leak the user's cwd.
       await engine.start({
         projectPath: os.tmpdir(),
         configDir,
@@ -104,10 +67,6 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
         resume: false,
       });
 
-      // Drive the CLI's `initialize` control_request to get the
-      // model catalog back. The CLI returns model/command/agent catalogs
-      // in the control_response — no need to send a user message and wait
-      // for system:init.
       const resp = await Promise.race([
         engine.sendControlRequest<{ models?: unknown[] }>('initialize'),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
@@ -125,8 +84,6 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
   function upsertCatalog(configDir: string, models: ModelInfo[]): void {
     if (!configDir || models.length === 0) return;
     try {
-      // Pretty-printed JSON + ISO timestamp: the row is a debugging surface
-      // (DB browsers, support bundles), so keep it human-readable.
       db.raw.prepare(
         `INSERT INTO model_catalog (config_dir, cli_version, catalog_json, fetched_at)
          VALUES (?, ?, ?, ?)
@@ -140,9 +97,6 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
     }
   }
 
-  // One in-flight refresh per config dir — getCatalog may fire refreshes in
-  // the background, and overlapping ephemeral engine spawns for the same
-  // account are pure waste. A second caller joins the fetch in flight.
   const inFlight = new Map<string, Promise<ModelInfo[]>>();
   function refresh(configDir: string): Promise<ModelInfo[]> {
     const pending = inFlight.get(configDir);
@@ -166,7 +120,6 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
       .get(configDir) as { cli_version: string; catalog_json: string; fetched_at: string } | undefined;
   }
 
-  /** The user asked: fetch live regardless of the row's age or version. */
   async function refreshCatalog(configDir: string): Promise<ModelInfo[]> {
     const fresh = await refresh(configDir);
     if (fresh.length > 0) return fresh;
@@ -180,8 +133,6 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
     const rowModels = row ? safeParse(row.catalog_json) : null;
 
     if (row && rowModels && (ver === null || row.cli_version === ver)) {
-      // NaN from an unparseable timestamp fails the > comparison, which
-      // degrades to "no background refresh" — acceptable for a cache row.
       if (now() - Date.parse(row.fetched_at) > ttlMs) {
         void refresh(configDir).catch((err: unknown) => {
           console.error('[models] background refresh failed:', err);
@@ -192,7 +143,6 @@ export function createModelsService(db: Database, opts: ModelsServiceOptions = {
 
     const fresh = await refresh(configDir);
     if (fresh.length > 0) return fresh;
-    // Live fetch failed — a stale/mismatched row beats an empty picker.
     return rowModels ?? [];
   }
 

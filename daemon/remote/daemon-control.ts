@@ -1,20 +1,5 @@
-/**
- * Stopping and starting the daemon. Driven by the `ensure` / `restart` /
- * `stop` CLI commands the macOS app runs.
- *
- * A daemon is the app's: `ensure` spawns it non-detached, and the app runs
- * `ensure` inside its own process group, so the daemon lands there too. The
- * app stops it on quit, and the idle watch (`idle-watch.ts`) is the backstop
- * for an app that died without quitting. Stopping is SIGTERM via the pid file.
- *
- * There used to be a second kind — detached, or held by a `com.omnifex.server`
- * LaunchAgent with KeepAlive — that outlived the app. It kept sessions alive
- * across quits, and with them the permissions macOS granted before they
- * started, so a new grant never applied. See
- * docs/superpowers/specs/2026-11-18-daemon-dies-with-app-design.md.
- *
- * Every side effect is injected so the branching is unit-testable.
- */
+// The daemon is the app's: spawned non-detached into the app's process group and stopped on quit.
+// One that outlives the app keeps the macOS permission grants from before it started.
 import { spawn as spawnChild } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -24,9 +9,7 @@ import { isProcessAlive, readPid } from './cli';
 import type { ServerConfig } from './config';
 
 export interface DaemonInvocation {
-  /** The node binary — `Contents/MacOS/omnifexd` in the app. */
   execPath: string;
-  /** The built `omnifex-server.js`. */
   script: string;
 }
 
@@ -35,7 +18,6 @@ export function defaultLogPath(home: string = homedir()): string {
 }
 
 export interface DaemonControlDeps {
-  /** This bundle's node binary and built daemon script. */
   invocation: DaemonInvocation;
   home?: string;
   env?: Record<string, string | undefined>;
@@ -43,7 +25,6 @@ export interface DaemonControlDeps {
   readPid?: (config: ServerConfig) => number | null;
   isAlive?: (pid: number) => boolean;
   kill?: (pid: number, signal: NodeJS.Signals) => void;
-  /** Start the script with stdio appended to `logPath`; the pid, or null. */
   spawnDaemon?: (
     invocation: DaemonInvocation,
     logPath: string,
@@ -53,9 +34,7 @@ export interface DaemonControlDeps {
 }
 
 export interface DaemonControl {
-  /** Ask the running daemon to exit. False when nothing could be signalled. */
   stop(config: ServerConfig): Promise<boolean>;
-  /** Start the daemon from this bundle. False when it could not be started. */
   spawn(config: ServerConfig): boolean;
 }
 
@@ -73,8 +52,7 @@ function defaultSpawnDaemon(
       stdio: ['ignore', fd, fd],
       env,
     });
-    // Sharing the group is about signals, not about holding this short-lived
-    // CLI's event loop open until the daemon exits.
+    // Sharing the group is about signals, not holding this short-lived CLI's event loop open.
     child.unref();
     return child.pid ?? null;
   } finally {

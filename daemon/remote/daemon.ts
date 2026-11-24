@@ -1,20 +1,3 @@
-/**
- * The OmniFex daemon — the composition root.
- *
- * Every service OmniFex has is built here, once, and fronted with the
- * protocol server: the session layer, the database, the accounts, the Brain,
- * the cost ledger, the sign-in pty, the identity watchers. `sendToRenderer`
- * is the session bridge, and `rpc.invoke` reaches the handler map behind an
- * allowlist. The macOS app is a client like the iPad is; what it serves
- * itself (windows, Finder, notifications) is in `src/lib/remote/nativeChannels.ts`.
- *
- * Until 2026-10-23 Electron main built this same graph a second time, and the
- * "change both or neither" rule that came with it was a standing hazard —
- * a service added to one root and not the other worked on the desktop and
- * silently degraded over the wire. With Electron gone this is the only root.
- *
- * Runs on Node 26: the app's bundled `omnifexd`, or a checkout's `node`.
- */
 import { execFileSync } from 'node:child_process';
 import { networkInterfaces } from 'node:os';
 import fs from 'node:fs';
@@ -176,28 +159,18 @@ type ClaudeArg<K extends keyof ClaudeServiceApi, I extends number = 0> =
 export interface DaemonOptions {
   config: ServerConfig;
   version: string;
-  /** Bundle stamp (script mtime); lets a dev app tell a stale same-version daemon. */
   build?: string;
-  /** Absolute path of the daemon bundle this process is running. The Electron
-   *  launcher compares it before retiring a daemon: a dev build must not kill
-   *  the installed app's daemon (and its live sessions). See remote-launcher.ts. */
   script?: string;
   log: RemoteServerLogger;
 }
 
 export interface RunningDaemon {
   address: { host: string; port: number };
-  /** What the idle watch reads: who is attached, how many turns can still
-   *  finish on their own (`progressingTurns`), and whether anyone ever
-   *  attached at all. */
   status(): { clients: number; inFlight: number; everConnected: boolean };
   close(): Promise<void>;
 }
 
-/**
- * A GUI-launched process gets a minimal PATH. Re-derive it
- * from the login shell so `claude` (nvm, homebrew, ~/.local/bin) resolves.
- */
+/** A GUI-launched process gets a minimal PATH; re-derive it from the login shell so `claude` resolves. */
 export function fixPath(log: RemoteServerLogger): void {
   if (process.platform !== 'darwin' && process.platform !== 'linux') return;
   try {
@@ -226,10 +199,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   fs.mkdirSync(config.sessionsDir, { recursive: true });
   fs.mkdirSync(config.userDataDir, { recursive: true });
 
-  // ---------------------------------------------------------------------------
-  // Database + the services everything else is built on
-  // ---------------------------------------------------------------------------
-
   const db = createDatabase(path.join(config.userDataDir, 'greychrist.db'));
   ensureDefaultSettings(db, {
     [PROMPT_TEMPLATE_SETTING_KEY]: DEFAULT_SUMMARY_PROMPT,
@@ -241,10 +210,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     [BRAIN_SWEEP_HOURS_SETTING_KEY]: String(DEFAULT_SWEEP_HOURS),
   });
 
-  // Fail loudly before building anything on top: a daemon that came up without
-  // the CLI would accept sessions and error on every one of them. Resolved
-  // after the database opens so the binary picked in Settings counts — every
-  // spawn below goes through the same findBestBinary().
+  // Fail loudly without the CLI. Resolved after the DB opens so the binary picked in Settings counts.
   const claudeBinaryService = createClaudeBinaryService(db);
   const claudeBinary = claudeBinaryService.findBestBinary();
   if (!claudeBinary) {
@@ -257,10 +223,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   log.info('claude binary', { path: claudeBinary });
   const accountsService = createAccountsService(db);
 
-  // ---------------------------------------------------------------------------
-  // Protocol-side state: log, bridge, registry, server
-  // ---------------------------------------------------------------------------
-
   const sessionLog = createSessionLog({ root: config.sessionsDir, ringSize: config.ringSize });
   const projects = createProjectRegistry({
     file: config.projectsFile,
@@ -270,8 +232,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     },
   });
 
-  // Server is declared before the bridge so the bridge can publish into it;
-  // handlers are registered after every service exists.
   let handlersRef: ReturnType<typeof createRemoteHandlers> | null = null;
   let pushServiceRef: ReturnType<typeof createPushService> | null = null;
   const webRoot = resolveWebRoot(config.webRoot, __dirname);
@@ -298,9 +258,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
         sessions: {
           live: sessionsRef?.listActiveTabIds().length ?? 0,
           known: sessionLog.list().length,
-          // Turns running right now. The Electron launcher reads this before
-          // replacing an outdated daemon: idle → replace at once, busy →
-          // attach and check back.
+          // The launcher reads this before replacing an outdated daemon: idle replaces at once, busy waits.
           inFlight: (handlersRef?.summaries() ?? []).filter((s) => s.inFlight).length,
         },
       }),
@@ -329,8 +287,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     },
   });
 
-  // Web Push (Phase 6). `web-push` is loaded lazily and the whole feature is
-  // optional: a missing module or a bad key file costs push, never sessions.
+  // Push is optional: a missing module or a bad key costs push, never sessions.
   const pushService = (() => {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports -- optional dependency, resolved at runtime
@@ -364,7 +321,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
 
   pushServiceRef = pushService;
 
-  // Closed for the dev daemon, absent for the real one: see dev-instance.ts.
   const periodicGate = periodicWorkGate(process.env);
 
   const bridge = createSessionBridge({
@@ -389,10 +345,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   const sendToRenderer = bridge.sendToRenderer;
 
   projects.onChange((list) => server.broadcast({ type: 'project.changed', projects: list }));
-
-  // ---------------------------------------------------------------------------
-  // The rest of the graph
-  // ---------------------------------------------------------------------------
 
   let brainRef: BrainService | undefined = undefined;
   let sessionsRef: ReturnType<typeof createSessionsService> | null = null;
@@ -430,8 +382,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   });
   brainRef = brainService;
 
-  // `__dirname` is this bundle's build dir, beside brain-mcp.js, and the
-  // server runs on the same node this daemon does.
+  // The MCP server runs on this daemon's own node, beside this bundle.
   const brainMcpEnv: BrainMcpEnvironment = {
     execPath: process.execPath,
     serverScript: path.join(__dirname, 'brain-mcp.js'),
@@ -451,10 +402,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
 
   const loggingService = createLoggingService(db, createLoggingOptions({ db, sendToRenderer }));
 
-  // No display: OS notifications are the clients' job. A session's own
-  // notifications ride its events; this is for the rest (a rate-limit
-  // threshold), broadcast to every client as a `claude-notification` with no
-  // tab — the app on the Mac raises the banner, a browser its own.
+  // No display here: clients raise OS notifications.
   const notifyClients = {
     show(title: string, body: string, isError: boolean) {
       sendToRenderer('claude-notification', { title, body, is_error: isError });
@@ -488,8 +436,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   const probeClaudeAuth = (configDir: string) =>
     probeAuthStatus(configDir, { resolveBinary: () => claudeBinaryService.findBestBinary() });
   const loginExpiryService = createLoginExpiryService({
-    // probeAuthStatus folds every failure into "logged out". Not signed in
-    // means no expiry worth caching, and other surfaces already say so.
     probe: async (configDir) => {
       const status = await probeClaudeAuth(configDir);
       if (!status.loggedIn) throw new Error('not signed in');
@@ -516,8 +462,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       brain: () => brainService,
       summary: () => sessionsSummaryServiceRef,
       warn: (message, meta) => { log.warn(message, meta); },
-      // Same gate as the periodic work below: the dev daemon shares the
-      // database, and a second worker on the Brain queue pays twice.
+      // The dev daemon shares the DB; a second Brain worker pays twice.
       ...(periodicGate ? { drainEnabled: periodicGate } : {}),
     }),
     (projectPath: string) => accountsService.resolve(projectPath).claude?.account.config_dir ?? null,
@@ -525,7 +470,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     (configDir: string) => {
       const verdict = accountIdentityVerdict(configDir);
       if (verdict.status !== 'mismatch' && verdict.status !== 'signed-out') return null;
-      // Both statuses imply a non-empty expected email; the null check only narrows.
       if (verdict.expected === null) return null;
       return { expected: verdict.expected, detected: verdict.detected, configDir, source: 'oauth-file' as const };
     },
@@ -534,7 +478,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       const account = accountsService.getAccountByConfigDir(configDir);
       const expected = account?.expected_email;
       const status = classifyIdentity({ accountExists: !!account, expected, detected: observedEmail });
-      // 'mismatch' implies a non-empty expected email; the check only narrows.
       if (status !== 'mismatch' || !expected) return null;
       return { expected, detected: observedEmail, configDir, source: 'session-init' as const };
     },
@@ -551,8 +494,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       }
     },
     () => claudeBinaryService.findBestBinary(),
-    // The CLI's own running token totals — the spend no transcript records
-    // (side questions, title generation). Same recorder as main's.
     createCliProcessUsageStore(db).record,
     () => readAutoRecapPolicy((key) => db.getSetting(key)),
     () => modNotificationsEnabled(db.getSetting(MOD_NOTIFICATIONS_SETTING_KEY)),
@@ -609,11 +550,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     listCodexAccounts: () => accountsService.listAccounts().filter((a) => a.engine === 'codex'),
   });
 
-  // The one-shot pty behind `claude auth login` and `codex login`. Its output
-  // is broadcast — `one-shot-terminal-data:<handle>` names no session — and
-  // the sign-in modal that spawned it is the one listening for that handle.
-  // Subscriptions last until the pty exits or the client kills it; the
-  // service tears down its own subscribers on exit.
   const oneShotTerminalService = createOneShotTerminalService();
   const spawnOneShotTerminal = (
     spawnOpts: Parameters<typeof oneShotTerminalService.spawn>[0],
@@ -636,8 +572,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     }),
   });
 
-  // Sign-in state that changes outside OmniFex (a terminal login/logout)
-  // reaches every client. Re-synced after every account mutation below.
   const accountWatchers = createAccountWatchers({
     listAccounts: () => accountsService.listAccounts(),
     watchCodexAuth: (dir, onChange) => codexAuthService.watch(dir, onChange),
@@ -652,10 +586,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   });
   accountWatchers.sync();
 
-  // First launch: create one account per `.claude*` dir in $HOME, so the
-  // picker is not empty when the first project opens. Resolution still needs
-  // an explicit choice; this only populates the list. One-and-done via the
-  // `discovery_completed` flag; Settings has a manual rescan for later.
+  // Discovery only populates the list; resolution still needs an explicit choice.
   void runFirstTimeDiscovery({
     accounts: accountsService,
     db,
@@ -665,9 +596,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     .then(() => { accountWatchers.sync(); })
     .catch((err: unknown) => { log.warn('first-run discovery failed', { error: String(err) }); });
 
-  // Persistent Brain registrations name a path in `.claude.json` that the
-  // build which wrote it chose. Rewrite the ones that exist so they name this
-  // one — an update that moved the server would otherwise strand them.
+  // Rewrite registrations to name this build, or an update that moved the server strands them.
   refreshBrainRegistrations(
     brainMcpRegistration,
     accountsService.listAccounts().map((a) => ({
@@ -677,11 +606,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     (message) => { log.warn(message); },
   );
 
-  // Opt-in: the auto-update a terminal user of the CLI gets for free lives in
-  // its Ink REPL, which headless sessions never render. Unawaited — it
-  // downloads ~200MB and is auxiliary work that must never delay startup —
-  // and gated on an upgrade actually being available, so a start with none
-  // costs one dist-tags fetch rather than a `claude update` per account.
+  // Opt-in and unawaited: auxiliary work must never delay startup.
   if (db.getSetting(CLI_AUTO_UPDATE_SETTING_KEY) === 'true') {
     void (async () => {
       const status = await claudeCliReviewService.getStatus();
@@ -691,13 +616,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     })().catch((err: unknown) => { log.warn('cli auto-update failed', { error: String(err) }); });
   }
 
-  // ---------------------------------------------------------------------------
-  // Periodic work
-  // ---------------------------------------------------------------------------
-  //
-  // The real daemon owns it outright and passes no `enabled` gate. The dev
-  // instance's daemon shares the database with it and so must not sweep —
-  // see daemon/periodic-work.ts for why two sweepers cost real money.
+  // The dev daemon shares the DB and must not sweep: two sweepers pay twice.
 
   const timers: NodeJS.Timeout[] = [];
   const stopPeriodicWork = startPeriodicWork({
@@ -711,10 +630,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     warmSessionMetadata: () => claudeService.warmSessionMetadata(),
     log,
   });
-
-  // ---------------------------------------------------------------------------
-  // The IPC handler map, reached through rpc.invoke
-  // ---------------------------------------------------------------------------
 
   const handlerMap = getHandlerMap({
     database: db,
@@ -731,8 +646,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       unregister: (configDir) => { brainMcpRegistration.unregister(configDir); },
       configDirFor: (accountId) => accountsService.listAccounts().find((a) => a.id === accountId)?.config_dir ?? null,
     },
-    // The dev daemon only, and even there `rpcAllow` must name the channel:
-    // the rpc allowlist denies raw SQL by default.
     allowRawSql: isDevDaemon(process.env),
     accounts: {
       list: () => accountsService.listAccounts(),
@@ -834,8 +747,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       closeSideChat: (id) => { sessionsService.closeSideChat(id); },
       getSideChat: (id) => sessionsService.getSideChat(id),
       suggestTitle: (id, description) => sessionsService.suggestTitle(id, description),
-      // Persisted once the CLI accepts it, so a resume respawns in the mode
-      // the session was left in rather than the one it was launched with.
+      // Persisted so a resume respawns in the mode the session was left in.
       setPermissionMode: async (id, mode) => {
         await sessionsService.setPermissionMode(id, mode as Parameters<typeof sessionsService.setPermissionMode>[1]);
         sessionLog.updateOptions(id, { permissionMode: mode });
@@ -992,10 +904,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     },
   } satisfies Required<Services>) as Record<string, RpcHandler>;
 
-  // ---------------------------------------------------------------------------
-  // Handlers, permission timeout, listen
-  // ---------------------------------------------------------------------------
-
   const handlers = createRemoteHandlers({
     sessions: sessionsService,
     log: sessionLog,
@@ -1012,13 +920,10 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   handlersRef = handlers;
   server.register(handlers);
 
-  // Default is NEVER: an unanswered permission waits for the user, however
-  // long that takes. A timeout is opt-in and always a deny.
+  // Default never times out; a timeout is opt-in and always a deny.
   const permissionTimers = new Map<string, NodeJS.Timeout>();
   if (config.permissionTimeoutMs !== null) {
     const timeoutMs = config.permissionTimeoutMs;
-    // Watch pushes as they leave the log: a permission.request starts a
-    // clock; the handler clearing it (permissionAnswered) stops it.
     const pollPending = setInterval(() => {
       for (const meta of sessionLog.list()) {
         for (const permissionId of bridge.pendingPermissions(meta.sessionId)) {
@@ -1044,7 +949,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
   const address = await server.listen();
   log.info('omnifex-server ready', { version: opts.version, ...address, stateDir: config.stateDir, userDataDir: config.userDataDir });
 
-  // Started before Tailscale was up: serve the tailnet address once it is.
   if (config.hostIsFallback) {
     const tailnet = createTailnetWatch({
       detect: () => detectTailscaleIp(networkInterfaces()),
@@ -1066,8 +970,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
     }),
     async close() {
       stopPeriodicWork();
-      // A summary or Brain run left going would pay for its whole call after
-      // we exit, and the next start re-queues the item and pays again.
+      // Unstopped internal runs keep paying after exit, and the next start pays again.
       stopInternalRuns();
       accountWatchers.disposeAll();
       for (const t of timers) clearInterval(t);

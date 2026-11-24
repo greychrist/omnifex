@@ -1,11 +1,3 @@
-/**
- * Explicit captures written by the MCP server's `brain_remember`.
- *
- * Ownership needs no resolution here at all: a capture file sits INSIDE one
- * account's vault, so the owning account is a property of the path. This is
- * the strongest form of the rule the session adapter has to approximate with
- * `getAccountByConfigDir` — there is nothing to guess and nothing to default.
- */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CaptureFile } from '../mcp-tools';
@@ -13,15 +5,13 @@ import type { AdmitVerdict, BrainSource, DistilledItem, SourceItem } from './typ
 
 export const CAPTURE_SOURCE_ID = 'capture';
 
-/** Relative to a vault root. Matches the path `brain_remember` writes to. */
+/** Must match where `brain_remember` writes. */
 const CAPTURE_DIR = join('.omnifex', 'capture');
 
 export interface CaptureSourceDeps {
-  /** The configured vaults, each with the account that owns it. */
   vaults: () => { accountId: number; root: string }[];
 }
 
-/** Null for anything that is not a readable capture — never a throw. */
 function readCapture(path: string): CaptureFile | null {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<CaptureFile>;
@@ -50,8 +40,7 @@ export function createCaptureSource(deps: CaptureSourceDeps): BrainSource {
         try {
           names = readdirSync(dir).filter((n) => n.endsWith('.json'));
         } catch {
-          // No captures for this vault yet. Not an error, and not a reason to
-          // abandon the vaults after it in the list.
+          // Skip, but don't abandon the vaults after it.
           continue;
         }
         for (const name of names) {
@@ -68,19 +57,14 @@ export function createCaptureSource(deps: CaptureSourceDeps): BrainSource {
               label: readCapture(path)?.project ?? 'capture',
             });
           } catch {
-            // A file that vanished between readdir and stat is not an error.
+            // Vanished between readdir and stat.
           }
         }
       }
       return Promise.resolve(items);
     },
 
-    /**
-     * There is no equivalent of the session gate's two-prompt rule. A capture
-     * is an explicit act by the user or the model on their behalf, and
-     * second-guessing it would make the tool untrustworthy — the only thing
-     * rejected here is a file that carries nothing to extract.
-     */
+    /** No gate beyond emptiness: a capture is an explicit act, never second-guessed. */
     admit(item: SourceItem): AdmitVerdict {
       const capture = readCapture(item.path);
       if (!capture) return { admitted: false, reason: 'capture file is unreadable or malformed' };

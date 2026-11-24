@@ -1,11 +1,7 @@
 import type { Database } from './database';
 import { repoIdentity } from './git-repos';
 
-/**
- * Branch color pins, per repo. A repo is keyed by its main checkout
- * (`repoIdentity`), so the same repo shows the same colors whether it is
- * opened directly, through a linked worktree, or inside another project.
- */
+/** Keyed by the repo's main checkout (`repoIdentity`), so a repo shows the same colors everywhere. */
 export interface BranchColor {
   id: number;
   repo_path: string;
@@ -16,7 +12,6 @@ export interface BranchColor {
 }
 
 export interface BranchColorUpsert {
-  /** Any checkout of the repo; normalised to its main checkout. */
   repo_path: string;
   branch_name: string;
   color: string;
@@ -29,7 +24,6 @@ export interface BranchColorsService {
 }
 
 export interface BranchColorsDeps {
-  /** Announces `branch-colors-changed` `{ repoPath }` after every write. */
   sendToRenderer?: (channel: string, ...args: unknown[]) => void;
 }
 

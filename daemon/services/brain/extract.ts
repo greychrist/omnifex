@@ -4,27 +4,12 @@ import type { RunCost } from './sources/state';
 import { addRunCosts } from './spend';
 import type { DistilledItem, ItemMetadata } from './sources/types';
 
-/**
- * The extraction contract (spec §8).
- *
- * Optional collections default to `[]` rather than being left undefined: the
- * merge is a pure fold over these, and every `?? []` it would otherwise need
- * is a place a future edit forgets one.
- */
-/**
- * An entity name is model-supplied, so it is untrusted input for a filesystem
- * path. `vault.notePath` rejects any separator outright, and one bad name
- * would otherwise fail a whole item.
- *
- * Observed from a live run: the prompt shows `links.target` as
- * "Projects/omnifex" and the model generalized that shape to `name`. Taking
- * the last segment is both the obvious intent and consistent with
- * `linkMatchesNote`, which already resolves wikilinks by last segment.
- */
+/** Model-supplied names are untrusted path input, and `vault.notePath` rejects separators. */
 function lastNameSegment(name: string): string {
   return name.split(/[/\\]/).pop()?.trim() ?? '';
 }
 
+/** Optional collections default to `[]`: the merge is a pure fold and must not need `?? []`. */
 const EntitySchema = z.object({
   type: z.enum(['Project', 'Subsystem', 'Topic']),
   name: z
@@ -46,7 +31,6 @@ export const ExtractionSchema = z.object({ entities: z.array(EntitySchema) });
 export type Extraction = z.infer<typeof ExtractionSchema>;
 export type ExtractedEntity = z.infer<typeof EntitySchema>;
 
-/** A model reply that could not be turned into a valid Extraction. */
 export class ExtractionParseError extends Error {
   constructor(message: string) {
     super(message);
@@ -54,18 +38,7 @@ export class ExtractionParseError extends Error {
   }
 }
 
-/**
- * The first balanced `{...}` span in a string, or null.
- *
- * Needed because the CLI hands back the model's text verbatim, and a model
- * asked for JSON routinely fences it or introduces it with a sentence. A
- * greedy first-`{`-to-last-`}` slice fails on any trailing prose containing a
- * brace, so this counts depth and respects string literals.
- *
- * Exported for `curation.ts`, which parses a reply from the same CLI in the
- * same way. A second brace counter would be a second place to get string
- * escaping wrong.
- */
+/** Counts depth and respects string literals: a greedy slice breaks on a brace in trailing prose. */
 export function firstJsonObject(raw: string): string | null {
   let depth = 0;
   let start = -1;
@@ -97,15 +70,7 @@ export function firstJsonObject(raw: string): string | null {
   return null;
 }
 
-/**
- * Validate a model reply into an Extraction, or throw with a message worth
- * showing a human.
- *
- * Throwing rather than returning null is deliberate: the caller's retry-once
- * policy needs to distinguish "the model produced something unusable" from
- * "the model produced an empty result", and an empty entity list is a valid,
- * final answer — plenty of sessions are worth nothing.
- */
+/** Throws, never returns null: retry-once must tell unusable from empty, and empty is a valid answer. */
 export function parseExtraction(raw: string): Extraction {
   const json = firstJsonObject(raw);
   if (json === null) {
@@ -129,62 +94,21 @@ export function parseExtraction(raw: string): Extraction {
   return result.data;
 }
 
-/**
- * Pinned to a family, not configurable: letting extraction inherit an
- * account's session default would quietly bill Opus for a high-volume
- * background task.
- *
- * The family alias, not a version id, so extraction moves to each new Sonnet
- * the day the CLI ships it (the summaries' per-account picker already worked
- * this way). What actually billed is read back from the CLI's `modelUsage`
- * and recorded in `brain_spend`. The trade: a new Sonnet that writes worse
- * notes arrives unannounced — the Haiku finding below is the kind of
- * regression to look for.
- *
- * Spec §8 pins Haiku. This is Sonnet instead, and the reason is measured
- * rather than assumed. The first live extraction at Haiku (session 27b32dad,
- * 1.99MB, 5 notes) produced a note asserting the distiller "detects file
- * changes from git diffs" and parses "decision/fact blocks from prose
- * patterns" — neither of which exists anywhere in `distill.ts`. Working from a
- * truncated tail, it invented plausible internals. zod cannot catch that: it
- * validates shape, not truth, and a confidently wrong note is worse than no
- * note because it will be retrieved and believed later.
- *
- * Opus was considered and rejected on volume: backfill is ~142 sessions, and
- * one extraction already costs ~2.5 minutes of wall-clock at a smaller model.
- */
+/** A pinned family, never the account default (that would bill Opus). Not Haiku: it invented internals from a truncated tail. */
 export const EXTRACTION_MODEL = 'sonnet';
 
 export interface ExtractorDeps {
-  /**
-   * The shared `claude -p` runner. REQUIRED — it used to default to a
-   * self-constructed one, but the runner now needs an archive root it cannot
-   * invent, and a silent default would mean extraction transcripts went back
-   * to being discarded. the daemon owns construction; tests inject a fake.
-   *
-   * The runner pins a stable scratch cwd and moves the resulting JSONL into
-   * the internal archive; the Brain's own discovery excludes that archive, so
-   * extraction calls can never be re-indexed by the Brain.
-   */
+  /** Required, never defaulted: the daemon builds the shared runner. */
   runQuery: (
     opts: { prompt: string; model: string; configDir: string },
   ) => Promise<CliRunResult>;
 }
 
-/** What the vault already holds, so a run can converge on existing names. */
 export interface ExtractionContext {
-  /** Titles of notes already in this account's vault. */
   existingNames: string[];
 }
 
-/**
- * An extraction, plus what producing it cost.
- *
- * `run` is optional because not every extractor spends: tests supply canned
- * entities, and a source that translates never reaches a model at all. Absent
- * means "nothing was spent", which the state store treats as "leave whatever
- * was recorded before alone" rather than as zero.
- */
+/** `run` absent means nothing was spent; the state store then keeps prior figures. */
 export type ExtractionRun = Extraction & { run?: RunCost };
 
 export type Extractor = (
@@ -193,7 +117,6 @@ export type Extractor = (
   context?: ExtractionContext,
 ) => Promise<ExtractionRun>;
 
-/** The cost half of a `claude -p` result, in the shape the state store keeps. */
 export function runCostOf(r: CliRunResult): RunCost {
   return {
     costUsd: r.costUsd,
@@ -205,24 +128,12 @@ export function runCostOf(r: CliRunResult): RunCost {
   };
 }
 
-/**
- * The per-kind wording of the prompt.
- *
- * A switch rather than nested ternaries: the prompt STATES its facts, so each
- * kind has to say only what is true of it — a capture has no prompt count and
- * an instruction file has no session — and a fourth source would otherwise add
- * a fourth level of nesting to five separate expressions. The exhaustive
- * default is what makes adding one a compile error rather than a silent
- * fall-through to session wording.
- */
+/** Each kind states only what is true of it; the exhaustive switch makes a new kind a compile error. */
 interface PromptShape {
   preamble: string;
   facts: string;
-  /** Names the material, for the "return nothing durable" rule. */
   emptyCase: string;
-  /** Completes "one sentence describing …". */
   timelineNoun: string;
-  /** Heading above the material itself. */
   heading: string;
 }
 
@@ -271,13 +182,7 @@ function promptShapeFor(m: ItemMetadata): PromptShape {
   }
 }
 
-/**
- * The extraction prompt.
- *
- * Deterministic facts are STATED, not requested. The model's job is prose and
- * aliases; asking it to restate a branch name it can already see is an
- * opportunity for it to get one wrong (spec §6).
- */
+/** Deterministic facts are stated, not requested: asking the model to restate them invites errors. */
 export function buildExtractionPrompt(
   item: DistilledItem,
   context?: ExtractionContext,
@@ -292,9 +197,6 @@ export function buildExtractionPrompt(
       'describe the session as if you saw all of it.\n'
     : '';
 
-  // Naming an entity the vault already holds is how a second session UPDATES a
-  // note instead of spawning a near-duplicate beside it. Resolution catches a
-  // mismatch after the fact; this stops it happening as often to begin with.
   const existing =
     context && context.existingNames.length > 0
       ? `\nENTITIES ALREADY IN THIS VAULT — reuse one of these names EXACTLY when
@@ -329,12 +231,7 @@ ${shape.heading}
 ${item.prose}`;
 }
 
-/**
- * One headless Haiku call per item, validated at the boundary.
- *
- * `BATCH_SIZE = 1`, adopted from Rowboat (spec §8): one item per call, so a
- * bad reply damages exactly one note and the retry is cheap.
- */
+/** One item per call: a bad reply damages one note and the retry is cheap. */
 export function createExtractor(deps: ExtractorDeps): Extractor {
   const runQuery = deps.runQuery;
 
@@ -345,13 +242,9 @@ export function createExtractor(deps: ExtractorDeps): Extractor {
       return { ...parseExtraction(reply.result), run: runCostOf(reply) };
     } catch (err) {
       if (!(err instanceof ExtractionParseError)) throw err;
-      // Exactly one retry (spec §8). A transport error never reaches here —
-      // `runQuery` rejects and that propagates unretried, because a spawn or
-      // auth failure is not a bad answer and immediately repeating it just
-      // fails twice.
+      // One retry only. Transport errors propagate unretried: a spawn or auth failure is not a bad answer.
       const second = await runQuery({ prompt, model: EXTRACTION_MODEL, configDir });
-      // Both calls are billed, so both are reported. The first one produced
-      // garbage, not a refund.
+      // Report both calls: the first was billed too.
       return {
         ...parseExtraction(second.result),
         run: addRunCosts(runCostOf(reply), runCostOf(second)),

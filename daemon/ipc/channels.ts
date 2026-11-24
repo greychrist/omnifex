@@ -1,18 +1,7 @@
-// Single source of truth for the channel names the renderer may `invoke`.
-//
-// Each one is served by exactly one of three things, and
-// `ipc-channel-contract.test.ts` holds the list to that:
-//   - the daemon's handler map (`getHandlerMap`), reached as `rpc.invoke`;
-//   - a typed session method (`TYPED_SESSION_CHANNELS`, rpc-allowlist.ts),
-//     which the renderer's shim translates;
-//   - the native Mac app (`NATIVE_INVOKE_CHANNELS`, src/lib/remote/nativeChannels.ts).
-//
-// The daemon's rpc allowlist starts from this list and subtracts, so a
-// channel added here is network-reachable unless it is denied there.
+// The rpc allowlist subtracts from this list, so a channel added here is network-reachable unless denied there.
+// Each channel has one owner (handler map, typed session method, or the Mac app); ipc-channel-contract.test.ts checks.
 
-/** Channels the renderer may `invoke`. */
 export const INVOKE_CHANNELS: readonly string[] = [
-  // Brain (per-account Markdown vault registry)
   'brain_vault_path',
   'brain_set_vault_path',
   'brain_clear_vault_path',
@@ -44,7 +33,6 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'brain_mcp_register',
   'brain_mcp_unregister',
 
-  // Accounts
   'list_accounts',
   'create_account',
   'update_account',
@@ -60,7 +48,6 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'scan_for_new_accounts',
   'explain_account_resolution',
 
-  // Claude
   'list_projects',
   'create_project',
   'get_project_sessions',
@@ -83,7 +70,6 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'validate_hook_command',
   'get_merged_hooks_config',
 
-  // Sessions
   'session_start',
   'session_rebind',
   'session_send_message',
@@ -94,7 +80,6 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_release',
   'session_get_info',
   'session_get_health',
-  // Wave 2 — Query-method passthroughs
   'session_interrupt',
   'session_set_model',
   'session_set_title',
@@ -128,7 +113,6 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_list_permission_rules',
   'session_update_permission',
 
-  // Session Cost
   'session_cost_get',
   'session_cost_watch',
   'session_cost_unwatch',
@@ -144,62 +128,40 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'session_cost_unpriced',
   'session_cost_facets',
   'session_cost_totals',
-  // Cost Report → PDF. `export` is called by the visible window; `print_ready`
-  // is the hidden print window reporting that it has finished drawing.
   'cost_report_export_pdf',
   'cost_report_print_ready',
   'session_cost_history_by_model',
 
-  // Model pricing (user-editable rate + display table)
   'model_pricing_list',
   'model_pricing_shipped',
   'model_pricing_upsert',
   'model_pricing_delete',
 
-  // Usage
   'get_usage_stats',
   'get_usage_by_date_range',
   'get_session_stats',
   'get_usage_details',
   'get_usage_by_account',
 
-  // Rate Limits
   'get_rate_limits',
   'get_rate_limit_settings',
   'update_rate_limit_settings',
 
-  // Usage CLI Runner
   'usage_run_cli',
   'usage_get_last',
   'accounts_validate_cli_path',
-  // Account identity — who is actually logged in to a config dir.
-  // `_read` is the cheap .claude.json read (safe to call per-row);
-  // `_probe` spawns `claude auth status --json` (explicit user action only).
   'account_identity_read',
   'account_identity_probe',
-  // Full verdict for a config dir (account lookup + read + compare done in
-  // main). The renderer never re-implements the comparison.
   'account_identity_verdict',
-  // When the stored claude.ai sign-in ends (`loginExpiresAt`, CLI >= 2.1.318).
-  // Spawns `claude auth status`, behind a 6h per-dir cache in the daemon.
   'account_login_expiry',
 
-  // Claude Binary
   'get_claude_binary_path',
   'set_claude_binary_path',
   'list_claude_installations',
-  // Installed CLI version vs. the changelog watermark this build was
-  // reviewed at — drives the "Claude Code moved on" flag on the Updates
-  // button.
   'claude_cli_review_status',
-  // Drive the CLI's own `claude update` for every Claude account. The CLI
-  // self-updates only from inside its Ink REPL, which OmniFex's headless
-  // sessions never render, so this is the only way an OmniFex-only user moves.
   'claude_cli_update',
-  // One-per-version gate for the "new Claude Code release" notification.
   'claude_cli_claim_update_notice',
 
-  // MCP
   'mcp_add',
   'mcp_list',
   'mcp_get',
@@ -213,24 +175,20 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'mcp_read_project_config',
   'mcp_save_project_config',
 
-  // Slash Commands
   'slash_commands_list',
   'slash_command_get',
   'slash_command_save',
   'slash_command_delete',
 
-  // Session Summaries
   'summary_get',
   'summary_generate',
   'summary_generating_now',
 
-  // Logging
   'log_write_batch',
   'log_query',
   'log_count',
   'log_prune',
 
-  // Storage
   'storage_list_tables',
   'storage_read_table',
   'storage_update_row',
@@ -242,7 +200,6 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'save_setting',
   'preview_notification_sound',
 
-  // Branch colors
   'branch_colors_list',
   'branch_colors_upsert',
   'branch_colors_delete',
@@ -253,7 +210,6 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'repo_aliases_list',
   'repo_alias_set',
 
-  // Git
   'get_git_branch',
   'list_git_worktrees',
   'start_session_git_watch',
@@ -264,7 +220,6 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'git_list_changed_files',
   'git_file_diff',
 
-  // Lima (VM viewer)
   'lima_check_installed',
   'lima_list_vms',
   'lima_list_containers',
@@ -273,29 +228,24 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'lima_start_container',
   'lima_stop_container',
 
-  // Filesystem (FilePicker @-mention browser, New Project)
   'list_directory_contents',
   'search_files',
   'create_directory',
   'save_dropped_file',
   'fs_exists',
 
-  // Proxy
   'get_proxy_settings',
   'save_proxy_settings',
 
-  // Tab Status (renderer publishes per-tab summaries; popover reads list)
   'tab_status_publish',
   'tab_status_remove',
   'tab_status_list',
 
-  // One-shot terminal (shared pty+xterm modal — Codex login, etc.)
   'one_shot_terminal_spawn',
   'one_shot_terminal_write',
   'one_shot_terminal_resize',
   'one_shot_terminal_kill',
 
-  // Codex auth (read ~/.codex/auth.json + drive `codex login` via OneShotTerminal)
   'codex_auth_status',
   'codex_auth_start_login',
   'codex_auth_cancel_login',
@@ -307,20 +257,14 @@ export const INVOKE_CHANNELS: readonly string[] = [
   'claude_auth_cancel',
   'claude_auth_logout',
 
-  // Codex sessions (rollout discovery under ~/.codex/sessions)
   'codex_session_list',
 
-  // Updater
   'updater:check',
   'updater:download',
   'updater:open',
   'updater:install',
   'updater:install-cancel',
 
-  // Native app: where the daemon listens, a restart of it, an OS
-  // notification raised on behalf of a daemon-side event, and the window's
-  // own chrome. Served by the Mac app; the daemon's rpc allowlist excludes
-  // them (see NATIVE_INVOKE_CHANNELS).
   'remote:url',
   'remote:restart',
   'notify:show',

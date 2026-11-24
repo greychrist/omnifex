@@ -1,21 +1,7 @@
-/**
- * Listen on the tailnet address once it exists.
- *
- * The daemon picks its address at startup: the tailnet one if Tailscale is
- * up, else loopback. Launched before Tailscale (login at boot, an update's
- * relaunch while it reconnects), it took loopback alone and the iPad lost it
- * until the next restart (2026-10-23). The Mac app was fine — it loads from
- * loopback anyway — which is how it went unnoticed. The launcher's half of
- * the same fix is `probeDaemon` in launcher.ts.
- *
- * A server-transport concern, not database work, so it is not in
- * periodic-work.ts: the dev daemon wants it too, and it has no gate to obey.
- */
+// Not in periodic-work.ts: the dev daemon needs it too and must not obey that gate.
 
 export interface TailnetWatchDeps {
-  /** The tailnet address now, or null (`detectTailscaleIp`). */
   detect(): string | null;
-  /** Addresses being served (`RemoteServer.hosts`). */
   listening(): readonly string[];
   addHost(host: string): Promise<boolean>;
   log: {
@@ -25,7 +11,6 @@ export interface TailnetWatchDeps {
 }
 
 export interface TailnetWatch {
-  /** Call on a timer. */
   check(): Promise<void>;
 }
 

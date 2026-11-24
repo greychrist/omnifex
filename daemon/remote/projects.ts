@@ -1,20 +1,5 @@
-/**
- * Project registry for the daemon: the set of directories a client may start
- * a session in.
- *
- * Sessions are created against a `projectId`, never a path the client sends.
- * The client is on the far side of a network; the daemon is the only thing
- * that gets to decide which directories on this machine are fair game, and a
- * registry is that decision made once, by the user, and written down.
- *
- * `projectId` is `encodeProjectId(path)` — the Claude CLI's own encoding of a
- * project directory, the same id the desktop app already uses for
- * `projects/<encoded>`. One id for one directory across the whole system.
- *
- * Account ownership is resolved on every read and never persisted. Path rules
- * and overrides change under a stored value, and the rule in CLAUDE.md is
- * explicit: no silent default account. `null` means "ask".
- */
+// Sessions start against a registered `projectId`, never a path the client sends.
+// Account ownership is resolved on every read, never persisted: no silent default account.
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute } from 'node:path';
 
@@ -31,14 +16,12 @@ interface StoredProject {
 
 export interface ProjectRegistryDeps {
   file: string;
-  /** Live lookup, typically `accountsService.resolve(path).claude`. */
   resolveAccount: (path: string) => { accountId: number; configDir: string } | null;
 }
 
 export interface ProjectRegistry {
   list(): Project[];
   get(projectId: string): Project | null;
-  /** Idempotent: re-adding a known path returns the existing entry. */
   add(path: string, title?: string): Project;
   remove(projectId: string): boolean;
   onChange(listener: (projects: Project[]) => void): () => void;
@@ -53,8 +36,6 @@ export function createProjectRegistry(deps: ProjectRegistryDeps): ProjectRegistr
       const parsed = JSON.parse(readFileSync(deps.file, 'utf8')) as { projects?: unknown };
       return Array.isArray(parsed.projects) ? (parsed.projects as StoredProject[]) : [];
     } catch {
-      // Absent on first run; corrupt after a bad edit. Either way the registry
-      // starts empty and the next write repairs the file.
       return [];
     }
   }
@@ -104,11 +85,7 @@ export function createProjectRegistry(deps: ProjectRegistryDeps): ProjectRegistr
       }
       if (!isDir) throw new Error(`project path is not a directory: ${path}`);
 
-      // Canonical, because the CLI is. It realpaths its cwd before deriving
-      // `projects/<encoded>/`, so `/tmp/x` is stored as `-private-tmp-x`. A
-      // registry that kept the symlinked spelling would make `hasTranscript()`
-      // look in the wrong directory on resume, spawn with `--session-id`
-      // instead of `--resume`, and hit "Session ID … is already in use".
+      // Canonical, because the CLI realpaths its cwd: a symlinked spelling sends resume to the wrong transcript dir.
       path = realpathSync(path);
       const projectId = encodeProjectId(path);
       const existing = stored.find((s) => s.projectId === projectId);
@@ -142,7 +119,6 @@ export function createProjectRegistry(deps: ProjectRegistryDeps): ProjectRegistr
   };
 }
 
-/** Ensure the registry file's directory exists — used by the daemon at boot. */
 export function ensureRegistryDir(file: string): void {
   const dir = dirname(file);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });

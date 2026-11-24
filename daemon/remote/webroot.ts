@@ -1,17 +1,4 @@
-/**
- * Where the web client's static files are, when the config does not say.
- *
- * `npm run build:web` writes `dist-web/` at the repo root; the packaged app
- * carries it as an extra resource beside app.asar. Both are found relative to
- * the daemon bundle (`.vite/build/omnifex-server.js`):
- *
- *   repo:      <repo>/.vite/build/omnifex-server.js         → <repo>/dist-web
- *   packaged:  Contents/Resources/app.asar/.vite/build/…     → Contents/Resources/dist-web
- *
- * An explicit `webRoot` in server.json always wins, even if it does not
- * exist — a typo should surface as 404s, not as a silent fallback to a build
- * the user was not expecting to serve.
- */
+// An explicit `webRoot` always wins, even if missing: a typo should surface as 404s, not a silent fallback.
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 

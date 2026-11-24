@@ -1,9 +1,3 @@
-// Sessions module — CLI event normalisation
-//
-// Maps a raw CLI message into a small tagged union the runtime can switch
-// on. Keeps `(message as any)` casts contained here instead of scattered
-// across the FSM.
-
 export interface RateLimitInfo {
   status: 'allowed' | 'allowed_warning' | 'rejected';
   rateLimitType?: string;
@@ -12,36 +6,6 @@ export interface RateLimitInfo {
   surpassedThreshold?: number;
 }
 
-/**
- * Categorisation the session runtime cares about.
- *
- * - `init`: CLI announced a session id (catalog/account data captured). Main
- *   does NOT flip any conversation status — conversationStatus is derived by
- *   the renderer from JSONL content (see docs/session-lifecycle.md).
- * - `result`: turn complete; a notification should fire. No main-side status
- *   flip (the renderer derives 'idle'/'running' from the transcript).
- * - `rateLimit`: rate-limits service should be told.
- * - `compact`: CliCompactBoundaryMessage — the stream is pausing for
- *   conversation compaction. Status stays 'running'; UI may show a hint.
- * - `streamEvent`: CliPartialAssistantMessage — token-level partial
- *   delta, only emitted when `includePartialMessages` is true.
- * - `hook`: CLI hook lifecycle (hook_started / hook_progress /
- *   hook_response / user_prompt_submit). Fires on SessionStart BEFORE
- *   any user turn — forwarded to the renderer but no session-status
- *   event is emitted (conversationStatus derivation is the renderer's job).
- * - `taskStarted`: a background task (agent or shell) began. Carries the
- *   `task_type` that `taskNotification` lacks, which is the only way to
- *   tell an agent's completion from a shell's when it later fires.
- * - `taskNotification`: a background task finished. Since CLI >=2.1.232
- *   backgrounds agent spawns by default this can land minutes after the
- *   turn that launched it, long after the `result` notification — so it is
- *   the only chance to tell the user their agent is done.
- * - `modNotify` / `modNotifyCancel`: a mod's `$.ui.notify` /
- *   `$.ui.cancelNotify` (CLI 2.1.321; sent because the engine spawns with
- *   CLAUDE_CODE_NOTIFICATIONS_HOST). See ./mod-notifications.ts.
- * - `turn`: anything else mid-turn (assistant text, tool_use, tool_result,
- *   non-hook system events, etc.).
- */
 export type RuntimeEvent =
   | { kind: 'init'; sessionId: string | null }
   | { kind: 'result'; isError: boolean; body: string }
@@ -74,12 +38,6 @@ function clip(s: string): string {
   return s.length > BODY_MAX_LEN ? s.slice(0, BODY_MAX_LEN) : s;
 }
 
-/**
- * Notification body when the CLI provides no `result`/`error`/`errors[0]`
- * string. The CLI distinguishes four error variants — surface that
- * distinction so the user knows whether they hit a turn cap, a budget cap,
- * a runtime explosion, or a structured-output retry exhaustion.
- */
 function defaultBodyForResultSubtype(subtype: string, isError: boolean): string {
   if (!isError) return 'Task complete';
   switch (subtype) {
@@ -110,8 +68,6 @@ export function classifyRuntimeEvent(raw: unknown): RuntimeEvent {
   }
 
   if (m.type === 'system' && m.subtype === 'compact_boundary') {
-    // CliCompactBoundaryMessage's `compact_metadata` shape — typed inline
-    // because the CLI types aren't pulled in here (the daemon).
     const meta = m.compact_metadata as
       | { trigger?: 'manual' | 'auto'; pre_tokens?: number }
       | undefined;
@@ -137,9 +93,7 @@ export function classifyRuntimeEvent(raw: unknown): RuntimeEvent {
     return {
       kind: 'taskNotification',
       taskId: typeof m.task_id === 'string' ? m.task_id : '',
-      // Anything that isn't an explicit 'completed' is a failure for
-      // notification purposes — 'stopped' included, since the user asked
-      // for work that did not happen.
+      // `stopped` counts as failed: the work did not happen.
       status: m.status === 'completed' ? 'completed' : 'failed',
       summary: typeof m.summary === 'string' ? clip(m.summary) : '',
       durationMs: typeof usage?.duration_ms === 'number' ? usage.duration_ms : null,
@@ -161,10 +115,6 @@ export function classifyRuntimeEvent(raw: unknown): RuntimeEvent {
       subtype.startsWith('error_');
     const result = typeof m.result === 'string' ? (m.result) : null;
     const error = typeof m.error === 'string' ? (m.error) : null;
-    // The CLI error variants carry an `errors: string[]` with actionable
-    // text (e.g. "Context window exceeded"). Prefer the first entry over a
-    // generic "Task failed" so the notification body actually tells the
-    // user what went wrong.
     const errorsArr = Array.isArray(m.errors)
       ? (m.errors as unknown[]).filter((e): e is string => typeof e === 'string')
       : [];

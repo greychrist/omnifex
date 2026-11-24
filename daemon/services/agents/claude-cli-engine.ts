@@ -20,16 +20,8 @@ export interface CreateClaudeCliEngineParams {
   claudeBinaryPath: string;
 }
 
-/**
- * The CLI's argv `--permission-mode` only accepts these four values. OmniFex
- * also supports `'auto'` and `'dontAsk'` — those go via the stream-json
- * `set_permission_mode` control_request after spawn; passing them on argv
- * makes the CLI exit 1. For unsupported values we omit the argv flag (CLI
- * defaults to 'default') and reapply via control_request post-spawn.
- */
-/** `--effort` values the CLI accepts (2.1.280). Anything else it ignores with
- *  a stderr warning, so we omit the flag rather than send one — which is also
- *  exactly what OmniFex's `auto` means: no level, the model's own default. */
+/** argv `--permission-mode` accepts only these; 'auto'/'dontAsk' there make the CLI exit 1, so they go via set_permission_mode after spawn. */
+/** Any other value draws a stderr warning, so omit the flag; omitting it is what OmniFex's `auto` means. */
 const CLI_EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 
 const CLI_ARGV_PERMISSION_MODES = new Set([
@@ -40,14 +32,8 @@ const CLI_ARGV_PERMISSION_MODES = new Set([
 ]);
 
 /**
- * Appended to the CLI's system prompt so the model knows the one rendering
- * capability it cannot discover from the CLI: OmniFex draws ```mermaid fences
- * (MermaidBlock) with pan/zoom, download and copy. Kept to what is true of
- * the renderer — no style rules, which belong in the user's CLAUDE.md.
- *
- * The CLI records the system prompt on a conversation's first request and
- * replays it on resume (`--system-prompt-snapshot`, default on), so sessions
- * that predate this text pick it up only after their next compaction.
+ * Only what is true of the renderer; style rules belong in the user's CLAUDE.md.
+ * The CLI snapshots the system prompt, so resumed sessions pick up changes only after compaction.
  */
 export const OMNIFEX_SYSTEM_PROMPT_APPENDIX =
   'You are running inside OmniFex, a desktop client for Claude Code. ' +
@@ -58,23 +44,8 @@ export const OMNIFEX_SYSTEM_PROMPT_APPENDIX =
   'not HTML tags: labels are drawn as SVG text, which prints <b> and <i> literally.';
 
 /**
- * Build the argv for `claude` in stream-json headless mode. Per the docs at
- * https://code.claude.com/docs/en/cli-reference:
- *
- *  - `--input-format`/`--output-format stream-json` enable bi-directional
- *    NDJSON over stdio (the headless protocol)
- *  - `--verbose` is required when `--output-format=stream-json` (CLI exits
- *    1 with "When using --print, --output-format=stream-json requires
- *    --verbose" otherwise)
- *  - `--include-partial-messages` enables `stream_event` token deltas
- *  - `--session-id` (cold) or `--resume` (warm) pins the session UUID at
- *    spawn so the JSONL path is known up front
- *  - `--permission-prompt-tool stdio` routes `can_use_tool` permission
- *    prompts through the stream-json channel (where we handle them)
- *    instead of trying to draw a TTY dialog
- *  - `--setting-sources=user,project,local` loads CLAUDE.md, project
- *    settings, and skills (otherwise the CLI runs in isolated mode)
- *  - `--append-system-prompt` adds OMNIFEX_SYSTEM_PROMPT_APPENDIX
+ * `--verbose` is required with stream-json output (the CLI exits 1 otherwise).
+ * Without `--setting-sources` the CLI runs isolated: no CLAUDE.md, project settings or skills.
  */
 function buildArgs(p: AgentStartParams): string[] {
   const args: string[] = [
@@ -82,10 +53,7 @@ function buildArgs(p: AgentStartParams): string[] {
     '--input-format', 'stream-json',
     '--verbose',
     '--include-partial-messages',
-    // Forward subagent text/thinking into the stream as assistant envelopes
-    // tagged with parent_tool_use_id (CLI ≥2.1.211). The renderer routes
-    // them to the subagent row; derivation/cost/filters exclude them
-    // from main-chain logic (see src/lib/subagentDispatch.ts).
+    // Subagent frames carry parent_tool_use_id; derivation, cost and filters must exclude them from the main chain.
     '--forward-subagent-text',
     '--permission-prompt-tool', 'stdio',
     '--setting-sources', 'user,project,local',
@@ -96,19 +64,13 @@ function buildArgs(p: AgentStartParams): string[] {
   } else {
     args.push('--session-id', p.sessionId);
   }
-  // 'default' means "let the CLI pick" — the CLI catalog exposes it as a
-  // selectable entry, but as an argv value it's redundant; omit the flag.
   if (p.model && p.model !== 'default') {
     args.push('--model', p.model);
   }
   if (p.permissionMode && CLI_ARGV_PERMISSION_MODES.has(p.permissionMode)) {
     args.push('--permission-mode', p.permissionMode);
   }
-  // Effort picked before the session started. Only a mid-session
-  // change used to reach the CLI (apply_flag_settings), so a fresh session ran
-  // at the model's default while the picker showed its own default — invisible
-  // until Opus 5.5 shipped defaulting to `medium` against the picker's `high`.
-  // Sent on resume as well: the picker shows a level, and the session runs it.
+  // Sent on resume too, so the session runs the level the picker shows.
   if (p.effort && CLI_EFFORT_LEVELS.has(p.effort)) {
     args.push('--effort', p.effort);
   }
@@ -118,10 +80,6 @@ function buildArgs(p: AgentStartParams): string[] {
   return args;
 }
 
-/**
- * The CLI's elicitation request body, camelCased. Absent optional fields stay
- * absent rather than becoming `undefined` keys.
- */
 function toElicitationRequest(requestId: string, r: Record<string, unknown>): AgentElicitationRequest {
   const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
   const out: AgentElicitationRequest = {
@@ -158,21 +116,9 @@ export function createClaudeCliEngine(
   const cancelCallbacks: ((requestId: string) => void)[] = [];
   const exitCallbacks: ((info: AgentEngineExit) => void)[] = [];
   const errorCallbacks: ((err: Error) => void)[] = [];
-  // In-flight control_requests, with a hard timeout + exit cleanup so a
-  // never-arriving control_response can't hang the awaiting promise forever
-  // (the old "session_context_usage: reply was never sent" symptom).
   const pendingControlRequests = createControlRequestRegistry();
-  /**
-   * Permission requests originate at the CLI; we forward them to the
-   * renderer and remember the originating tool_use_id keyed by request_id
-   * so the eventual control_response can mirror it (the CLI echoes
-   * `toolUseID` back in its PermissionResult).
-   */
+  /** The CLI expects `toolUseID` echoed back in its PermissionResult. */
   const pendingPermissionToolUseIds = new Map<string, string>();
-  // Reconstitutes the stop_reason + final usage that --include-partial-messages
-  // defers off the committed assistant frame onto the trailing message_delta
-  // overlay. The committed frame arrives BEFORE its delta, so the resolver
-  // buffers it and forwards the resolved frame at message_stop. See assistantMeta.ts.
   const assistantResolver = createAssistantResolver();
   let nextRequestSeq = 1;
   let lineBuf = '';
@@ -185,8 +131,6 @@ export function createClaudeCliEngine(
     try {
       payload = JSON.parse(trimmed);
     } catch {
-      // Drop malformed lines — Claude only ever emits well-formed JSON on
-      // stdout; anything else is noise that doesn't belong in the transcript.
       return;
     }
     const _peek = payload as { type?: string; subtype?: string };
@@ -209,8 +153,6 @@ export function createClaudeCliEngine(
       };
     };
 
-    // Match control_response back to the awaiting sendControlRequest promise.
-    // The CLI envelope is {type:'control_response', response:{subtype, request_id, response?, error?}}.
     if (p?.type === 'control_response' && p?.response?.request_id) {
       const id = p.response.request_id;
       if (p.response.subtype === 'error') {
@@ -221,8 +163,6 @@ export function createClaudeCliEngine(
       return;
     }
 
-    // Route can_use_tool to the permission UI; not the transcript stream.
-    // Envelope is nested: {type:'control_request', request_id, request:{subtype:'can_use_tool', tool_name, input, tool_use_id, ...}}.
     if (p?.type === 'control_request' && p?.request?.subtype === 'can_use_tool') {
       const requestId = String(p.request_id ?? '');
       const toolUseId = p.request.tool_use_id ?? '';
@@ -246,8 +186,7 @@ export function createClaudeCliEngine(
       return;
     }
 
-    // An MCP server asking the user something. The CLI parks the session
-    // until we answer, so this must reach the dialog, never the transcript.
+    // The CLI parks the session until answered: route to the dialog, never the transcript.
     if (p?.type === 'control_request' && p?.request?.subtype === 'elicitation') {
       const req = toElicitationRequest(String(p.request_id ?? ''), p.request);
       for (const cb of elicitationCallbacks) {
@@ -260,10 +199,7 @@ export function createClaudeCliEngine(
       return;
     }
 
-    // Every other request the CLI can send a host (hook_callback,
-    // mcp_message, request_user_dialog, …) belongs to a capability we never
-    // declare. Fail it now: unanswered, it parks the session until the CLI's
-    // own deadline, and forwarded, it draws an Unrecognized-record card.
+    // Fail undeclared capabilities now: unanswered parks the session, forwarded draws an Unrecognized-record card.
     if (p?.type === 'control_request') {
       const subtype = p.request?.subtype ?? 'unknown';
       void writeLine({
@@ -277,8 +213,6 @@ export function createClaudeCliEngine(
       return;
     }
 
-    // The CLI withdrawing a request it sent us — an interrupted turn, or an
-    // MCP server that stopped waiting. Bookkeeping, never transcript.
     if (p?.type === 'control_cancel_request') {
       const requestId = String(p.request_id ?? '');
       pendingPermissionToolUseIds.delete(requestId);
@@ -294,9 +228,6 @@ export function createClaudeCliEngine(
 
     if (p?.type === 'system' && p?.subtype === 'init') {
       if (typeof p.session_id === 'string') sessionId = p.session_id;
-      // Cache catalog fields the CLI exposes on its system:init message.
-      // We don't type the inner shapes here — the engine stays type-free;
-      // sessions/queries.ts casts at the call site.
       const init = payload as {
         account?: unknown;
         commands?: unknown[];
@@ -316,13 +247,7 @@ export function createClaudeCliEngine(
           : undefined,
       };
     }
-    // --include-partial-messages defers the assistant's resolved stop_reason
-    // and final usage onto a trailing message_delta overlay; the committed
-    // {type:'assistant'} frame arrives BEFORE that delta with stop_reason:null
-    // and stub usage. The resolver buffers each committed assistant, merges the
-    // delta that lands within the same message bracket, and forwards the
-    // resolved frame at message_stop — so downstream reads an honest stop_reason
-    // (which the end-turn card, completion band, and per-message cost depend on).
+    // The committed assistant frame arrives before the message_delta carrying its stop_reason and final usage; the resolver merges them.
     for (const forwarded of assistantResolver.resolve(payload)) {
       const msg: AgentMessage = {
         agent: 'claude',
@@ -376,27 +301,10 @@ export function createClaudeCliEngine(
     });
   }
 
-  /**
-   * Spawn the `claude` CLI in stream-json headless mode and resolve when the
-   * subprocess is alive and ready to accept input.
-   *
-   * "Ready" here is the OS-level `'spawn'` event — the CLI accepts stdin
-   * immediately after spawn. There is no application-level handshake to
-   * await; the CLI doesn't emit a `system:init` until mid-first-turn (after
-   * the client sends a user message), and that message is data-capture only,
-   * not a readiness signal.
-   *
-   * Re-entrant: callers invoke this again to restart after stream death.
-   * Tears down any prior child cleanly first.
-   */
+  /** Ready is the OS 'spawn' event: `system:init` arrives only mid-first-turn. */
   async function start(p: AgentStartParams): Promise<void> {
     if (child !== null) {
-      // Detach THIS engine's listeners from the outgoing child before killing
-      // it. The kill is async — the old process still emits 'exit' a tick
-      // later — and on the restart path the runtime sees the same SessionHandle,
-      // so it can't distinguish that stale exit from a genuine session end and
-      // would tear down the just-restarted session. Removing the listeners makes
-      // the dying child's exit a no-op for us. (F2)
+      // Detach before killing: the dying child's late 'exit' would tear down the restarted session on the same handle.
       const old = child;
       child = null;
       old.removeAllListeners('exit');
@@ -408,24 +316,14 @@ export function createClaudeCliEngine(
     lineBuf = '';
     stderrBuf = '';
 
-    // The session UUID is pinned at spawn — caller-supplied, never derived
-    // from a wire message. JSONL path becomes resolvable from this id alone.
+    // Pinned at spawn, never derived from a wire message.
     sessionId = p.sessionId;
 
     const args = buildArgs(p);
     const spawned = spawn(factory.claudeBinaryPath, args, {
       cwd: p.projectPath,
-      // CLAUDE_CODE_NOTIFICATIONS_HOST (2.1.321): OmniFex raises mods'
-      // `$.ui.notify` notifications, so the CLI sends them as
-      // `system/ui_notify` instead of telling the mod "no_surface".
-      // Interactive sessions only: buildClaudeEnv also feeds `claude -p`.
-      //
-      // CLAUDE_CODE_ARTIFACT (2.1.323): the Artifact tool — Claude Design
-      // in Claude Code — is off by default for an `sdk-cli` session, which
-      // is what the CLI calls itself under stream-json. '1' opts in; the
-      // account still has to pass the CLI's own gates (Anthropic sign-in,
-      // plan, org policy). Before the spread, so an inherited value wins:
-      // `=0` there, or `enableArtifact: false` in settings, turns it off.
+      // CLAUDE_CODE_NOTIFICATIONS_HOST is interactive-only: buildClaudeEnv also feeds `claude -p`.
+      // CLAUDE_CODE_ARTIFACT: sdk-cli sessions default it off. Before the spread, so an inherited `=0` wins.
       env: {
         CLAUDE_CODE_ARTIFACT: '1',
         ...buildClaudeEnv(p.configDir),
@@ -445,9 +343,6 @@ export function createClaudeCliEngine(
 
     spawned.on('exit', (code, signal) => {
       const info: AgentEngineExit = { code: code ?? -1, signal };
-      // Fail any in-flight control_requests now — their response can never
-      // arrive once the child is gone, and waiting for each one's timeout would
-      // leave the renderer's awaiting IPC calls hanging needlessly.
       pendingControlRequests.failAll(
         new Error(`control_request aborted: engine exited (code ${code ?? -1}${signal ? `, signal ${signal}` : ''})`),
       );
@@ -456,10 +351,6 @@ export function createClaudeCliEngine(
       }
     });
 
-    // Wait for the OS-level 'spawn' event — confirms the process is alive
-    // and the binary was actually exec'd. Rejects if the spawn fails (ENOENT
-    // for a missing binary, EACCES, etc.) so lifecycle can transition to
-    // 'error' with a useful message.
     await new Promise<void>((resolve, reject) => {
       const childRef = spawned;
       const onSpawn = (): void => {
@@ -474,33 +365,17 @@ export function createClaudeCliEngine(
       childRef.once('error', onErr);
     });
 
-    // Turn on the CLI's own subagent progress summaries: each running agent's
-    // task_progress frame then carries a `summary` ("Reading runAgent.ts"),
-    // written by the CLI about every 30 s from the agent's recent steps. Only
-    // this option: the rest of initialize is one-time setup OmniFex gives on
-    // argv. The calls' spend is in each result's modelUsage, which the
-    // unlogged-spend rows already price (cost/unlogged-spend.ts). Not awaited,
-    // so a CLI that refuses it never stalls a start.
+    // Not awaited, so a CLI that refuses it never stalls a start. The summaries' spend is already priced from modelUsage.
     void sendControlRequest('initialize', { agentProgressSummaries: true })
       .catch(() => { /* an older CLI sends no summaries */ });
 
-    // Ask for summarized thinking. The CLI's default display ("updates")
-    // streams only token counts — thinking_delta.thinking is always "" — so a
-    // thought could never be shown as it is typed. Display only: without a
-    // max_thinking_tokens key the CLI leaves the budget alone. Written before
-    // any prompt; not awaited, so a CLI that refuses it never stalls a start.
+    // The default display streams only token counts. No max_thinking_tokens key, so the budget is untouched. Not awaited.
     void sendControlRequest('set_max_thinking_tokens', { thinking_display: 'summarized' })
       .catch(() => { /* an older CLI keeps its default display */ });
   }
 
-  /**
-   * Apply a permission mode the CLI's argv parser doesn't accept (`'auto'`,
-   * `'dontAsk'`). Lifecycle calls this after start() resolves when the
-   * caller's requested mode isn't in `CLI_ARGV_PERMISSION_MODES`. Idempotent
-   * for known-CLI modes (they were already set on argv).
-   */
   async function applyExtendedPermissionMode(mode: string): Promise<void> {
-    if (CLI_ARGV_PERMISSION_MODES.has(mode)) return; // already pinned via argv
+    if (CLI_ARGV_PERMISSION_MODES.has(mode)) return;
     try {
       await sendControlRequest('set_permission_mode', { mode });
     } catch {
@@ -517,12 +392,7 @@ export function createClaudeCliEngine(
       message: { role: 'user', content },
       parent_tool_use_id: null,
       session_id: sessionId ?? '',
-      // The CLI's own schema for this message: "A host wrapping keyboard
-      // input must stamp {kind:'human'} explicitly — absent origin is treated
-      // as unattributed and fails closed at strict isHuman() trust gates."
-      // Everything the engine sends here is what the user typed. From CLI
-      // 2.1.277 an unstamped prompt no longer qualifies for the CLI's own
-      // session naming (`ai-title`), which is how 36 sessions went nameless.
+      // Must stamp {kind:'human'}: an unstamped prompt fails the CLI's isHuman() gates and gets no ai-title.
       origin: { kind: 'human' },
     };
     const line = JSON.stringify(payload) + '\n';
@@ -555,18 +425,13 @@ export function createClaudeCliEngine(
     const toolUseId = pendingPermissionToolUseIds.get(requestId) ?? '';
     pendingPermissionToolUseIds.delete(requestId);
 
-    // Build the PermissionResult body the CLI expects. `payload` from
-    // sessions/permissions.ts carries renderer-side extras like updatedInput
-    // / updatedPermissions; merge them onto the base shape so the CLI sees
-    // exactly the PermissionResult it expects.
     const permissionResult: Record<string, unknown> = {
       behavior: decision,
       toolUseID: toolUseId,
     };
     if (payload && typeof payload === 'object') {
       Object.assign(permissionResult, payload as Record<string, unknown>);
-      // Re-pin behavior/toolUseID after the spread so a caller can't
-      // accidentally clobber them.
+      // After the spread, so the payload cannot clobber them.
       permissionResult.behavior = decision;
       permissionResult.toolUseID = toolUseId;
     }
@@ -600,7 +465,6 @@ export function createClaudeCliEngine(
     });
   }
 
-  /** Answer an MCP elicitation. Content only rides an accept. */
   async function respondElicitation(
     requestId: string,
     action: ElicitationAction,
@@ -633,14 +497,9 @@ export function createClaudeCliEngine(
     const line = JSON.stringify(envelope) + '\n';
     const promise = pendingControlRequests.create<T>(requestId, subtype, opts?.timeoutMs);
     child.stdin.write(line, (err) => {
-      // A failed write means no response will ever come — reject now rather
-      // than waiting for the timeout.
       if (err) pendingControlRequests.fail(requestId, err);
     });
-    // The CLI keys an in-flight request's abort controller by request_id and
-    // aborts it on a host-sent control_cancel_request (verified for
-    // side_question in 2.1.282). Reject locally too: the CLI's own reply to a
-    // cancel is an error the caller should not have to wait for.
+    // Reject locally too: the CLI's reply to a cancel is an error not worth waiting for.
     const signal = opts?.signal;
     if (signal) {
       const onAbort = () => {

@@ -26,16 +26,10 @@ export interface LimaExecResult {
 }
 
 export interface LimaExecOptions {
-  /** Override the default 8s timeout. Use a longer value for start/stop. */
   timeoutMs?: number;
 }
 
 export interface LimaDeps {
-  /**
-   * Inject for testability. Defaults to a `node:child_process.execFile`
-   * wrapper that resolves with stdout/stderr/code regardless of exit
-   * status (so callers can react to non-zero exits without try/catch).
-   */
   execLimactl?: (args: string[], opts?: LimaExecOptions) => Promise<LimaExecResult>;
 }
 
@@ -43,43 +37,32 @@ export interface LimaService {
   isInstalled(): Promise<boolean>;
   listVms(): Promise<LimaVm[]>;
   listContainers(vmName: string): Promise<DockerContainer[]>;
-  /** Start a stopped Lima VM. Resolves when the VM reports ready, rejects
-   *  with the limactl error message on failure. */
   startVm(vmName: string): Promise<void>;
-  /** Stop a running Lima VM. Sends SIGINT to the host agent and waits for
-   *  the VM to fully shut down. */
   stopVm(vmName: string): Promise<void>;
-  /** Non-destructively start an existing container (`docker start`). Does
-   *  not recreate or pull — preserves volumes, env, and named state. */
   startContainer(vmName: string, containerId: string): Promise<void>;
-  /** Non-destructively stop a running container (`docker stop`). Sends
-   *  SIGTERM, waits for graceful shutdown. */
   stopContainer(vmName: string, containerId: string): Promise<void>;
 }
 
 const DEFAULT_TIMEOUT_MS = 8000;
-const LIFECYCLE_TIMEOUT_MS = 5 * 60 * 1000; // start/stop can take a few minutes
+const LIFECYCLE_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_MAX_BUFFER = 16 * 1024 * 1024;
 
 function defaultExecLimactl(args: string[], opts: LimaExecOptions = {}): Promise<LimaExecResult> {
   return new Promise((resolve, reject) => {
-    // Resolved, never bare: the Lima tab polls this every few seconds, and a
-    // bare name costs one throwaway process per PATH miss. See util/spawn.ts.
+    // Resolved, never bare: polled every few seconds (see util/spawn.ts).
     execFileOnPath(
       'limactl',
       args,
       { timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS, maxBuffer: DEFAULT_MAX_BUFFER, windowsHide: true },
       (err, stdout, stderr) => {
         if (err) {
-          // ENOENT (limactl not on PATH) and timeouts bubble up so callers
-          // can distinguish "not installed" from "ran but failed".
+          // ENOENT and timeouts reject, so callers can tell "not installed" from "ran but failed".
           const errno = err.code;
           if (errno === 'ENOENT' || errno === 'ETIMEDOUT') {
             // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- rejection reason is a structured non-Error object by API contract.
             reject(err);
             return;
           }
-          // Non-zero exit — surface as a result, not a throw.
           resolve({
             stdout: String(stdout ?? ''),
             stderr: String(stderr ?? ''),
@@ -120,9 +103,7 @@ function parseNdjson<T>(stdout: string): T[] {
     try {
       out.push(JSON.parse(trimmed) as T);
     } catch {
-      // Skip malformed line — limactl/docker can interleave warnings on
-      // stdout in some failure modes; we don't want one bad line to nuke
-      // the whole list.
+      // Skip it: limactl/docker can interleave warnings on stdout.
     }
   }
   return out;

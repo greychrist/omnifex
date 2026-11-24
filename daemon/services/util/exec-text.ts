@@ -1,16 +1,8 @@
 import { execFile, type ExecFileOptions } from 'node:child_process';
 
 /**
- * Run an already-resolved binary and resolve its stdout — the async form of
- * `execFileSync(bin, args, { encoding: 'utf8' })`.
- *
- * The daemon is one event loop serving every live session's stream, so a sync
- * spawn on a request path freezes all of them for as long as the child runs.
- * `binaryPath` must be absolute (see util/spawn.ts for resolving a name).
- *
- * stdin is closed at once, as `execFileSync` does when given no `input`: the
- * Claude CLI in `-p` mode reads a piped stdin to EOF before it answers, so
- * leaving the pipe open would hang it until the timeout.
+ * Async: a sync spawn freezes every live session on the daemon's one event loop.
+ * stdin is closed at once: `claude -p` reads a piped stdin to EOF, so an open pipe hangs it.
  */
 export function execFileText(
   binaryPath: string,
@@ -26,7 +18,6 @@ export function execFileText(
   });
 }
 
-/** `<binary> --version`, trimmed; null on any failure (missing, non-zero exit, timeout). */
 export async function probeBinaryVersion(binaryPath: string, timeoutMs = 5000): Promise<string | null> {
   try {
     return (await execFileText(binaryPath, ['--version'], { timeout: timeoutMs })).trim();

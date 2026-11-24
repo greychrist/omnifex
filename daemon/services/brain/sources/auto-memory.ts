@@ -1,15 +1,4 @@
-/**
- * Claude Code's own auto-memory notes, ingested with NO model.
- *
- * These files are already what the vault wants: frontmatter, a description,
- * curated prose and `[[wikilinks]]` — the shape Rowboat converged on
- * independently, as the parent spec's Ontology section observed. Running them
- * through the extractor would spend a token to rewrite writing a human
- * deliberately curated, and lose the exact wording doing it. Extraction earns
- * its cost on a megabyte of transcript; here it destroys value.
- *
- * OmniFex never writes into a Claude config dir. This reads, only.
- */
+// Ingested without a model: rewriting human-curated memory destroys value. Read-only: never write into a Claude config dir.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { load } from 'js-yaml';
@@ -19,28 +8,19 @@ import type { AdmitVerdict, BrainSource, SourceItem, TranslatedNote } from './ty
 
 export const AUTO_MEMORY_SOURCE_ID = 'auto-memory';
 
-/** The index file, which lists every sibling. Ingesting it duplicates them all. */
+/** Never ingest it: it lists every sibling, duplicating them all. */
 const INDEX_FILE = 'MEMORY.md';
 
-/** A leading `---` fence, capturing the YAML and the remaining body. */
 const FENCE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
 export interface AutoMemoryFile {
   name: string;
   description: string;
-  /** `user` | `feedback` | `project` | `reference`, or '' when absent. */
   memoryType: string;
   body: string;
 }
 
-/**
- * Pure, and never throws: anything unusable comes back null, which `admit`
- * turns into a visible reason rather than a failed scan.
- *
- * Deliberately NOT `frontmatter.ts`'s `parseNote`: that one validates against
- * the VAULT's schema, and an auto-memory file has a different one. Reusing it
- * would reject every input.
- */
+/** Never throws. Not frontmatter.ts's parseNote: that validates the vault's schema, not this one. */
 export function parseAutoMemory(raw: string, fallbackName: string): AutoMemoryFile | null {
   const match = FENCE.exec(raw);
   if (!match) return null;
@@ -70,39 +50,14 @@ export function parseAutoMemory(raw: string, fallbackName: string): AutoMemoryFi
 }
 
 /**
- * One memory file becomes one note in `Notes/`, named after the SOURCE FILE,
- * not after its `name:` field.
- *
- * Two reasons, both measured on the real corpus (2026-08-12):
- *
- *  1. **The link graph points at filenames.** Memories link each other as
- *     `[[project_native_module_abi.md]]`, and `linkMatchesNote` binds by final
- *     segment with `.md` stripped. In 72 of 90 files the `name:` field is a
- *     human sentence that differs from the filename, so naming notes after it
- *     would break four fifths of the corpus's links.
- *  2. **A `name:` is untrusted input for a filesystem path.** Real values
- *     include `AWS cost reduction target ~$400/mo` and
- *     `Don't grandfather tech debt via baselines/ratchets` — using them as
- *     paths created nested directories inside `Notes/`. This is Plan 4a's
- *     lesson recurring at a different boundary: a name that came from outside
- *     is never a path.
- *
- * The human `name` is kept as an alias, so a search for the sentence still
- * finds the note.
- *
- * `metadata.originSessionId` is deliberately NOT recorded in `sources`. It is
- * a real provenance link, but `merge()` dedups by source key — a Note claiming
- * `session:<id>` would make a later index of that actual transcript believe it
- * was already covered, and the session's own note would never be written.
+ * Named after the source file, not `name:`: memories link by filename, and `name:` is untrusted path input.
+ * Never record originSessionId in `sources`: merge dedups by key, so the session's own note would never be written.
  */
 export function translateAutoMemory(
   file: AutoMemoryFile,
   opts: { stem: string; sourceKey: string; date: string },
 ): TranslatedNote {
   const summary = file.description || 'Ingested from Claude Code auto-memory.';
-  // The memory's own type becomes a searchable alias rather than a vault type:
-  // `feedback` and `reference` have no NOTE_TYPES equivalent, and inventing one
-  // would fork the ontology for four values.
   const aliases = [
     ...(file.name && file.name !== opts.stem ? [file.name] : []),
     ...(file.memoryType ? [file.memoryType] : []),
@@ -130,8 +85,6 @@ function listDirSafe(path: string): { name: string; isDirectory: boolean }[] {
       isDirectory: e.isDirectory(),
     }));
   } catch {
-    // A config dir with no projects yet is the ordinary state of a newly added
-    // account, not an error. The Brain looks, and reports what is there.
     return [];
   }
 }
@@ -156,8 +109,6 @@ export function createAutoMemorySource(deps: { accounts: AccountsService }): Bra
         for (const project of listDirSafe(projectsDir)) {
           if (!project.isDirectory) continue;
           const memoryDir = join(projectsDir, project.name, 'memory');
-          // Recovered from the project's transcripts, which sit beside
-          // `memory/`. Once per project — it reads a file.
           const label = recoverProjectPath(join(projectsDir, project.name), project.name);
 
           for (const entry of listDirSafe(memoryDir)) {
@@ -170,17 +121,14 @@ export function createAutoMemorySource(deps: { accounts: AccountsService }): Bra
             try {
               stat = statSync(path);
             } catch {
-              continue; // Deleted between the readdir and the stat.
+              continue;
             }
 
             items.push({
               sourceId: AUTO_MEMORY_SOURCE_ID,
-              // Project-qualified: a slug like `user_setup` recurs across
-              // projects, and an unqualified key would collide between them.
+              // Project-qualified: slugs like `user_setup` recur across projects.
               itemKey: `${project.name}/${entry.name}`,
-              // Ownership is the config dir the file lives under, definitively
-              // — the same rule as transcripts, and correct even when path
-              // rules change afterwards.
+              // Ownership is the config dir the file lives under, never resolve().
               accountId: account.id,
               path,
               mtimeMs: stat.mtimeMs,
@@ -194,9 +142,6 @@ export function createAutoMemorySource(deps: { accounts: AccountsService }): Bra
     },
 
     admit(item: SourceItem): AdmitVerdict {
-      // No equivalent of the session gate's two-prompt rule: a memory file was
-      // written deliberately, and the only thing rejected here is a file that
-      // carries nothing usable.
       const file = read(item);
       if (!file) return { admitted: false, reason: 'unreadable, or no YAML frontmatter fence' };
       return { admitted: true, reason: 'auto-memory note' };
@@ -210,8 +155,7 @@ export function createAutoMemorySource(deps: { accounts: AccountsService }): Bra
         translateAutoMemory(file, {
           stem,
           sourceKey: `${AUTO_MEMORY_SOURCE_ID}:${item.itemKey}`,
-          // The file's own mtime, so a re-translation of an unchanged file is
-          // byte-identical rather than restamped with today's date.
+          // The file's own mtime, so re-translating an unchanged file stays byte-identical.
           date: new Date(item.mtimeMs).toISOString().slice(0, 10),
         }),
       ]);

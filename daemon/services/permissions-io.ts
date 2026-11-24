@@ -1,10 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// ---------------------------------------------------------------------------
-// Public interfaces
-// ---------------------------------------------------------------------------
-
 export interface PermissionLevel {
   label: string;
   scope: 'user' | 'project' | 'local';
@@ -17,9 +13,7 @@ export interface UpdatePermissionParams {
   configDir?: string;
   projectPath?: string;
   scope: 'user' | 'project' | 'local';
-  /** 'add' or 'remove' a rule from the list */
   action: 'add' | 'remove';
-  /** 'allow' or 'deny' — which list to modify */
   behavior: 'allow' | 'deny';
   rule: string;
 }
@@ -28,10 +22,6 @@ export interface PermissionsIOService {
   getPermissions(configDir: string, projectPath?: string): PermissionLevel[];
   updatePermission(params: UpdatePermissionParams): void;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function readPerms(filePath: string): { allow: string[]; deny: string[] } {
   try {
@@ -54,10 +44,6 @@ function resolveFilePath(
   return path.join(projectPath, '.claude', 'settings.local.json');
 }
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-
 export function createPermissionsIOService(): PermissionsIOService {
   function getPermissions(configDir: string, projectPath?: string): PermissionLevel[] {
     if (!configDir) {
@@ -66,7 +52,6 @@ export function createPermissionsIOService(): PermissionsIOService {
     const resolvedConfigDir = configDir;
     const levels: PermissionLevel[] = [];
 
-    // User level
     const userFilePath = path.join(resolvedConfigDir, 'settings.json');
     const userPerms = readPerms(userFilePath);
     levels.push({
@@ -77,7 +62,6 @@ export function createPermissionsIOService(): PermissionsIOService {
       deny: userPerms.deny,
     });
 
-    // Project level
     if (projectPath) {
       const projFilePath = path.join(projectPath, '.claude', 'settings.json');
       const projPerms = readPerms(projFilePath);
@@ -90,7 +74,6 @@ export function createPermissionsIOService(): PermissionsIOService {
       });
     }
 
-    // Local level
     if (projectPath) {
       const localFilePath = path.join(projectPath, '.claude', 'settings.local.json');
       const localPerms = readPerms(localFilePath);
@@ -122,7 +105,6 @@ export function createPermissionsIOService(): PermissionsIOService {
     const resolvedConfigDir = configDir;
     const filePath = resolveFilePath(scope, resolvedConfigDir, projectPath);
 
-    // Read existing settings
     let settings: { permissions?: Partial<Record<'allow' | 'deny', string[]>> } & Record<string, unknown> = {};
     try {
       settings = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as typeof settings;
@@ -145,7 +127,6 @@ export function createPermissionsIOService(): PermissionsIOService {
 
     settings.permissions[behavior] = list;
 
-    // Write back — ensure directory exists
     const dir = path.dirname(filePath);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf-8');

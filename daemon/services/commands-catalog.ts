@@ -1,21 +1,4 @@
-// Standalone slash-command-catalog service — answers "which slash commands can
-// this account use?" for a given CLAUDE_CONFIG_DIR without requiring a live
-// session.
-//
-// Mirrors models.ts. The catalog is persisted to SQLite (`command_catalog`,
-// migration v14) so the renderer's slash-command picker is warm at app start.
-// Rows are keyed by config dir and invalidated when the CLI version changes;
-// rows older than the TTL are served immediately while a background refresh
-// runs. Cold/invalidated lookups fall back to the live fetch: a short-lived
-// ClaudeCliEngine whose `initialize` control_request returns the command
-// catalog (alongside models/agents).
-//
-// Why this is NOT fed by live-session write-through the way models are: the bug
-// this fixes is that a long-running session's init-time command snapshot goes
-// stale when the CLI gains new built-ins (e.g. /design-sync after a CLI
-// update). Persisting that stale snapshot would defeat the purpose, so commands
-// are only ever sourced from a fresh ephemeral `initialize` — which always runs
-// the current binary and reports the current catalog.
+// Never fed by live-session write-through: a long-running session's init snapshot goes stale when the CLI adds built-ins.
 
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -25,42 +8,23 @@ import { createClaudeCliEngine } from './agents/claude-cli-engine';
 import type { Database } from './database';
 
 export interface CommandInfo {
-  /** Command name without the leading slash (e.g. "design-sync"). */
   name?: string;
-  /** Optional one-line description shown in the picker. */
   description?: string;
-  /** Optional argument hint string, when the command takes arguments. */
   argumentHint?: string;
   [k: string]: unknown;
 }
 
 export interface CommandsCatalogService {
-  /** Live ephemeral-engine fetch. Prefer getCatalog(), which caches. */
   listSupported(configDir: string): Promise<CommandInfo[]>;
-  /** Cached catalog: persisted row when valid, live fetch otherwise. */
   getCatalog(configDir: string): Promise<CommandInfo[]>;
-  /** Persist a catalog (internal refresh write-back). */
   upsertCatalog(configDir: string, commands: CommandInfo[]): void;
 }
 
 export interface CommandsCatalogServiceOptions {
-  /** Max ms to wait for the CLI init handshake before giving up. */
   timeoutMs?: number;
-  /** Row age before a background refresh is kicked. Default 24 h. */
   ttlMs?: number;
-  /** Injectable clock for tests. Default Date.now. */
   nowFn?: () => number;
-  /**
-   * Injectable CLI-version probe for tests. Default runs `claude --version`
-   * on the resolved binary, re-run whenever the binary on disk changes.
-   * `null` means "undeterminable" — cached rows then match any version.
-   */
   cliVersionFn?: () => string | null;
-  /**
-   * The claude binary to spawn. main and the daemon wire this to
-   * `ClaudeBinaryService.findBestBinary()` so the binary picked in Settings
-   * wins; unset, this falls back to plain discovery.
-   */
   resolveClaudeBinary?: () => string | null;
 }
 
@@ -99,9 +63,7 @@ export function createCommandsCatalogService(
     });
 
     try {
-      // cwd is best-effort: anything readable will do — the catalog comes back
-      // in the `initialize` control_response, not from reading the project.
-      // tmpdir is universal and doesn't leak the user's working directory.
+      // tmpdir: the catalog comes from `initialize`, not the project, and it doesn't leak the user's cwd.
       await engine.start({
         projectPath: os.tmpdir(),
         configDir,
@@ -126,8 +88,6 @@ export function createCommandsCatalogService(
   function upsertCatalog(configDir: string, commands: CommandInfo[]): void {
     if (!configDir || commands.length === 0) return;
     try {
-      // Pretty-printed JSON + ISO timestamp: the row is a debugging surface
-      // (DB browsers, support bundles), so keep it human-readable.
       db.raw.prepare(
         `INSERT INTO command_catalog (config_dir, cli_version, catalog_json, fetched_at)
          VALUES (?, ?, ?, ?)
@@ -141,9 +101,6 @@ export function createCommandsCatalogService(
     }
   }
 
-  // One in-flight refresh per config dir — getCatalog may fire refreshes in
-  // the background, and overlapping ephemeral engine spawns for the same
-  // account are pure waste.
   const refreshing = new Set<string>();
   async function refresh(configDir: string): Promise<CommandInfo[]> {
     if (refreshing.has(configDir)) return [];
@@ -167,8 +124,6 @@ export function createCommandsCatalogService(
     const rowCommands = row ? safeParse(row.catalog_json) : null;
 
     if (row && rowCommands && (ver === null || row.cli_version === ver)) {
-      // NaN from an unparseable timestamp fails the > comparison, which
-      // degrades to "no background refresh" — acceptable for a cache row.
       if (now() - Date.parse(row.fetched_at) > ttlMs) {
         void refresh(configDir).catch((err: unknown) => {
           console.error('[commands] background refresh failed:', err);
@@ -179,7 +134,6 @@ export function createCommandsCatalogService(
 
     const fresh = await refresh(configDir);
     if (fresh.length > 0) return fresh;
-    // Live fetch failed — a stale/mismatched row beats an empty picker.
     return rowCommands ?? [];
   }
 

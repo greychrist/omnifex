@@ -1,35 +1,11 @@
-// Sessions module — Claude binary resolver
-//
-// Extracted into its own module so tests can mock the resolution result
-// without spying on `fs.existsSync` (which has side effects on the rest
-// of the test file).
-
 import fs from 'node:fs';
 import os from 'node:os';
 import { discoverClaudeBinary } from '../claude-binary';
 
-/**
- * Discover a claude binary when no resolver was injected — the fallback for
- * callers built without one, such as unit tests constructing the service
- * bare. The composition roots always inject `findBestBinary()`, which tries
- * the binary picked in Settings first; this cannot, having no database.
- *
- * Returns `null` when nothing is found. Callers should treat null as
- * fatal at session start — letting the CLI try its own resolution and
- * fail with an opaque spawn error mid-stream is worse UX than a clean
- * "binary not found" message up front.
- */
 export function findSystemClaudeBinary(): string | null {
   return discoverClaudeBinary();
 }
 
-/**
- * Resolve a codex binary on the user's system. Codex has no app-bundled
- * fallback (we don't ship it inside the app) so this returns `null` when
- * the user hasn't installed `codex` — the caller must surface that as a
- * clean error at session start rather than letting the engine try to
- * spawn a missing binary.
- */
 export function findSystemCodexBinary(): string | null {
   const candidates = [
     `${os.homedir()}/.local/bin/codex`,

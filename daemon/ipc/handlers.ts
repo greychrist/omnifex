@@ -1,14 +1,3 @@
-/**
- * The daemon's channel → handler map.
- *
- * Every channel the renderer invokes that is not native (see
- * `src/lib/remote/nativeChannels.ts`) and not a typed session method (see
- * `TYPED_SESSION_CHANNELS` in `daemon/remote/rpc-allowlist.ts`) is served
- * here, reached over the WebSocket as `rpc.invoke`. The channel names are the
- * Electron IPC vocabulary the renderer was written against; the transport
- * changed underneath them.
- */
-
 import type { Database } from '../services/database';
 import type { PermissionsIOService } from '../services/permissions-io';
 import { validateCliPath } from '../services/cli-path-validator';
@@ -19,19 +8,8 @@ import { createBrainHandlers, type BrainMcpHandlerDeps } from './brain-handlers'
 import type { BrainService } from '../services/brain/registry';
 import { claimCliUpdateNotice } from '../services/cli-update-notice';
 
-// Services parameter type — each property is optional so we can add services
-// one task at a time without breaking the registration call.
 export interface Services {
-  /** Real type, not a structural shape: `BrainService` is defined in this
-   *  repo (daemon/services/brain/registry.ts) so there is no reason to
-   *  restate it here. */
   brain?: BrainService;
-  /**
-   * The persistent half of Brain MCP registration, plus the one account
-   * lookup it needs. A narrow object rather than the accounts service: these
-   * handlers need an account's config dir and nothing else, and widening the
-   * dependency would let a future edit reach for the rest of it.
-   */
   brainMcp?: BrainMcpHandlerDeps;
   accounts?: {
     list(): unknown;
@@ -48,9 +26,7 @@ export interface Services {
     discoverAccounts(): unknown;
     scanForNewAccounts(): unknown;
     explainResolution(projectPath: string, engine?: string): unknown;
-    /** Config dirs of every configured account — used to validate that a
-     *  renderer-supplied configDir on a config-edit channel actually belongs to
-     *  a known account (positive ownership check). */
+    /** For the positive ownership check on a renderer-supplied configDir. */
     knownConfigDirs(): string[];
   };
   claude?: {
@@ -87,7 +63,6 @@ export interface Services {
       launchPermissionMode?: string | null;
       permissionMode?: string | null;
     };
-    // Wave 2 — Query-method passthroughs
     setModel(sessionId: string, model?: string): unknown;
     setTitle(sessionId: string, title: string): unknown;
     askSideQuestion(sessionId: string, question: string): unknown;
@@ -134,8 +109,6 @@ export interface Services {
     facets(filters: Record<string, unknown>): unknown;
     rescan(): unknown;
   };
-  /** User-editable model pricing — the delta layer over the shipped rates.
-   *  See `services/model-pricing.ts` for why it is a delta and not a seed. */
   modelPricing?: {
     list(): unknown;
     upsert(input: unknown): unknown;
@@ -163,9 +136,7 @@ export interface Services {
     getPath(): unknown;
     setPath(path: string): unknown;
     listInstallations(): unknown;
-    /** Installed CLI version vs. the changelog watermark this build was reviewed against. */
     reviewStatus(): unknown;
-    /** Run `claude update` for every Claude account, then re-probe the version. */
     runUpdate(): unknown;
   };
   mcp?: {
@@ -215,7 +186,6 @@ export interface Services {
   permissionsIO?: PermissionsIOService;
   models?: {
     listSupported(configDir: string): unknown;
-    /** Live fetch now, bypassing the cache — the model picker's Refresh. */
     refresh(configDir: string): unknown;
   };
   commands?: {
@@ -229,7 +199,6 @@ export interface Services {
     }>;
     reconnectSession(watchId: string, holder: WatchHolder | undefined): Promise<import('../services/git-watcher').SessionGitSnapshot | null>;
     stopSession(watchId: string): void;
-    /** Whether anyone is looking at the watch; polling pauses while nobody is. */
     setSessionVisible(watchId: string, visible: boolean, holder: WatchHolder | undefined): void;
   };
   branchColors?: {
@@ -297,8 +266,6 @@ export interface Services {
     getBinaryPath(): string | null;
     logout(configDir: string): Promise<void>;
   };
-  /** Sign-in (claude_authenticate through a short-lived CLI) and
-   *  `claude auth logout`, for one account's config dir. */
   claudeAuth?: {
     beginSignIn(configDir: string): Promise<unknown>;
     submitCode(flowId: string, code: string): Promise<unknown>;
@@ -309,60 +276,29 @@ export interface Services {
   codexSessionWalker?: {
     listSessions(): Promise<import('../services/codex-session-walker').CodexSessionEntry[]>;
   };
-  /**
-   * Who is actually authenticated in a Claude config dir. `read` is the cheap
-   * `.claude.json` lookup — safe to call once per account row. `probe` spawns
-   * the CLI and must stay behind an explicit user action.
-   */
+  /** `probe` spawns the CLI: explicit user action only. */
   accountIdentity?: {
     read(configDir: string): import('../services/account-identity').OauthIdentity | null;
     probe(configDir: string): Promise<import('../services/account-identity').AuthStatus>;
     verdict(configDir: string): import('../services/account-identity').IdentityVerdict;
-    /** When the stored sign-in ends; cached, so cheap to call per surface. */
     loginExpiry(
       configDir: string,
       opts?: { refresh?: boolean },
     ): Promise<import('../services/login-expiry').LoginExpiry | null>;
   };
-  /**
-   * Enables the arbitrary-SQL admin channel (`storage_execute_sql`). Only the
-   * dev daemon sets it, so the raw-SQL escape hatch never exists in a shipped
-   * app — a compromised renderer (e.g. via rendered tool/MCP output) must not
-   * be able to run raw SQL against the live database. The rpc allowlist denies
-   * the channel as well; `rpcAllow` in server.json is the dev opt-in.
-   */
+  /** Dev daemon only: a compromised renderer must never run raw SQL against the live database. */
   allowRawSql?: boolean;
 }
 
-/**
- * Guard a SQL identifier (table/column name) that has to be interpolated into a
- * statement rather than bound as a parameter. Throws on anything that isn't a
- * plain identifier, blocking quote-breakout injection through the storage admin
- * channels.
- */
 function assertSafeIdentifier(name: unknown): asserts name is string {
   if (typeof name !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
     throw new Error(`Invalid SQL identifier: ${String(name)}`);
   }
 }
 
-// The handler type used in the map — receives the IPC event plus the params
-// object that the renderer sends via invoke(channel, params).
 type HandlerFn = (event: unknown, params?: Record<string, unknown>) => Promise<unknown>;
 
-/**
- * Repackage a thrown error for the IPC boundary.
- *
- * An `rpc.invoke` error reply carries the message and nothing else — custom
- * properties (like `code`, `name`, `projectPath`) are stripped, as Electron's
- * `ipcMain.handle` stripped them before it. To let the renderer recognize
- * specific error classes we encode the code as a `[CODE]` prefix on the
- * message.
- *
- * The renderer's `api.ts` strips the prefix and surfaces `error.code` again so
- * components can `if (err.code === 'NO_ACCOUNT_FOR_PROJECT')` without
- * substring matching the message.
- */
+// rpc.invoke error replies carry only the message, so the code rides as a `[CODE]` prefix api.ts parses back.
 function repackageError(err: unknown): Error {
   if (err instanceof Error) {
     const code = (err as Error & { code?: unknown }).code;
@@ -397,24 +333,11 @@ function wrapWith<P>(fn: (params: P, event: unknown) => unknown): HandlerFn {
   };
 }
 
-/**
- * Over rpc.invoke the event is the remote client's context, which can say when
- * its connection closes; an Electron IpcMainInvokeEvent cannot, and its
- * renderer dies with the app anyway.
- */
 function watchHolderOf(event: unknown): WatchHolder | undefined {
   const onClose = (event as { onClose?: unknown } | null)?.onClose;
   return typeof onClose === 'function' ? (event as WatchHolder) : undefined;
 }
 
-/**
- * Normalise the cost-history filter params every Cost Report channel accepts.
- *
- * Accepts both camelCase and snake_case, per the repo's handler-adapter rule.
- * The multi-select fields arrive as either a string or an array of strings and
- * are passed through as-is; the service's whereClause() expands an array to
- * `IN (...)` and treats an empty one as "no filter".
- */
 function costFilters(p: Record<string, unknown> | undefined): Record<string, unknown> {
   return {
     startDate: p?.startDate ?? p?.start_date,
@@ -426,20 +349,10 @@ function costFilters(p: Record<string, unknown> | undefined): Record<string, unk
   };
 }
 
-/**
- * Build and return the full channel → handler map.
- * When a service is not provided, the handler resolves with `null` so the
- * renderer gets a defined (but empty) response rather than a blocked channel.
- */
 export function getHandlerMap(services: Services = {}): Record<string, HandlerFn> {
   const { brain, brainMcp, accounts, claude, sessions, cost, modelPricing, usage, rateLimits, usageRunner, claudeBinary, mcp, slashCommands, sessionsSummary, logging, database, proxy, permissionsIO, models, commands, gitWatcher, branchColors, projectRepos, repoAliases, gitBranches, gitDiff, lima, filesystem, oneShotTerminal, codexAuth, claudeAuth, codexSessionWalker, accountIdentity, allowRawSql } = services;
 
-  // Positive account-ownership guard for config-editing channels. A non-empty
-  // configDir supplied by the renderer must belong to a known account, so a
-  // stale tab or a wrong account-dropdown selection can't write MCP servers,
-  // hooks, permission rules, or settings into some *other* account's global
-  // config dir. Enforced positively (membership) on top of the services' own
-  // negative guard (reject empty configDir / no ~/.claude default).
+  // A renderer-supplied configDir must belong to a known account, so a stale tab can't write into another account's config.
   const normalizeDir = (dir: string): string => dir.replace(/\/+$/, '');
   function assertOwnedConfigDir(configDir: unknown): void {
     if (typeof configDir !== 'string' || configDir.length === 0) return;
@@ -447,9 +360,8 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     try {
       known = accounts?.knownConfigDirs?.() ?? [];
     } catch {
-      return; // accounts unavailable — fall back to the service-layer guard
+      return;
     }
-    // First-run / no accounts configured yet: nothing to scope against.
     if (known.length === 0) return;
     const set = new Set(known.map(normalizeDir));
     if (!set.has(normalizeDir(configDir))) {
@@ -458,13 +370,9 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
   }
 
   const map: Record<string, HandlerFn> = {
-    // Spread first so an existing channel would win a name collision — a
-    // safety property, since the `brain_` prefix should make collisions
-    // impossible and a silent override of an existing channel would be far
-    // worse than a duplicated Brain one.
+    // Spread first so an existing channel wins any name collision.
     ...createBrainHandlers(brain, brainMcp),
 
-    // ── Accounts ──────────────────────────────────────────────────────────────
     list_accounts: wrap(() => accounts?.list() ?? null),
     create_account: wrapWith((p: Record<string, unknown>) => accounts?.create(p) ?? null),
     update_account: wrapWith((p: Record<string, unknown>) => accounts?.update(p?.id, p) ?? null),
@@ -480,7 +388,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     scan_for_new_accounts: wrap(() => accounts?.scanForNewAccounts() ?? null),
     explain_account_resolution: wrapWith((p: Record<string, unknown>) => accounts?.explainResolution((p?.projectPath ?? p?.project_path) as string, p?.engine as string | undefined) ?? null),
 
-    // ── Claude ────────────────────────────────────────────────────────────────
     list_projects: wrapWith((p: Record<string, unknown>) => claude?.listProjects(p?.config_dir as string | undefined) ?? null),
     create_project: wrapWith((p: Record<string, unknown>) => claude?.createProject(p) ?? null),
     get_project_sessions: wrapWith((p: Record<string, unknown>) => claude?.getProjectSessions((p?.projectId ?? p?.project_id) as string, (p?.projectPath ?? p?.project_path) as string | undefined) ?? null),
@@ -538,8 +445,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const scope = (p?.scope as string) || 'user';
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
       const projectPath = (p?.projectPath ?? p?.project_path) as string | undefined;
-      // Project-scope hooks write under projectPath, not an account dir, so only
-      // guard configDir when it's the user/local account-global target.
+      // Project-scope hooks write under projectPath, so only account-global targets are guarded.
       if (scope !== 'project') assertOwnedConfigDir(configDir);
       const hooks = p?.hooks ?? p?.config ?? p;
       return claude?.updateHooksConfig(scope, hooks, { configDir, projectPath }) ?? null;
@@ -552,11 +458,9 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }),
     get_cli_usage: wrapWith((p: Record<string, unknown>) => claude?.getCliUsage((p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
 
-    // ── Sessions ──────────────────────────────────────────────────────────────
     session_respond_elicitation: wrapWith((p: Record<string, unknown>) => sessions?.respondElicitation((p?.tabId ?? p?.tab_id) as string, (p?.action) as string, p?.content as Record<string, unknown> | undefined, (p?.requestId ?? p?.request_id) as string | undefined) ?? null),
     session_get_info: wrapWith((p: Record<string, unknown>) => sessions?.getInfo((p?.tabId ?? p?.session_id) as string) ?? null),
     session_get_health: wrapWith((p: Record<string, unknown>) => sessions?.getHealth((p?.tabId ?? p?.session_id) as string) ?? { alive: false, sessionId: null, sessionStatus: 'stopped', turn: { status: 'idle', since: null }, launchPermissionMode: null, permissionMode: null }),
-    // Wave 2 — Query-method passthroughs
     session_set_model: wrapWith((p: Record<string, unknown>) => sessions?.setModel((p?.tabId ?? p?.session_id) as string, p?.model as string | undefined) ?? null),
     session_set_title: wrapWith((p: Record<string, unknown>) => sessions?.setTitle((p?.tabId ?? p?.session_id) as string, (p?.title ?? '') as string) ?? null),
     session_side_chat_ask: wrapWith((p: Record<string, unknown>) => sessions?.askSideQuestion((p?.tabId ?? p?.tab_id) as string, (p?.question ?? '') as string) ?? { ok: false, error: 'No live session' }),
@@ -587,7 +491,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       sessionId: (p?.sessionId ?? p?.session_id) as string,
     }) ?? null),
 
-    // ── Session Cost ─────────────────────────────────────────────────────────
     session_cost_get: wrapWith((p: Record<string, unknown>) => cost?.get({
       configDir: (p?.configDir ?? p?.config_dir) as string,
       projectPath: (p?.projectPath ?? p?.project_path) as string,
@@ -611,9 +514,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_cost_sessions: wrapWith((p: Record<string, unknown>) => cost?.sessions(costFilters(p)) ?? []),
     session_cost_rescan: wrapWith(() => cost?.rescan() ?? null),
 
-    // Cost Report page queries. All share costFilters(), so a filter added to
-    // the filter bar reaches every panel at once rather than needing eleven
-    // parallel edits.
     session_cost_history_by_model: wrapWith((p: Record<string, unknown>) => cost?.historyByModel({
       ...costFilters(p),
       groupBy: p?.groupBy ?? p?.group_by,
@@ -628,11 +528,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     session_cost_unpriced: wrapWith((p: Record<string, unknown>) => cost?.unpriced(costFilters(p)) ?? []),
     session_cost_facets: wrapWith((p: Record<string, unknown>) => cost?.facets(costFilters(p)) ?? null),
 
-    // ── Model pricing (user-editable rate + display table) ─────────────────
-    // Writes are validated in the service and THROW on bad input rather than
-    // coercing: a clamped color slot or a dropped bad date is a wrong number
-    // that looks like a right one, which is the one thing a cost report cannot
-    // afford. `wrapWith` surfaces the message to the editor.
+    // Pricing writes throw on bad input, never coerce: a wrong number that looks right is the worst cost-report bug.
     model_pricing_list: wrapWith(() => modelPricing?.list() ?? []),
     model_pricing_shipped: wrapWith(() => modelPricing?.shipped() ?? []),
     model_pricing_upsert: wrapWith((p: Record<string, unknown>) => modelPricing?.upsert({
@@ -653,7 +549,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return null;
     }),
 
-    // ── Standalone model list (no active session required) ─────────────────
     list_supported_models: wrapWith((p: Record<string, unknown>) => models?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),
     refresh_supported_models: wrapWith((p: Record<string, unknown>) => {
       const configDir = (p?.configDir ?? p?.config_dir) as string;
@@ -663,10 +558,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }),
     list_supported_commands: wrapWith((p: Record<string, unknown>) => commands?.listSupported((p?.configDir ?? p?.config_dir) as string) ?? []),
 
-    // ── Session Permissions ────────────────────────────────────────────────
-    // The CLI's own view of the live session's rules, used to annotate the
-    // file-derived panel. Returns null on a pre-2.1.269 CLI — the caller
-    // keeps showing the file view in that case.
+    // Null on a CLI too old to answer; the caller keeps the file view.
     session_list_permission_rules: wrapWith((p: Record<string, unknown>) => {
       const tabId = (p?.tabId ?? p?.session_id) as string | undefined;
       if (!tabId) return null;
@@ -684,8 +576,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const projectPath = (p?.projectPath ?? p?.project_path) as string | undefined;
       const tabId = (p?.tabId ?? p?.session_id) as string | undefined;
 
-      // User/local scope writes a permission rule into the account-global
-      // settings; make sure the configDir belongs to a known account.
       if (p?.scope !== 'project') assertOwnedConfigDir(configDir);
 
       permissionsIO?.updatePermission({
@@ -697,19 +587,12 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
         rule: p?.rule as string,
       });
 
-      // Mirror the on-disk change into the live CLI session so the user
-      // doesn't get re-prompted for a rule they just allowed. CLI 2.1.284
-      // does re-read a settings file edited mid-session (probed 2026-09-28:
-      // a rule written to settings.local.json applied to the next call), but
-      // older builds loaded them only at start, and the push is cheap. It
-      // sends the full merged lists because apply_flag_settings REPLACES the
-      // flag layer's `permissions` rather than appending to it.
+      // apply_flag_settings REPLACES the flag layer's permissions, so send the full merged lists.
       if (tabId && configDir && sessions && permissionsIO) {
         try {
           const levels = permissionsIO.getPermissions(configDir, projectPath);
           const allow = Array.from(new Set(levels.flatMap((l) => l.allow)));
           const deny = Array.from(new Set(levels.flatMap((l) => l.deny)));
-          // Fire-and-forget — the service swallows its own errors.
           void sessions.applyPermissions(tabId, { allow, deny });
         } catch (err) {
           console.error('[handlers] applyPermissions push failed:', err);
@@ -720,14 +603,12 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }),
 
 
-    // ── Usage ─────────────────────────────────────────────────────────────────
     get_usage_stats: wrapWith((p: Record<string, unknown>) => usage?.getStats(p) ?? null),
     get_usage_by_date_range: wrapWith((p: Record<string, unknown>) => usage?.getByDateRange(p) ?? null),
     get_session_stats: wrapWith((p: Record<string, unknown>) => usage?.getSessionStats(p) ?? null),
     get_usage_details: wrapWith((p: Record<string, unknown>) => usage?.getDetails(p) ?? null),
     get_usage_by_account: wrapWith((p: Record<string, unknown>) => usage?.getStatsByAccount(p) ?? null),
 
-    // ── Rate Limits ───────────────────────────────────────────────────────────
     get_rate_limits: wrapWith((p: Record<string, unknown>) => {
       const accountName = (p?.accountName ?? p?.account_name) as string | undefined;
       if (accountName) return rateLimits?.getSnapshotsByAccount(accountName) ?? [];
@@ -736,7 +617,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     get_rate_limit_settings: wrap(() => rateLimits?.getSettings() ?? null),
     update_rate_limit_settings: wrapWith((p: Record<string, unknown>) => rateLimits?.updateSettings(p) ?? null),
 
-    // ── Usage CLI Runner ──────────────────────────────────────────────────────
     usage_run_cli: wrapWith((p: Record<string, unknown>) =>
       usageRunner?.run((p?.accountName ?? p?.account_name) as string) ?? null,
     ),
@@ -759,7 +639,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       accountIdentity?.loginExpiry((p?.configDir ?? p?.config_dir) as string, { refresh: p?.refresh === true }) ?? null,
     ),
 
-    // ── Claude Binary ─────────────────────────────────────────────────────────
     get_claude_binary_path: wrap(() => claudeBinary?.getPath() ?? null),
     set_claude_binary_path: wrapWith((p: Record<string, unknown>) => claudeBinary?.setPath(p?.path as string) ?? null),
     list_claude_installations: wrap(() => claudeBinary?.listInstallations() ?? null),
@@ -768,7 +647,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     claude_cli_claim_update_notice: wrapWith((p: Record<string, unknown>) =>
       database ? claimCliUpdateNotice(database, String((p?.version as string | number | undefined) ?? '')) : false),
 
-    // ── MCP ───────────────────────────────────────────────────────────────────
     mcp_add: wrapWith((p: Record<string, unknown>) => { assertOwnedConfigDir(p?.configDir ?? p?.config_dir); return mcp?.add(p) ?? null; }),
     mcp_list: wrapWith((p: Record<string, unknown>) => mcp?.list((p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
     mcp_get: wrapWith((p: Record<string, unknown>) => mcp?.get(p?.name as string, (p?.configDir ?? p?.config_dir) as string | undefined) ?? null),
@@ -782,7 +660,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     mcp_read_project_config: wrapWith((p: Record<string, unknown>) => mcp?.readProjectConfig((p?.projectPath ?? p?.project_path) as string) ?? null),
     mcp_save_project_config: wrapWith((p: Record<string, unknown>) => mcp?.saveProjectConfig((p?.projectPath ?? p?.project_path) as string, p?.config) ?? null),
 
-    // ── Slash Commands ────────────────────────────────────────────────────────
     slash_commands_list: wrapWith((p: Record<string, unknown>) => slashCommands?.list(
       (p?.projectPath ?? p?.project_path) as string | undefined,
       (p?.configDir ?? p?.config_dir) as string | undefined,
@@ -801,7 +678,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       ) ?? null;
     }),
 
-    // ── Session Summaries ─────────────────────────────────────────────────────
     summary_get: wrapWith((p: Record<string, unknown>) => sessionsSummary?.getSummary(
       (p?.sessionUuid ?? p?.session_uuid) as string,
       (p?.projectPath ?? p?.project_path) as string,
@@ -812,18 +688,13 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       (p?.projectPath ?? p?.project_path) as string,
       ((p?.configDir ?? p?.config_dir) as string | null | undefined) ?? null,
     ) ?? null),
-    // Snapshot of session uuids whose model call is currently in flight.
-    // SessionList queries this on mount to seed the spinner state for
-    // background auto-on-close runs that started before it subscribed.
     summary_generating_now: wrap(() => sessionsSummary?.getGeneratingSessionUuids() ?? []),
 
-    // ── Logging ───────────────────────────────────────────────────────────────
     log_write_batch: wrapWith((p: Record<string, unknown>) => logging?.writeBatch(p?.entries) ?? null),
     log_query: wrapWith((p: Record<string, unknown>) => logging?.query(p) ?? null),
     log_count: wrapWith((p: Record<string, unknown>) => logging?.count(p) ?? null),
     log_prune: wrapWith((p: Record<string, unknown>) => logging?.prune(p?.olderThan as string | undefined) ?? null),
 
-    // ── Storage (database) ────────────────────────────────────────────────────
     storage_list_tables: wrap(() => {
       if (!database) return null;
       const rows = database.raw.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
@@ -840,7 +711,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
 
       try {
         assertSafeIdentifier(table);
-        // Get columns — return full PRAGMA info so the renderer gets pk, type_name, etc.
         const colInfo = database.raw.prepare(`PRAGMA table_info("${table}")`).all() as {
           cid: number; name: string; type: string; notnull: number; dflt_value: string | null; pk: number;
         }[];
@@ -853,7 +723,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
           pk: !!c.pk,
         }));
 
-        // Build query
         let whereClause = '';
         const params: unknown[] = [];
         if (searchQuery) {
@@ -909,9 +778,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
     }),
     storage_execute_sql: wrapWith((p: Record<string, unknown>) => {
       if (!database) return null;
-      // Dev-only escape hatch. Only the dev daemon sets allowRawSql (and the
-      // rpc allowlist denies it unless server.json allows it), so rendered
-      // tool/MCP output can never drive raw SQL in a shipped app.
       if (!allowRawSql) {
         throw new Error('Raw SQL execution is disabled in this build');
       }
@@ -919,30 +785,25 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       if (!sql) return null;
       return database.raw.prepare(sql).all();
     }),
-    storage_reset_database: wrap(() => null), // intentionally noop until implemented
+    storage_reset_database: wrap(() => null),
     get_setting: wrapWith((p: Record<string, unknown>) => database?.getSetting(p?.key as string) ?? null),
     save_setting: wrapWith((p: Record<string, unknown>) => {
       database?.saveSetting(p?.key as string, p?.value as string);
       return null;
     }),
 
-    // ── Git ──────────────────────────────────────────────────────────────────
     get_git_branch: wrapWith(async (p: Record<string, unknown>) => {
       const projectPath = (p?.projectPath ?? p?.project_path) as string;
       if (!projectPath) return null;
       try {
-        // Async with a timeout: a sync spawn here froze every session's
-        // stream, and with no timeout a wedged git (a stale index.lock, a
-        // network mount) froze it indefinitely.
+        // Async with a timeout: a sync spawn froze every session's stream, and a wedged git froze it forever.
         return (await execFileText(gitBinary(), ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: projectPath, timeout: 5000 })).trim();
       } catch { return null; }
     }),
 
-    // ── Proxy ─────────────────────────────────────────────────────────────────
     get_proxy_settings: wrap(() => proxy?.getSettings() ?? null),
     save_proxy_settings: wrapWith((p: Record<string, unknown>) => proxy?.saveSettings(p) ?? null),
 
-    // ── Git watcher ──────────────────────────────────────────────────────────
     list_git_worktrees: wrapWith(async (p: Record<string, unknown>) => {
       const projectPath = (p?.projectPath ?? p?.project_path) as string;
       if (!projectPath || !gitWatcher) return [];
@@ -971,7 +832,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return gitWatcher.reconnectSession(watchId, watchHolderOf(event));
     }),
 
-    // ── Branch Colors ─────────────────────────────────────────────────────────
     branch_colors_list: wrapWith((p: Record<string, unknown>) =>
       branchColors?.listForRepo((p?.repoPath ?? p?.repo_path) as string) ?? [],
     ),
@@ -986,7 +846,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       branchColors?.delete(p?.id as number) ?? false,
     ),
 
-    // ── Repo aliases (short display names, per repo) ─────────────────────────
     repo_aliases_list: wrapWith((p: Record<string, unknown>) => {
       const paths = (p?.repoPaths ?? p?.repo_paths);
       return repoAliases?.list(Array.isArray(paths) ? paths.filter((x): x is string => typeof x === 'string') : []) ?? {};
@@ -996,7 +855,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return null;
     }),
 
-    // ── Project repos (which git repos a project's sessions watch) ───────────
     get_project_repos: wrapWith(async (p: Record<string, unknown>) =>
       (await projectRepos?.get((p?.projectPath ?? p?.project_path) as string)) ?? null,
     ),
@@ -1020,12 +878,10 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return null;
     }),
 
-    // ── Git Branches ──────────────────────────────────────────────────────────
     git_list_branches: wrapWith((p: Record<string, unknown>) =>
       gitBranches?.list((p?.projectPath ?? p?.project_path) as string) ?? [],
     ),
 
-    // ── Git Diff (working-tree panel) ─────────────────────────────────────────
     git_list_changed_files: wrapWith(async (p: Record<string, unknown>) => {
       const projectPath = (p?.projectPath ?? p?.project_path) as string;
       if (!projectPath || !gitDiff) return [];
@@ -1035,8 +891,7 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       const projectPath = (p?.projectPath ?? p?.project_path) as string;
       const filePath = (p?.filePath ?? p?.file_path) as string;
       if (!projectPath || !filePath || !gitDiff) return '';
-      // A non-numeric contextLines is dropped rather than coerced: `-UNaN`
-      // makes git fail the whole read, and the sane fallback is its default.
+      // Drop a non-numeric contextLines: `-UNaN` fails the whole git read.
       const rawContext = p?.contextLines ?? p?.context_lines;
       const contextLines = typeof rawContext === 'number' && Number.isFinite(rawContext)
         ? rawContext
@@ -1048,14 +903,11 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
           contextLines === undefined ? {} : { contextLines },
         );
       } catch {
-        // readFileDiff throws for a path that escapes the project. This backs
-        // an auxiliary panel; an empty patch is the honest render, and an
-        // unhandled IPC rejection in the renderer is not.
+        // Never reject: this backs an auxiliary panel, and an empty patch is the honest render.
         return '';
       }
     }),
 
-    // ── Lima (VM viewer) ──────────────────────────────────────────────────────
     lima_check_installed: wrap(async () => {
       if (!lima) return { installed: false };
       return { installed: await lima.isInstalled() };
@@ -1093,7 +945,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return null;
     }),
 
-    // ── Filesystem (FilePicker @-mention browser) ─────────────────────────────
     list_directory_contents: wrapWith((p: Record<string, unknown>) => {
       const directoryPath = (p?.directoryPath ?? p?.directory_path) as string;
       if (!directoryPath) throw new Error('directoryPath is required');
@@ -1105,15 +956,12 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       if (!basePath) throw new Error('basePath is required');
       return filesystem?.searchFiles(basePath, query) ?? [];
     }),
-    // New Project: makes the folder the renderer's save dialog named.
     create_directory: wrapWith((p: Record<string, unknown>) => {
       const directoryPath = (p?.directoryPath ?? p?.directory_path) as string;
       if (!directoryPath) throw new Error('directoryPath is required');
       if (!filesystem) throw new Error('filesystem service unavailable');
       return filesystem.createDirectory(directoryPath);
     }),
-    // A file dropped onto the chat with no path of its own: keep a copy and
-    // hand back where it went, for the prompt to @-mention.
     save_dropped_file: wrapWith((p: Record<string, unknown>) => {
       const name = p?.name as string;
       const data = p?.data as string;
@@ -1134,7 +982,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       }
     }),
 
-    // ── One-shot terminal (shared pty+xterm modal) ────────────────────────────
     one_shot_terminal_spawn: wrapWith((p: Record<string, unknown>) => {
       const binary = p?.binary as string;
       const args = (p?.args as string[]) ?? [];
@@ -1167,7 +1014,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return null;
     }),
 
-    // ── Codex auth ───────────────────────────────────────────────────────────
     codex_auth_status: wrapWith((p: Record<string, unknown>) => {
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
       if (!codexAuth || !configDir) return { authenticated: false };
@@ -1194,7 +1040,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return null;
     }),
 
-    // ── Claude auth ──────────────────────────────────────────────────────────
     claude_auth_begin: wrapWith((p: Record<string, unknown>) => {
       const configDir = (p?.configDir ?? p?.config_dir) as string | undefined;
       if (!configDir) throw new Error('claude_auth_begin: configDir is required');
@@ -1229,7 +1074,6 @@ export function getHandlerMap(services: Services = {}): Record<string, HandlerFn
       return null;
     }),
 
-    // ── Codex sessions (on-disk rollout discovery) ────────────────────────
     codex_session_list: wrap(() => codexSessionWalker?.listSessions() ?? []),
   };
 

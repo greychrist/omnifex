@@ -1,26 +1,5 @@
-/**
- * Per-session sequenced event log for the OmniFex Remote daemon.
- *
- * Owns the one thing the protocol promises about a session's pushes: `seq`
- * is monotonic per session, starts at 1, and covers `session.state`, `event`
- * and `permission.request` together — a `session.subscribe { fromSeq }`
- * replay restores a status change and a still-open permission prompt, not
- * just the transcript rows between them.
- *
- * The events live in a ring buffer (default 5,000) and nowhere else. It
- * serves the common reconnect — the iPad was backgrounded for a minute and
- * needs the tail. Anything the ring cannot answer (a reconnect that fell
- * further behind, a seq from before a daemon restart) is a gap, and a gap is
- * answered by the client reloading the transcript from the CLI's own JSONL,
- * which is what it does on every page load anyway.
- *
- * Events used to be appended to `<id>.events.jsonl` as well. Nothing read
- * that file except a replay past the ring and `history.get`, which no client
- * called; it grew to 1.1GB in its first 26 days, 62% of it streaming text
- * deltas the finished message supersedes. The CLI's transcript is the
- * history. Only `<id>.meta.json` is persisted: what a resume needs to
- * respawn the session.
- */
+// `seq` is per session and covers state, event and permission pushes, so a replay restores an open prompt.
+// Events live only in the ring; the CLI's transcript is the history. Only `<id>.meta.json` is persisted.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -33,21 +12,12 @@ export interface SessionMeta {
   configDir: string;
   agent: 'claude' | 'codex';
   title?: string;
-  /** The `session.create` options, kept so a resume can respawn the same way. */
   options: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
 
-/**
- * A push before the log has stamped it.
- *
- * Deliberately the loose shape rather than `Omit<SessionScopedPush, 'seq'>`:
- * the protocol schemas are zod loose objects, whose inferred type carries an
- * index signature, and `Omit` over an index signature collapses every known
- * key into `unknown`. The wire shape is still enforced — by
- * `ServerMessageSchema` in the transport, and by the bridge fixture test.
- */
+/** Loose on purpose: `Omit` over the zod loose schemas' index signature collapses every key to `unknown`. */
 export interface UnsequencedPush {
   type: SessionScopedPushType;
   sessionId: string;
@@ -55,34 +25,15 @@ export interface UnsequencedPush {
 }
 
 export interface SessionLog {
-  /**
-   * Bring a session into memory. With full meta this is a create; with only
-   * `{ sessionId }` it loads the meta on disk (a resume after restart) and
-   * throws if there is none. Idempotent for an already-open session. The
-   * sequence starts at 1 on every daemon run.
-   */
   open(meta: SessionMeta | { sessionId: string }): SessionMeta;
-  /** Stamp `seq` and keep it in the ring. Throws if not open. */
   append(push: UnsequencedPush): SessionScopedPush;
   lastSeq(sessionId: string): number;
-  /**
-   * Every push with `seq > fromSeq`, oldest first — or null when the ring
-   * cannot answer: `fromSeq` is older than the oldest push it still holds, or
-   * newer than the last one (a seq from before a daemon restart). Null means
-   * the client must reload the transcript from the CLI's JSONL.
-   */
+  /** Null when the ring cannot answer; the client must then reload from the CLI's JSONL. */
   replay(sessionId: string, fromSeq: number): SessionScopedPush[] | null;
   meta(sessionId: string): SessionMeta | null;
   updateMeta(sessionId: string, patch: Partial<Omit<SessionMeta, 'sessionId'>>): SessionMeta;
-  /**
-   * Merge into the persisted start options — how a mid-session switch (the
-   * permission mode) survives a resume, which respawns from these. A session
-   * the log does not know is ignored: the switch already happened live.
-   */
   updateOptions(sessionId: string, patch: Record<string, unknown>): void;
-  /** Every session with a meta file on disk, open or not. */
   list(): SessionMeta[];
-  /** Delete the session's meta and forget it. */
   remove(sessionId: string): void;
   isOpen(sessionId: string): boolean;
 }
@@ -100,13 +51,7 @@ export function createSessionLog(opts: { root: string; ringSize?: number }): Ses
   const open = new Map<string, OpenSession>();
 
   const metaPath = (id: string) => join(opts.root, `${id}.meta.json`);
-  /**
-   * Every persisted meta, by session id — built from disk on the first
-   * `list()`, then kept current by `writeMeta` and `remove`, the only paths
-   * that touch the files. `/healthz` lists twice per 5s poll and the
-   * permission-timeout poll once a second; re-reading 400+ files each time
-   * blocked the event loop every live session streams on.
-   */
+  /** Cached: /healthz and the permission poll list constantly, and re-reading 400+ files blocked the event loop. */
   let index: Map<string, SessionMeta> | null = null;
 
   function readMeta(id: string): SessionMeta | null {

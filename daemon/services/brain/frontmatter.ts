@@ -2,11 +2,7 @@ import { load, dump } from 'js-yaml';
 import { z } from 'zod';
 import { NOTE_TYPES, type ParsedNote } from './types';
 
-/**
- * Thrown when a note cannot be read. Callers isolate the failure to the single
- * note rather than failing a whole scan — a hand-edited file must never take
- * the vault down.
- */
+/** Callers isolate this to one note: a hand-edited file must never fail a whole scan. */
 export class NoteParseError extends Error {
   constructor(message: string) {
     super(message);
@@ -25,7 +21,6 @@ const FrontmatterSchema = z.object({
   sources: z.array(z.string()).default([]),
 });
 
-/** Matches a leading `---` fence and captures the YAML plus the remaining body. */
 const FENCE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
 export function parseNote(raw: string): ParsedNote {
@@ -41,8 +36,6 @@ export function parseNote(raw: string): ParsedNote {
     throw new NoteParseError(`invalid YAML frontmatter: ${(err as Error).message}`);
   }
 
-  // `project:` with no value parses as null; treat that as absent rather than
-  // letting a null reach the schema.
   if (loaded && typeof loaded === 'object') {
     for (const [k, v] of Object.entries(loaded as Record<string, unknown>)) {
       if (v === null) Reflect.deleteProperty(loaded, k);
@@ -69,10 +62,7 @@ export function serializeNote(note: ParsedNote): string {
   if (note.frontmatter.curated_at !== undefined) fm.curated_at = note.frontmatter.curated_at;
   fm.sources = note.frontmatter.sources;
 
-  // flowLevel: 1 keeps arrays on one line ([a, b]) so notes stay readable in
-  // Obsidian. lineWidth: -1 disables wrapping, which would otherwise reflow
-  // long alias lists differently on each write and break byte-identical
-  // idempotency.
+  // lineWidth -1: wrapping would reflow aliases per write and break byte-identical idempotency.
   const yaml = dump(fm, { flowLevel: 1, lineWidth: -1, quotingType: '"' });
   return `---\n${yaml}---\n${note.body}`;
 }

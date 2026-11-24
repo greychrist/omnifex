@@ -1,83 +1,26 @@
-// Sessions module — live JSONL tail for closure carriers that the CLI
-// stream-json output does not yield.
-//
-// Background: Claude Code's CLI emits two envelope types that complete a
-// `run_in_background:true` Bash dispatch — `queue-operation` enqueue with
-// a `<task-notification>` XML body, and `attachment.queued_command` with
-// the same XML in `prompt`. Neither type is a member of the CLI's
-// `CliMessage` discriminated union, so the renderer's normal subscription
-// to `agent-output:<tabId>` never sees them in live mode. Without those
-// carriers, background dispatches stay in `running` forever (the user-
-// visible bug we're fixing — see the design spec under
-// `docs/superpowers/specs/2026-05-11-subagent-tracking-refactor-design.md`).
-//
-// The CLI does persist these envelopes to the session JSONL on disk, so we
-// tail that file and forward only the qualifying carriers on a separate
-// IPC channel (`claude-output-extra:<tabId>`). All other line types are
-// ignored — the CLI stream remains the source of truth for them.
-//
-// This module is renderer-process-agnostic. It exposes a small handle that
-// the runtime starts when a session's `sessionId` is known and stops on
-// close / error / handle replacement. Path resolution and IPC wiring live
-// in `runtime.ts`.
+// The CLI writes closure carriers (`queue-operation`, `attachment.queued_command`) to the JSONL but never streams them;
+// without them background dispatches stay `running` forever.
 
 import fs from 'node:fs';
 import { isRequestReplayLine } from '../util/request-replay';
 
 export interface CreateJsonlTailArgs {
-  /** Absolute path to the JSONL file to watch. Need not exist yet — the
-   *  tail will poll for its appearance. */
   jsonlPath: string;
-  /** Called for each forwarded line. Already-parsed JSON; the caller does
-   *  not need to JSON.parse. */
   onMessage: (msg: unknown) => void;
-  /** Called for unexpected errors. Failures are otherwise silent (the tail
-   *  is best-effort — losing the carrier means a row stays `running`,
-   *  which is annoying but not data-corrupting). */
   onError?: (err: unknown) => void;
-  /**
-   * Which parsed lines to forward. Defaults to `'closure-carriers'` so
-   * existing stream-json call sites keep their narrow surface.
-   * - `'closure-carriers'`: only `queue-operation`/`attachment` lines that
-   *   carry `<task-notification>` XML (today's behavior).
-   * - `'all'`: every parsed line, regardless of type. The transcript source
-   *   for a live session (see runtime.ts ensureJsonlTail).
-   */
   filter?: 'closure-carriers' | 'all';
-  /**
-   * Finds the file again once it is no longer at `jsonlPath`, or null. The
-   * CLI moves a live session's transcript when the session enters a worktree
-   * (`EnterWorktree`): same file, new project directory, records appended.
-   * Without this the tail polled the old path forever and the transcript
-   * went blind mid-session.
-   */
+  // The CLI moves a live transcript when the session enters a worktree (`EnterWorktree`).
   locate?: () => string | null;
 }
 
 export interface JsonlTailHandle {
-  /** Release the watcher and any pending timers. Idempotent. */
   stop: () => void;
 }
 
-// Polling cadence for the active tail. `fs.watch` is unreliable on macOS
-// (and inconsistent across platforms) when watching individual files;
-// `fs.watchFile` uses stat polling which is slower per change but works
-// the same everywhere. 100ms is well under the renderer-visible threshold
-// and the cost is one `stat` per session per tick — negligible.
+// Stat polling, not `fs.watch`: unreliable on macOS for single files and under load.
 const POLL_INTERVAL_MS = 100;
-// Poll cadence while the JSONL doesn't exist yet. The CLI typically
-// creates the file within ~200ms of session start; 200ms hits a balance
-// between snappiness and idle CPU.
 const ENOENT_POLL_MS = 200;
 
-/**
- * True for messages we want to forward to the renderer. Right now: just
- * `queue-operation` enqueues carrying `<task-notification>` XML, and
- * `attachment.queued_command` with the same. Tightening this filter (vs
- * forwarding everything) keeps `claude-output-extra:<tabId>` semantically
- * narrow — the renderer can assume any message it receives on that channel
- * is a closure carrier.
- */
 export function isClosureCarrier(parsed: unknown): boolean {
   if (!parsed || typeof parsed !== 'object') return false;
   const m = parsed as Record<string, unknown>;
@@ -101,9 +44,7 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
   const { onMessage, onError, filter = 'closure-carriers', locate } = args;
   let jsonlPath = args.jsonlPath;
   let offset = 0;
-  // Raw bytes after the last newline. Kept as a Buffer (not a string) so a
-  // multibyte UTF-8 codepoint straddling a read boundary survives intact —
-  // decoding only happens once a full line's bytes are present.
+  // Bytes, not a string: a multibyte codepoint can straddle a read boundary.
   let pendingTail: Buffer = Buffer.alloc(0);
   const NEWLINE = 0x0a;
   let drainPoll: NodeJS.Timeout | null = null;
@@ -120,7 +61,6 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
 
   const shouldForward = filter === 'all' ? () => true : isClosureCarrier;
 
-  /** Point at the file's new path, if it moved. True when it did. */
   const followMove = (): boolean => {
     let moved: string | null = null;
     try {
@@ -139,13 +79,11 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
     try {
       stat = fs.statSync(jsonlPath);
     } catch (err) {
-      // Moved: a rename keeps every byte already read, so the offset and any
-      // partial line carry over to the new path.
+      // A rename keeps every byte already read, so the offset and partial line carry over.
       if (followMove()) {
         drain();
         return;
       }
-      // File disappeared (rotation) — reset and wait for it to reappear.
       offset = 0;
       pendingTail = Buffer.alloc(0);
       stopDrainPoll();
@@ -153,7 +91,6 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
       safeFire(err);
       return;
     }
-    // External truncation / rotation: size shrank.
     if (stat.size < offset) {
       offset = 0;
       pendingTail = Buffer.alloc(0);
@@ -181,9 +118,6 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
       }
     }
     offset = stat.size;
-    // Work on raw bytes so a multibyte codepoint split across reads is never
-    // decoded until it's whole. Split on the newline byte; everything after the
-    // final newline is held (as bytes) until the next drain.
     const combined = pendingTail.length ? Buffer.concat([pendingTail, buf]) : buf;
     let lineStart = 0;
     let nl = combined.indexOf(NEWLINE, lineStart);
@@ -216,17 +150,7 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
     }
   };
 
-  // When the file already exists at tail-creation time, start reading from
-  // current EOF (historical content is loaded via loadSessionHistory). When
-  // the file appears later (ENOENT path), forward everything from byte 0 —
-  // those lines genuinely arrived during the tail's lifetime.
-  //
-  // Internal polling (setInterval + statSync) rather than fs.watchFile /
-  // fs.watch: the OS-level watchers are unreliable under heavy parallel
-  // load (Node's coordinator can silently coalesce or drop events when
-  // many file handles are active). Our cost is one stat() per session per
-  // 100ms — completely negligible — and the behaviour is deterministic
-  // across platforms and load levels.
+  // An existing file starts at EOF (history loads separately); one that appears later is forwarded from byte 0.
   const startWatching = (skipExistingContent: boolean): void => {
     if (stopped || drainPoll) return;
     if (skipExistingContent) {
@@ -259,15 +183,12 @@ export function createJsonlTail(args: CreateJsonlTailArgs): JsonlTailHandle {
       if (fs.existsSync(jsonlPath)) {
         if (waitPoll) clearInterval(waitPoll);
         waitPoll = null;
-        // File came into being during our lifetime — its contents are live
-        // appends as far as we're concerned, so forward from byte 0.
         startWatching(false);
         drain();
       }
     }, ENOENT_POLL_MS);
   };
 
-  // Kick things off. A session resumed after a move starts at the new path.
   if (fs.existsSync(jsonlPath) || followMove()) {
     startWatching(true);
   } else {

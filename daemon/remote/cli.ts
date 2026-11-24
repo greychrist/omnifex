@@ -1,11 +1,3 @@
-/**
- * `omnifex-server <start|stop|status|ensure|restart|config|help>`
- * — argument parsing and the subcommands that do not need the daemon itself.
- *
- * Kept apart from the process entry (`daemon/omnifex-server.ts`) so the
- * parsing and the lifecycle commands can be unit-tested without spawning
- * anything.
- */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { get as httpGet } from 'node:http';
 import { homedir } from 'node:os';
@@ -65,11 +57,7 @@ Env:    OMNIFEX_STATE_DIR (default ~/.omnifex),
         OMNIFEX_USER_DATA_DIR (default ~/Library/Application Support/OmniFex)
 `;
 
-/**
- * The environment a lifecycle command acts in. `--dev` moves it onto the dev
- * instance — the overlay is applied here, to the command's own copy, never to
- * `process.env` (see dev-instance.ts for what leaking it once cost).
- */
+/** `--dev` applies the overlay to this copy, never to `process.env`. */
 export function lifecycleEnv(env: Env, opts: { dev: boolean }, home: string = homedir()): Env {
   return opts.dev ? { ...env, ...devInstanceEnv(env, home) } : env;
 }
@@ -82,11 +70,6 @@ export interface StopCommandDeps {
   out(s: string): void;
 }
 
-/**
- * `stop`: signal the daemon the way `daemon-control` does, then wait for the
- * pid to go. The app runs this on quit, and its updater right before it swaps
- * the bundle the daemon is running from.
- */
 export async function stopCommand(
   config: ServerConfig,
   control: { stop(config: ServerConfig): Promise<boolean> },
@@ -119,12 +102,7 @@ export function writePidFile(config: ServerConfig, pid: number = process.pid): v
   writeFileSync(pidFilePath(config), `${pid}\n`, 'utf8');
 }
 
-/**
- * Remove the pid file — unless it now names another daemon. A daemon slow to
- * close can still be exiting after the app relaunched and a new daemon wrote
- * its pid; deleting that would make the next quit's `stop` find nothing.
- * `ownerPid` null means "whoever": a stale or unreadable file.
- */
+/** Spares a pid file that now names another daemon: a slow exit must not erase its successor's. */
 export function removePidFile(config: ServerConfig, ownerPid: number | null): void {
   const current = readPid(config);
   if (ownerPid !== null && current !== null && current !== ownerPid) return;
@@ -167,7 +145,6 @@ export function fetchHealth(config: ServerConfig): Promise<unknown> {
   });
 }
 
-/** `status`: exit 0 when the daemon answers. */
 export async function statusCommand(config: ServerConfig, json: boolean, out: (s: string) => void): Promise<number> {
   try {
     const health = await fetchHealth(config);

@@ -1,17 +1,4 @@
-/**
- * What each protocol method does, in terms of the existing sessions service.
- *
- * The daemon's one structural trick lives here: the protocol's `sessionId` IS
- * the sessions service's `tabId`. `lifecycle.start({ tabId: id,
- * resumeSessionId: id })` pins the CLI's session UUID to the id we chose, and
- * `hasTranscript()` picks `--resume` or `--session-id` from what is on disk.
- * From then on every `sendToRenderer('<prefix>:<tabId>', …)` the service
- * emits already names the session, and the bridge does the rest.
- *
- * Nothing here knows about sockets. A handler receives typed params and a
- * `ClientContext`, returns a result or throws a `ProtocolError`-shaped object;
- * `server.ts` turns those into responses.
- */
+// The protocol's `sessionId` IS the sessions service's `tabId`.
 /* eslint-disable @typescript-eslint/only-throw-error -- handlers throw ProtocolError-shaped plain objects by contract; server.ts's isProtocolError turns them into the wire error frame, and callers compare them as plain objects. */
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
@@ -29,7 +16,6 @@ import type { SessionBridge } from './bridge';
 import type { ProjectRegistry } from './projects';
 import type { SessionLog, SessionMeta } from './session-log';
 
-/** The IPC handler-map shape (`getHandlerMap()` in `daemon/ipc/handlers.ts`). */
 export type RpcHandler = (event: unknown, params?: Record<string, unknown>) => Promise<unknown>;
 
 export interface RemoteHandlerDeps {
@@ -37,7 +23,6 @@ export interface RemoteHandlerDeps {
   log: SessionLog;
   bridge: SessionBridge;
   projects: ProjectRegistry;
-  /** The clients subscribed to a session right now (the server's view). */
   viewers(sessionId: string): readonly ClientContext[];
   rpc: {
     handlers: Record<string, RpcHandler>;
@@ -50,7 +35,6 @@ export interface RemoteHandlerDeps {
 }
 
 export interface RemoteHandlers extends ProtocolHandlers {
-  /** Every known session as a list-view snapshot — also the `/api/sessions` body. */
   summaries(): SessionSummary[];
   summary(sessionId: string): SessionSummary | null;
 }
@@ -67,7 +51,6 @@ export function protocolError(code: ErrorCode, message: string): ProtocolError {
   return { code, message };
 }
 
-/** `[CODE] message` is how the IPC layer encodes a structured error. */
 const CODE_PREFIX_RE = /^\[([A-Z][A-Z0-9_]+)\]\s*/;
 const KNOWN_CODES = new Set<string>([
   'MALFORMED_MESSAGE',
@@ -80,13 +63,6 @@ const KNOWN_CODES = new Set<string>([
   'INTERNAL',
 ]);
 
-/**
- * Lift an IPC-era error into a protocol one. A recognised `[CODE]` prefix
- * keeps its code (`NO_ACCOUNT_FOR_PROJECT` is the one the renderer already
- * branches on); anything else is INTERNAL but keeps its message — the daemon
- * serves one user on their own tailnet, and "list_projects: ENOENT" is more
- * use to them than "rpc.invoke failed".
- */
 export function rpcErrorToProtocol(err: unknown): ProtocolError {
   const raw = err instanceof Error ? err.message : String(err);
   const m = CODE_PREFIX_RE.exec(raw);
@@ -115,20 +91,12 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       ...(typeof meta.options.permissionMode === 'string' && { permissionMode: meta.options.permissionMode }),
       lastSeq: deps.log.lastSeq(meta.sessionId),
       pendingPermissions: pending.length,
-      // A live process with a turn running (the session's own axis) or a
-      // permission waiting on the user. The launcher and the Daemon panel
-      // read this; a subscribed client gets `turn` on `session.state`.
       inFlight: active && (deps.sessions.getTurn(meta.sessionId).status === 'running' || pending.length > 0),
       createdAt: meta.createdAt,
       updatedAt: meta.updatedAt,
     };
   }
 
-  /**
-   * Where else a session is open: the kinds of the clients subscribed to it,
-   * other than the one asking. The asker knows its own tabs; what it cannot
-   * see is whether the app, a browser, or no one at all is looking.
-   */
   function openElsewhere(sessionId: string, ctx: ClientContext): ClientKind[] {
     const kinds = new Set(deps.viewers(sessionId).filter((c) => c !== ctx).map((c) => c.clientKind));
     return [...kinds].sort();
@@ -138,10 +106,7 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
     requireMeta(sessionId);
     const wasActive = deps.sessions.isActive(sessionId);
     deps.sessions.stop(sessionId);
-    // `stop()` deletes the handle before the engine exits, and runtime.ts
-    // then suppresses the exit's status event as "handle replaced". Nothing
-    // downstream would ever learn the session ended, so say it here — the
-    // same two frames the renderer expects on a user stop.
+    // `stop()` makes runtime.ts suppress the exit's status event, so announce the end here.
     if (wasActive) {
       deps.bridge.sendToRenderer(`session-status:${sessionId}`, { sessionStatus: 'stopped' });
       deps.bridge.sendToRenderer(`agent-complete:${sessionId}`);
@@ -160,21 +125,16 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
     return p;
   }
 
-  /** Build the service's start params from persisted meta. Shared by create and resume. */
   function startParams(meta: SessionMeta): SessionStartParams {
     const o = meta.options as Partial<SessionStartParams> & { model?: string; permissionMode?: string };
     return {
       tabId: meta.sessionId,
-      // Canonical for the same reason the registry is (see projects.ts):
-      // hasTranscript() must look where the CLI actually wrote.
+      // Canonical: hasTranscript() must look where the CLI actually wrote.
       projectPath: canonical(meta.projectPath),
       configDir: meta.configDir,
       // 'default' makes the engine omit --model; the CLI then obeys settings.json.
       model: o.model ?? 'default',
       permissionMode: o.permissionMode ?? 'default',
-      // Pin the CLI's UUID to ours. On a fresh session hasTranscript() is
-      // false and the engine spawns with --session-id; on a real resume it is
-      // true and the engine spawns with --resume.
       resumeSessionId: meta.sessionId,
       ...(o.effort && { effort: o.effort }),
       ...(o.manualAccountOverride !== undefined && { manualAccountOverride: o.manualAccountOverride }),
@@ -194,7 +154,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       capabilities: deps.capabilities ?? {},
     }),
 
-    // ---------------------------------------------------------------- projects
     'project.list': () => deps.projects.list(),
     'project.add': (p) => {
       try {
@@ -207,7 +166,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       if (!deps.projects.remove(p.projectId)) throw protocolError('NOT_FOUND', `no project ${p.projectId}`);
     },
 
-    // ---------------------------------------------------------------- sessions
     'session.list': (p, ctx) =>
       deps.log
         .list()
@@ -218,9 +176,7 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
     'session.create': async (p) => {
       const project = requireProject(p.projectId);
       const options = (p.options ?? {});
-      // The client may carry an explicit account choice (the desktop picker's
-      // manual override) as options.configDir; otherwise the project's
-      // resolved account is the only acceptable answer. No default account.
+      // An explicit client choice, else the resolved account; no default account.
       const configDir =
         (typeof options.configDir === 'string' && options.configDir) || project.configDir || null;
       if (!configDir) {
@@ -248,8 +204,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
 
     'session.resume': async (p) => {
       const meta = requireMeta(p.sessionId);
-      // Already live: re-attaching is a no-op on the process, the client
-      // just subscribes. Otherwise wake the persisted session.
       if (!deps.sessions.isActive(meta.sessionId)) {
         deps.bridge.forget(meta.sessionId);
         await start(meta);
@@ -273,13 +227,8 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       requireMeta(p.sessionId);
       ctx.subscribe(p.sessionId);
       const lastSeq = deps.log.lastSeq(p.sessionId);
-      // Omitted fromSeq means "live from here"; a number means "everything
-      // after it", which for a cold client is 0.
       if (p.fromSeq === undefined) return { fromSeq: lastSeq, lastSeq };
       const pushes = deps.log.replay(p.sessionId, p.fromSeq);
-      // The ring no longer reaches back that far, or the seq predates a
-      // daemon restart. Live from here; the client reloads the transcript
-      // from the CLI's JSONL.
       if (pushes === null) return { fromSeq: lastSeq, lastSeq, resync: true };
       for (const push of pushes) ctx.send(push);
       return { fromSeq: p.fromSeq, lastSeq };
@@ -289,7 +238,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       ctx.unsubscribe(p.sessionId);
     },
 
-    // ------------------------------------------------------------------- turns
     'turn.send': (p) => {
       requireMeta(p.sessionId);
       if (!deps.sessions.isActive(p.sessionId)) {
@@ -297,8 +245,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       }
       const blocks: Record<string, unknown>[] =
         typeof p.content === 'string' ? [{ type: 'text', text: p.content }] : [...p.content];
-      // Bytes become the same base64 image blocks the desktop composer
-      // builds; the CLI reads them off stdin, no file involved.
       for (const a of p.attachments ?? []) {
         blocks.push({
           type: 'image',
@@ -319,7 +265,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       await deps.sessions.interrupt(p.sessionId);
     },
 
-    // ------------------------------------------------------------- permissions
     'permission.respond': (p) => {
       requireMeta(p.sessionId);
       const ok = deps.sessions.respondPermission(
@@ -335,7 +280,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       deps.bridge.permissionAnswered(p.sessionId, p.permissionId);
     },
 
-    // --------------------------------------------------------------------- rpc
     'rpc.invoke': async (p, ctx) => {
       if (!deps.rpc.allow.has(p.channel)) {
         throw protocolError('CHANNEL_NOT_ALLOWED', `${p.channel} is not exposed over the protocol`);
@@ -343,8 +287,6 @@ export function createRemoteHandlers(deps: RemoteHandlerDeps): RemoteHandlers {
       const handler = deps.rpc.handlers[p.channel];
       if (!handler) throw protocolError('NOT_FOUND', `no handler for ${p.channel}`);
       try {
-        // The client context stands in for the IPC event: a handler whose
-        // state should die with the connection (the git watch) holds it.
         return await handler(ctx, p.params);
       } catch (err) {
         throw rpcErrorToProtocol(err);

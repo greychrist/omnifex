@@ -1,36 +1,10 @@
-/**
- * CodexAuthService — backend for Codex authentication.
- *
- * Codex stores its auth in `<CODEX_HOME>/auth.json`. With multi-account Codex
- * support every method is keyed by the account's `configDir` (its CODEX_HOME),
- * so two Codex accounts authenticate independently. There are two ways the
- * user can authenticate:
- *
- *  - OAuth: the user ran `codex login` and the resulting JSON holds an id
- *    token plus (sometimes) the account email. We surface that file as
- *    mode='oauth'.
- *  - API key: the user exported `OPENAI_API_KEY` in their shell. Codex picks
- *    it up at spawn time, no on-disk state. We surface that as mode='apikey'
- *    when the file is absent. NB: OPENAI_API_KEY is machine-wide, so every
- *    Codex account reads as authenticated in apikey mode when it's set.
- *
- * `getStatus(configDir)` answers "is this account signed in right now and
- * how?". `watch(configDir, cb)` fires when that account's `auth.json` changes
- * so the UI can re-render without polling; watchers are refcounted per
- * configDir. `startLoginFlow({ configDir })` spawns `codex login` with
- * `CODEX_HOME=configDir` so the resulting auth file lands in the right account
- * dir.
- */
+// OPENAI_API_KEY is machine-wide: when set, every Codex account reads as authenticated.
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { findSystemCodexBinary } from '../sessions/binary';
 import type { OneShotTerminalService } from '../one-shot-terminal';
-
-// ---------------------------------------------------------------------------
-// Public types
-// ---------------------------------------------------------------------------
 
 export interface CodexAuthStatus {
   authenticated: boolean;
@@ -40,49 +14,22 @@ export interface CodexAuthStatus {
 
 export interface CodexAuthService {
   getStatus(configDir: string): Promise<CodexAuthStatus>;
-  /** Subscribe to a single account's auth-file changes. Debounced ~250ms.
-   *  Watchers are shared + refcounted per configDir. */
   watch(configDir: string, cb: (status: CodexAuthStatus) => void): { dispose(): void };
-  /** Spawn `codex login` via OneShotTerminal with CODEX_HOME=configDir. */
   startLoginFlow(opts: { configDir: string; codexBinaryPath?: string }): Promise<{ ptyHandle: string }>;
-  /** Cancel an in-flight login (kills the pty). */
   cancelLoginFlow(ptyHandle: string): void;
-  /**
-   * Resolve the system-installed `codex` binary path. Returns `null` when
-   * the binary isn't on the user's machine.
-   */
   getBinaryPath(): string | null;
-  /**
-   * Sign the account out by removing `<configDir>/auth.json`. Idempotent — a
-   * missing file is treated as success. The file watcher picks up the deletion
-   * and broadcasts the new unauthenticated status.
-   *
-   * Note: this does NOT touch `OPENAI_API_KEY`.
-   */
   logout(configDir: string): Promise<void>;
 }
 
 export interface CreateCodexAuthServiceDeps {
   oneShotTerminal: OneShotTerminalService;
-  /** Override for tests; defaults to process.env */
   readEnv?: () => NodeJS.ProcessEnv;
-  /** Override for tests; defaults to findSystemCodexBinary */
   resolveCodexBinary?: () => string | null;
 }
 
-// ---------------------------------------------------------------------------
-// Internals
-// ---------------------------------------------------------------------------
-
 const WATCH_DEBOUNCE_MS = 250;
 
-/**
- * Pull an email out of whatever shape Codex happens to use. The CLI has
- * shifted format across versions (top-level `email`, `account_email`, nested
- * `account.email`, …), so we probe several common shapes and return the
- * first match. Missing-everything → undefined; the caller still treats the
- * presence of the file as authenticated.
- */
+/** Codex's auth.json shape has shifted across versions, so several are probed. */
 function extractEmail(parsed: unknown): string | undefined {
   if (!parsed || typeof parsed !== 'object') return undefined;
   const obj = parsed as Record<string, unknown>;
@@ -106,10 +53,6 @@ function extractEmail(parsed: unknown): string | undefined {
 
   return undefined;
 }
-
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
 
 interface WatcherSlot {
   fsWatcher: fs.FSWatcher | null;
@@ -159,9 +102,7 @@ export function createCodexAuthService(deps: CreateCodexAuthServiceDeps): CodexA
   }
 
   function attachWatcher(configDir: string, slot: WatcherSlot): void {
-    // Watch the parent directory rather than the file: Codex rewrites
-    // auth.json atomically (write tmp + rename), which detaches a
-    // file-targeted watcher. Watching the dir and filtering by name survives.
+    // Watch the dir: Codex rewrites auth.json by rename, which detaches a file watcher.
     const watchName = 'auth.json';
 
     const fire = (): void => {
@@ -251,8 +192,6 @@ export function createCodexAuthService(deps: CreateCodexAuthServiceDeps): CodexA
       binary,
       args: ['login'],
       cwd: os.homedir(),
-      // CODEX_HOME directs `codex login` to write auth.json into this
-      // account's config dir rather than the default ~/.codex.
       env: { ...readEnv(), CODEX_HOME: opts.configDir },
     });
 
@@ -272,7 +211,7 @@ export function createCodexAuthService(deps: CreateCodexAuthServiceDeps): CodexA
       fs.unlinkSync(authFilePath(configDir));
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
-      if (e.code === 'ENOENT') return; // already signed out
+      if (e.code === 'ENOENT') return;
       throw err;
     }
   }

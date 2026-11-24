@@ -1,19 +1,5 @@
-/**
- * Web Push from the daemon to the Home Screen web app.
- *
- * Two triggers, both about "you are not looking and something needs you":
- * a permission request, and a turn finishing. Neither fires while a client
- * is subscribed to the session — if a screen is showing the transcript, the
- * transcript is the notification. The check is per session, not per daemon:
- * a laptop watching session A does not silence the iPad about session B.
- *
- * Subscriptions and the VAPID key pair live in `~/.omnifex/push.json`. The
- * key pair is generated once and never rotated automatically: rotating it
- * invalidates every subscription, which is a decision, not a side effect.
- *
- * Sending is injected (`web-push`'s `sendNotification` in production) so the
- * store and the trigger logic are testable without a network.
- */
+// Never push while a client is subscribed to that session. The VAPID pair is never rotated automatically:
+// rotating it invalidates every subscription.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -22,7 +8,6 @@ import type { SessionScopedPush } from '../../src/protocol';
 export interface PushSubscriptionRecord {
   endpoint: string;
   keys: { p256dh: string; auth: string };
-  /** Free text from the client (user agent), for the list in Settings. */
   label?: string;
   addedAt: string;
 }
@@ -35,15 +20,12 @@ export interface PushStoreFile {
 export interface PushPayload {
   title: string;
   body: string;
-  /** Deep link the service worker opens on tap. */
   url: string;
-  /** Collapses repeated notifications for one session. */
   tag: string;
 }
 
 export interface PushSendResult {
   ok: boolean;
-  /** 404/410 mean the subscription is dead and should be dropped. */
   statusCode?: number;
 }
 
@@ -62,7 +44,6 @@ export interface PushService {
   list(): PushSubscriptionRecord[];
   subscribe(sub: Omit<PushSubscriptionRecord, 'addedAt'>): PushSubscriptionRecord;
   unsubscribe(endpoint: string): boolean;
-  /** Fan out; drops subscriptions the push service reports gone. */
   notify(payload: PushPayload): Promise<{ sent: number; dropped: number }>;
 }
 
@@ -147,24 +128,11 @@ export function createPushService(deps: PushServiceDeps): PushService {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Triggers
-// ---------------------------------------------------------------------------
-
 export interface PushTriggerContext {
-  /** True when at least one client is subscribed to the session right now. */
   watched: (sessionId: string) => boolean;
-  /** For the notification title. */
   sessionTitle: (sessionId: string) => string;
 }
 
-/**
- * The payload a session push deserves, or null.
- *
- * - `permission.request` → always worth a tap when nobody is watching.
- * - a `cli-stream-result` transcript event → the turn is over.
- * Everything else is transcript noise.
- */
 export function pushPayloadFor(push: SessionScopedPush, ctx: PushTriggerContext): PushPayload | null {
   if (ctx.watched(push.sessionId)) return null;
   const title = ctx.sessionTitle(push.sessionId);

@@ -6135,92 +6135,40 @@ import { probeBinaryVersion } from './util/exec-text';
  */
 export const REVIEWED_CLI_VERSION = '2.1.331';
 
-/**
- * app_settings key holding the user's explicit OmniFex-checkout override.
- * Mirrored as `CLI_REVIEW_REPO_DIR_SETTING_KEY` in `src/lib/api.ts` — the
- * renderer can't import from `daemon/`.
- */
+// Mirrored in src/lib/api.ts; the renderer can't import from daemon/.
 export const CLI_REVIEW_REPO_DIR_SETTING_KEY = 'cli_review_repo_dir';
 
-/**
- * app_settings key for "run `claude update` at launch when one is available".
- *
- * Defaults to OFF, and reads as `=== 'true'` rather than `!== 'false'`: this
- * mutates a toolchain OmniFex doesn't own, so a missing setting must mean "no".
- * Mirrored as `CLI_AUTO_UPDATE_SETTING_KEY` in `src/lib/api.ts`.
- */
+// Read as `=== 'true'`: this mutates a toolchain OmniFex doesn't own, so a missing setting means no. Mirrored in src/lib/api.ts.
 export const CLI_AUTO_UPDATE_SETTING_KEY = 'claude_cli_auto_update_on_launch';
 
-/**
- * app_settings key for the newest CLI release the user has marked as checked.
- *
- * Lets a changelog review clear the drift badge without cutting a release:
- * `REVIEWED_CLI_VERSION` only moves when a build ships, so on its own it kept
- * the badge lit for every review that changed nothing. Never seeded — an
- * absent row reads as the built-in watermark, so a fresh install starts where
- * it was compiled rather than at "never checked". Mirrored as
- * `CLI_CHECKED_VERSION_SETTING_KEY` in `src/lib/api.ts`.
- */
+// Never seeded: an absent row reads as the built-in watermark. Mirrored in src/lib/api.ts.
 export const CLI_CHECKED_VERSION_SETTING_KEY = 'claude_cli_checked_version';
 
 export interface CliReviewStatus {
-  /** Parsed version of the installed binary, or null if not found/probed. */
   installed_version: string | null;
-  /** The watermark this build was reviewed against. */
   reviewed_version: string;
-  /**
-   * Newest release marked as checked: the stored
-   * `CLI_CHECKED_VERSION_SETTING_KEY`, floored at `reviewed_version`. Ahead of
-   * `reviewed_version` means a release was read but no build has shipped
-   * against it — kept separate so that fact stays visible.
-   */
+  /** Floored at `reviewed_version`; kept separate so a checked-but-unshipped release stays visible. */
   checked_version: string;
-  /** True when the installed CLI is strictly newer than `checked_version`. */
   unreviewed: boolean;
-  /**
-   * Newest release published to npm, or null when the registry couldn't be
-   * reached. A fact about the world rather than about this machine, so it is
-   * reported even when the local binary can't be probed.
-   */
   latest_version: string | null;
-  /**
-   * True when a newer release than the installed one has been published.
-   *
-   * Deliberately separate from `unreviewed`: that flag means "the binary you
-   * are RUNNING has drifted past our watermark", which is the thing a review
-   * pass can act on — reviewing needs the binary on disk to `rg` and to
-   * capture a live render from. A release sitting on npm is not yet drift.
-   */
+  /** Separate from `unreviewed`: a release on npm is not drift until the binary is on disk to review. */
   upgrade_available: boolean;
-  /**
-   * OmniFex source checkout to run the changelog review in, or null when we
-   * can't find one. The renderer only makes the drift warning clickable when
-   * this is set — a launch button with nowhere to launch is worse than text.
-   */
   repo_dir: string | null;
 }
 
-/** One account's `claude update` run. */
 export interface CliAccountUpdateResult {
-  /** The account's display name, for the popover line. */
   account: string;
   ok: boolean;
-  /** The CLI's own output on success, or the failure text on error. */
   message: string;
 }
 
 export interface CliUpdateResult {
-  /** Installed version before any account ran, or null if unprobeable. */
   from: string | null;
-  /** Installed version after every account ran, or null if unprobeable. */
   to: string | null;
-  /** True only when `to` is strictly newer than `from`. */
   upgraded: boolean;
-  /** One entry per account attempted, in run order. */
   accounts: CliAccountUpdateResult[];
 }
 
-/** The subset of an Account this module needs to run an update under it. */
 export interface ClaudeCliAccount {
   name: string;
   configDir: string;
@@ -6228,58 +6176,23 @@ export interface ClaudeCliAccount {
 
 export interface ClaudeCliReviewService {
   getStatus(): Promise<CliReviewStatus>;
-  /**
-   * Drive `claude update` for every Claude account, then re-probe.
-   *
-   * The CLI only self-updates from inside its Ink REPL — the updater is a
-   * component mounted by the interactive TUI, so OmniFex's headless
-   * stream-json sessions never trigger it and releases pile up unnoticed.
-   * This is the manual lever that closes that gap, driving the CLI's own
-   * `update` subcommand rather than reimplementing the download.
-   */
+  /** The CLI self-updates only inside its interactive TUI, so headless sessions never trigger it. */
   runUpdate(): Promise<CliUpdateResult>;
 }
 
-/**
- * Default probe: run `--version` on an already-resolved binary path.
- *
- * Takes a path rather than the bare command name on purpose: a bare name costs
- * one throwaway process per PATH miss (see util/spawn.ts), and resolving
- * through claude-binary.ts keeps this consistent with the binary every other
- * OmniFex code path actually spawns. No shell, so a path with spaces needs no
- * quoting and a shell alias can never intercept it.
- */
+/** Takes a resolved path, never the bare command name: a bare name costs a process per PATH miss (see util/spawn.ts). */
 export async function probeCliVersion(binaryPath: string | null): Promise<string | null> {
   if (!binaryPath) return null;
-  // Async: getStatus runs this on every titlebar mount and hourly, and the
-  // sync spawn it used to be froze every live session for up to 5s.
+  // Must stay async: a sync spawn blocks every live session.
   return (await probeBinaryVersion(binaryPath)) || null;
 }
 
-/**
- * Generous, but the work behind it is a ~200MB download plus a checksum and an
- * atomic swap. A timeout that fires mid-download leaves the CLI's own lock and
- * staging to clean up after themselves — which they do — but reports a failure
- * for an update that may yet land, so err long.
- */
+// Err long: a timeout mid-download reports failure for an update that may still land.
 const UPDATE_TIMEOUT_MS = 300_000;
 
 /**
- * Default runner: `claude update` under one account's config dir.
- *
- * Runs the CLI's own subcommand rather than reimplementing the download, per
- * the repo rule about driving the CLI through its own interface. `update`
- * takes no options and needs no TTY, so `execFile` is enough — no pty.
- *
- * The config dir matters even though the binary is shared. `versions/` is
- * global, but `.last-update-result.json` is written into CLAUDE_CONFIG_DIR, so
- * running under one account leaves every other account's ledger claiming an
- * upgrade that already happened. Each account gets its own run; the ones after
- * the first are no-ops that still stamp their ledger.
- *
- * Rejects with the CLI's own stderr/stdout text when it exits non-zero —
- * "Can't auto-update: npm global folder isn't writable" is the actionable
- * message, and `err.message` would bury it behind "Command failed".
+ * Run once per account: versions/ is shared, but `.last-update-result.json` lives in CLAUDE_CONFIG_DIR.
+ * Rejects with the CLI's own output; `err.message` would bury it behind "Command failed".
  */
 export function execCliUpdate(
   binaryPath: string | null,
@@ -6309,14 +6222,7 @@ export function execCliUpdate(
   });
 }
 
-/**
- * Is `dir` an OmniFex source checkout?
- *
- * Identified by `package.json` name rather than by path, so the packaged app —
- * where `process.cwd()` is meaningless — can find the repo among the projects
- * the user already works in, without anyone's machine-specific path being
- * baked into the build.
- */
+/** Identified by package.json name, never by path, so no machine-specific path is baked into the build. */
 export function isOmnifexRepo(dir: string): boolean {
   try {
     const raw = fs.readFileSync(path.join(dir, 'package.json'), 'utf8');
@@ -6334,38 +6240,19 @@ function dirExists(dir: string): boolean {
   }
 }
 
-/**
- * The release channel `claude update` reads on a native install — the same
- * `latest` file the official install.sh (claude.ai/install.sh) fetches.
- *
- * This, not npm, is what decides whether `claude update` has anything to
- * install. npm publishes first: 2.1.327 was the npm `latest` for hours while
- * this file still said 2.1.326, so a popover reading npm offered an update the
- * CLI answered with "up to date".
- */
+// The native channel, not npm, decides whether `claude update` has anything to install; npm publishes first.
 const NATIVE_LATEST_URL = 'https://downloads.claude.ai/claude-code-releases/latest';
 
-/**
- * npm dist-tags for the CLI, for npm installs only. 56 bytes on the wire,
- * versus the full packument a `/latest` fetch would pull. `latest`, not
- * `stable`: the two disagree, and `npm i -g` without a tag installs `latest`.
- */
+// `latest`, not `stable`: `npm i -g` without a tag installs `latest`.
 const NPM_DIST_TAGS_URL =
   'https://registry.npmjs.org/-/package/@anthropic-ai%2Fclaude-code/dist-tags';
 
-/**
- * Whether the binary was installed from npm. Only a path inside `node_modules`
- * counts; anything else — the native `~/.local/share/claude/versions/…`, an
- * unknown location, no binary at all — reads the native channel, the installer
- * Anthropic ships.
- */
 function isNpmInstall(binaryPath: string | null): boolean {
   return binaryPath?.split(path.sep).includes('node_modules') === true;
 }
 
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/;
 
-/** Concurrent callers share one request per source; see `fetchLatestCliVersion`. */
 const inFlightLatest = new Map<string, Promise<string | null>>();
 
 async function readLatest(url: string, npm: boolean): Promise<string | null> {
@@ -6378,25 +6265,12 @@ async function readLatest(url: string, npm: boolean): Promise<string | null> {
     const tags = (await res.json()) as { latest?: unknown };
     return typeof tags.latest === 'string' ? tags.latest : null;
   }
-  // Plain text, one version. A captive portal answers 200 with HTML.
+  // A captive portal answers 200 with HTML.
   const body = (await res.text()).trim();
   return VERSION_RE.test(body) ? body : null;
 }
 
-/**
- * Newest Claude Code release that `binaryPath`'s own updater can install, or
- * null for any failure at all.
- *
- * Deliberately uncached beyond in-flight de-duplication. The button this feeds
- * says "Check for Upgrade", and a time-based cache would make it lie — the
- * whole reason this exists is that the popover looked like a steady state
- * while three releases had shipped.
- *
- * Known limit: this is Node's `fetch`, which ignores system proxy settings, so
- * a user behind a corporate proxy gets null and the row falls back to showing
- * only the installed version. That degrades to the old behavior rather than
- * to a wrong answer.
- */
+/** No time-based cache: the button says "Check for Upgrade", and a cache would make it lie. */
 export function fetchLatestCliVersion(binaryPath: string | null): Promise<string | null> {
   const npm = isNpmInstall(binaryPath);
   const url = npm ? NPM_DIST_TAGS_URL : NATIVE_LATEST_URL;
@@ -6406,8 +6280,6 @@ export function fetchLatestCliVersion(binaryPath: string | null): Promise<string
       try {
         return await readLatest(url, npm);
       } catch {
-        // Offline, DNS failure, timeout, proxy interception — all
-        // "undeterminable", and none of them may disturb the rest of the popover.
         return null;
       } finally {
         inFlightLatest.delete(url);
@@ -6419,68 +6291,26 @@ export function fetchLatestCliVersion(binaryPath: string | null): Promise<string
 }
 
 export interface ClaudeCliReviewDeps {
-  /**
-   * Returns the raw `claude --version` output (e.g. "2.1.222 (Claude Code)"),
-   * or null when the binary can't be located. Injected so tests never shell
-   * out, and so the caller owns binary resolution. The daemon's is an async
-   * spawn; a sync one here blocks every live session while it runs.
-   */
+  /** Must be async: a sync spawn blocks every live session while it runs. */
   cliVersionFn: () => string | null | Promise<string | null>;
-  /**
-   * Returns the newest Claude Code version the installed binary's updater can
-   * install (see `fetchLatestCliVersion`), or null when that is unknowable. Optional: with no lookup wired the popover simply
-   * reports the installed version, exactly as it did before.
-   */
   latestVersionFn?: () => Promise<string | null>;
-  /**
-   * The user's explicit `cli_review_repo_dir` override, or null/'' when unset.
-   * Wins over discovery whenever the directory still exists.
-   */
   repoDirOverrideFn?: () => string | null;
-  /**
-   * Directories to probe when no override is set, in priority order — the dev
-   * cwd, then every known project path. Async because the project list is.
-   */
   repoCandidatesFn?: () => string[] | Promise<string[]>;
-  /** Overridable for tests, which must never touch the real filesystem. */
   dirExistsFn?: (dir: string) => boolean;
-  /** Overridable for tests. See `isOmnifexRepo`. */
   isOmnifexRepoFn?: (dir: string) => boolean;
-  /**
-   * The stored `CLI_CHECKED_VERSION_SETTING_KEY`, or null when unset. Read
-   * per call, like the installed version, so marking a release checked takes
-   * effect on the next status check.
-   */
   checkedVersionFn?: () => string | null;
-  /**
-   * Claude-engine accounts to run `claude update` under, in run order. The
-   * engine filter belongs at the wiring site: Codex accounts have no `claude`
-   * toolchain, and this module has no opinion about engines.
-   */
+  /** Claude-engine accounts only: Codex accounts have no `claude` toolchain. */
   claudeAccountsFn?: () => ClaudeCliAccount[];
-  /**
-   * Runs `claude update` under one account's config dir; resolves with the
-   * CLI's output, rejects on non-zero exit. Injected so tests never spawn.
-   * `execCliUpdate` is the production implementation.
-   */
   runUpdateFn?: (configDir: string) => Promise<string>;
 }
 
-/**
- * Pull the dotted-numeric version out of `claude --version` output, which
- * prints the product name alongside it ("2.1.222 (Claude Code)").
- */
 export function parseCliVersion(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const match = /(\d+(?:\.\d+)+)/.exec(raw);
   return match ? match[1] : null;
 }
 
-/**
- * Segment-wise numeric comparison. Returns >0 when `a` is newer than `b`.
- * Deliberately not a string compare: '2.1.9' sorts after '2.1.100'
- * lexicographically, which would hide 91 releases' worth of drift.
- */
+/** Numeric, never a string compare: '2.1.9' would sort after '2.1.100'. */
 export function compareCliVersions(a: string, b: string): number {
   const av = a.split('.').map((s) => Number.parseInt(s, 10) || 0);
   const bv = b.split('.').map((s) => Number.parseInt(s, 10) || 0);
@@ -6497,22 +6327,17 @@ export function createClaudeCliReviewService(
 ): ClaudeCliReviewService {
   const exists = deps.dirExistsFn ?? dirExists;
   const isRepo = deps.isOmnifexRepoFn ?? isOmnifexRepo;
-  // Positive discoveries only. Caching a miss would mean cloning the repo (or
-  // opening it as a project for the first time) needs an app restart to be
-  // noticed, and the scan is cheap enough that repeating it costs nothing.
+  // Cache positive discoveries only: a cached miss would need an app restart to notice a new checkout.
   let discovered: string | null = null;
 
   async function resolveRepoDir(): Promise<string | null> {
     const override = deps.repoDirOverrideFn?.() ?? null;
-    // A stale override (folder moved or deleted) falls through to discovery
-    // rather than disabling the launch button.
     if (override && exists(override)) return override;
     if (discovered) return discovered;
     let candidates: string[] = [];
     try {
       candidates = (await deps.repoCandidatesFn?.()) ?? [];
     } catch {
-      // Project list unavailable — the version half of the payload still ships.
       return null;
     }
     for (const dir of candidates) {
@@ -6524,22 +6349,15 @@ export function createClaudeCliReviewService(
     return null;
   }
 
-  /**
-   * Probed fresh every call, never cached: the user can upgrade the CLI while
-   * OmniFex is running — including via `runUpdate()` below — and a value cached
-   * at construction would stay stale until the next app restart.
-   */
+  /** Never cached: the CLI can be upgraded while OmniFex runs. */
   async function probeInstalled(): Promise<string | null> {
     try {
       return parseCliVersion(await deps.cliVersionFn());
     } catch {
-      // Binary missing, exec blocked, timeout — all "undeterminable".
       return null;
     }
   }
 
-  /** The stored mark, floored at the built-in watermark. A stale row (one a
-   *  later release has overtaken), garbage, or a failed read all fall back. */
   function resolveChecked(): string {
     let stored: string | null = null;
     try {
@@ -6556,8 +6374,7 @@ export function createClaudeCliReviewService(
     const installed = await probeInstalled();
     const checked = resolveChecked();
 
-    // Network, so it fails soft and independently: a dead registry must not
-    // take out the watermark signal, which needs no network at all.
+    // Fails soft: a dead registry must not take out the watermark signal.
     let latest: string | null = null;
     try {
       latest = parseCliVersion((await deps.latestVersionFn?.()) ?? null);
@@ -6570,13 +6387,10 @@ export function createClaudeCliReviewService(
       reviewed_version: REVIEWED_CLI_VERSION,
       checked_version: checked,
       latest_version: latest,
-      // Strictly-newer, same as `unreviewed` and for the same reason: a native
-      // installer channel can briefly lead npm, and prompting the user to
-      // "upgrade" to an older build is worse than saying nothing.
+      // Strictly newer: the native channel can briefly lead npm, and offering an older build is worse than silence.
       upgrade_available:
         installed !== null && latest !== null && compareCliVersions(latest, installed) > 0,
-      // Strictly-newer only. A user running an OLDER CLI has no unreviewed
-      // changelog to show them, and an unknown version must never nag.
+      // Strictly newer: an older or unknown version must never nag.
       unreviewed: installed !== null && compareCliVersions(installed, checked) > 0,
       repo_dir: await resolveRepoDir(),
     };
@@ -6589,11 +6403,7 @@ export function createClaudeCliReviewService(
 
     const run = deps.runUpdateFn;
     if (!run) {
-      // A missing runner is a wiring bug, not a degraded network like
-      // `latestVersionFn`. Reporting success having spawned nothing is the one
-      // outcome worse than an error, so this throws — same posture
-      // buildClaudeEnv takes on an empty configDir. With no accounts there is
-      // genuinely nothing to run, so that stays a quiet empty result.
+      // A missing runner throws: reporting success having spawned nothing is worse than an error.
       if (accounts.length > 0) {
         throw new Error(
           '[claude-cli-review] runUpdate() called with accounts but no runUpdateFn wired',
@@ -6602,10 +6412,7 @@ export function createClaudeCliReviewService(
       return { from, to: from, upgraded: false, accounts: [] };
     }
 
-    // Sequential, and load-bearing: the CLI takes a machine-wide `.update.lock`
-    // around the shared versions/ tree, so a second concurrent `claude update`
-    // reports lockFailed and returns having done nothing. Run in parallel and
-    // exactly one account would really update, with the rest silently no-op.
+    // Sequential: the CLI's machine-wide `.update.lock` makes a concurrent `claude update` silently no-op.
     for (const acct of accounts) {
       try {
         const out = await run(acct.configDir);
@@ -6619,9 +6426,7 @@ export function createClaudeCliReviewService(
       }
     }
 
-    // Re-probe rather than parse the CLI's stdout: the binary was swapped
-    // underneath us, and the wording of "up to date" / "installed X" is exactly
-    // the kind of surface that drifts release to release.
+    // Re-probe rather than parse stdout, whose wording drifts between releases.
     const to = await probeInstalled();
     return {
       from,

@@ -9,35 +9,8 @@ import {
 export type { ModelPricingInput, ModelPricingRow } from '../../src/lib/pricing';
 
 /**
- * User-editable model pricing.
- *
- * OmniFex prices tokens it did not meter, for models Anthropic ships on its
- * own cadence. Before this table the rates lived only in `src/lib/pricing.ts`,
- * so a new model — or a price change on an existing one — could not be costed
- * correctly without cutting a release. Fable 5.1 made that concrete: it landed
- * in CLI 2.1.257 with a cache-read rate no formula in the code predicted, and
- * every Fable 5.1 session was mispriced until a build shipped.
- *
- * The shape is deliberately a DELTA layer, not a seeded copy of the shipped
- * table:
- *
- *  - `SHIPPED_PRICING` in `src/lib/pricing.ts` stays the base layer. It ships
- *    with the app and every release keeps improving it. Rates and chart
- *    display metadata live on the same row there, so this table needs no
- *    second shape for either.
- *  - This table holds only what the user has said differs. Rows win over the
- *    base layer, field by field, longest matching pattern first.
- *
- * Seeding the table from the code constants was the obvious alternative and is
- * a trap: the moment a release corrects a shipped rate, every existing install
- * is pinned to the old copy in its own database and silently keeps mispricing.
- * A delta layer has no such drift — untouched models always track the build,
- * and a user row is only ever the thing the user actually asked for.
- *
- * `pattern` is a model-id substring (`fable-5-1`, `opus-4-8`), matched
- * case-insensitively, longest match first. `effective_from` makes a rate change
- * additive: append a period rather than editing one, or the next cost re-scan
- * silently re-prices all of history at the new rate.
+ * A delta layer over SHIPPED_PRICING, never a seeded copy: a seeded copy pins installs to old rates.
+ * `effective_from` is additive: append a period, never edit one, or the next re-scan re-prices history.
  */
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -46,15 +19,10 @@ export interface ModelPricingService {
   list(): ModelPricingRow[];
   upsert(input: ModelPricingInput): ModelPricingRow;
   remove(id: number): void;
-  /** The user layer, in the shape the pure resolver consumes. */
   toOverrides(): ModelPricingInput[] | undefined;
-  /** The shipped base layer, for display in the editor. */
   shipped(): readonly ModelPricingInput[];
 }
 
-/** The row as SQLite hands it back. Column names are asserted against
- *  `PRICING_FIELDS` by the schema-contract test, so a column added to one and
- *  not the other fails loudly instead of silently reading back null. */
 type RawRow = {
   id: number;
   pattern: string;
@@ -80,12 +48,7 @@ function toRow(r: RawRow): ModelPricingRow {
   return out;
 }
 
-/**
- * Reject rather than coerce. A silently-clamped color slot paints two models
- * the same hue, and a silently-dropped bad date applies a rate from the wrong
- * day — both are wrong answers that look like right ones, which is the whole
- * failure mode a cost report cannot afford.
- */
+/** Reject rather than coerce: a clamped or dropped value is a wrong answer that looks right. */
 function validate(input: ModelPricingInput): ModelPricingInput {
   const pattern = (input.pattern ?? '').trim().toLowerCase();
   if (!pattern) throw new Error('model pricing: pattern is required');
@@ -125,17 +88,13 @@ function validate(input: ModelPricingInput): ModelPricingInput {
     states = true;
   }
 
-  // A row that states nothing would shadow the shipped entry with silence and
-  // read as "this model has no price", which is worse than having no row.
+  // A row that states nothing would shadow the shipped entry and read as "no price".
   if (!states) throw new Error('model pricing: a row must set at least one rate, label or context window');
 
   return clean;
 }
 
-// Column and placeholder lists are generated from PRICING_FIELDS rather than
-// typed out three more times (insert, values, on-conflict). A hand-written
-// list that falls one column behind the schema does not fail — it silently
-// stops persisting that rate.
+// Generated from PRICING_FIELDS: a hand-written list that falls behind silently stops persisting a rate.
 const RATE_COLUMNS = PRICING_FIELDS.map((f) => f.column);
 const INSERT_COLUMNS = ['pattern', 'effective_from', ...RATE_COLUMNS, 'label', 'context_window'];
 const INSERT_PARAMS = ['@pattern', '@effectiveFrom', ...PRICING_FIELDS.map((f) => `@${f.row}`), '@label', '@contextWindow'];
@@ -181,16 +140,11 @@ export function createModelPricingService(db: Database): ModelPricingService {
     db.raw.prepare('DELETE FROM model_pricing WHERE id = ?').run(id);
   }
 
-  // The rows ARE the user layer — same shape the resolver takes, so there is
-  // nothing to convert. Undefined for empty is the "everything tracks the
-  // shipped rates" case.
   function toOverrides(): ModelPricingInput[] | undefined {
     const rows = list();
     return rows.length > 0 ? rows : undefined;
   }
 
-  // Handed back as-is. The editor shows what it is overriding; it does not get
-  // its own copy to drift from.
   function shipped(): readonly ModelPricingInput[] {
     return SHIPPED_PRICING;
   }

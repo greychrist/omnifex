@@ -7,23 +7,15 @@ import { gitBinary } from './git-binary';
 
 export interface GitWatcherDeps {
   sendToRenderer: (channel: string, ...args: unknown[]) => void;
-  /** Working-tree poll interval (ms). Defaults to 3000. */
   pollIntervalMs?: number;
 }
 
 export interface WorktreeInfo {
-  /** Absolute, real-path-resolved worktree directory. */
   path: string;
-  /** Short branch name, or null if the worktree has a detached HEAD. */
   branch: string | null;
 }
 
-/**
- * Enumerate worktrees attached to the same repository as `projectPath`,
- * excluding `projectPath` itself. Returns [] for non-git directories or when
- * `git worktree list` fails. Paths are normalized through `realpath` so the
- * caller-side filter survives macOS `/private/var` ↔ `/var` symlink quirks.
- */
+/** Paths go through realpath so the caller's filter survives macOS `/private/var` vs `/var`. */
 export async function listWorktrees(projectPath: string): Promise<WorktreeInfo[]> {
   if (!resolveGitdir(projectPath)) return [];
 
@@ -36,7 +28,6 @@ export async function listWorktrees(projectPath: string): Promise<WorktreeInfo[]
   return runWorktreeList(projectPath, selfReal);
 }
 
-/** `git worktree list`, parsed, minus `excludeReal` (pass '' to keep every entry). */
 function runWorktreeList(cwd: string, excludeReal: string): Promise<WorktreeInfo[]> {
   return new Promise((resolve) => {
     execFile(
@@ -55,9 +46,6 @@ function runWorktreeList(cwd: string, excludeReal: string): Promise<WorktreeInfo
 }
 
 function parseWorktreePorcelain(buf: string, selfReal: string): WorktreeInfo[] {
-  // Records are separated by blank lines. Each record has at least a
-  // `worktree <path>` header; branch info is either `branch refs/heads/<name>`,
-  // `detached`, or absent (bare repo entry).
   const out: WorktreeInfo[] = [];
   for (const block of buf.split(/\r?\n\r?\n/)) {
     let wtPath: string | null = null;
@@ -142,9 +130,7 @@ interface StatusReadResult extends StatusCounts {
 }
 
 function parsePorcelainV1Z(buf: string): StatusCounts {
-  // -z output: each entry is `XY <path>\0`. For renames/copies (R/C) the
-  // entry is followed by an additional `<orig-path>\0` field that must be
-  // skipped so the next status pair is read from the right offset.
+  // Renames/copies (R/C) carry an extra `<orig-path>\0` field that must be skipped.
   let changed = 0;
   let untracked = 0;
   const tokens = buf.split('\0');
@@ -171,10 +157,7 @@ function readStatusCounts(
   return new Promise((resolve) => {
     execFile(
       gitBinary(),
-      // --no-optional-locks: a plain `git status` refreshes .git/index, and
-      // the index watcher below would see that write and schedule another
-      // refresh — every poll triggering a second one. Background readers
-      // (VS Code's included) run it this way for exactly that reason.
+      // --no-optional-locks: a plain status rewrites .git/index, which the index watcher would see, so every poll triggered another.
       ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--ignore-submodules=dirty'],
       {
         cwd: projectPath,
@@ -184,11 +167,6 @@ function readStatusCounts(
       },
       (err, stdout, stderr) => {
         if (err) {
-          // Prefer git's own stderr message — `git status` writes a
-          // human-readable explanation there for things like "not a git
-          // repository" or a corrupt index. A killed-by-timeout error has
-          // `err.killed === true` and an empty stderr; surface that case
-          // explicitly so the user knows the read was abandoned.
           const killed = (err as NodeJS.ErrnoException & { killed?: boolean }).killed === true;
           const msg = killed
             ? `git status timed out after ${timeoutMs}ms`
@@ -229,37 +207,9 @@ function resolveCommondir(projectPath: string, gitdir: string): Promise<string> 
 
 
 
-// ---------------------------------------------------------------------------
-// SessionGitWatcher — the branch/changes badges for every session tab.
-//
-// Each `start()` returns a watch id, and every snapshot for it arrives on
-// `session-git-changed:<watchId>` as {repos[], foundCount}: one entry per repo
-// the project watches (its own folder, when a repo, plus the sub-repos the
-// user turned on — `SessionGitRepoSource`), each with its worktrees. A watch
-// subscribes to the reader of every repo it shows, and `reconfigure()`
-// re-subscribes a project's live watches when its choices change. Behind the
-// ids, ONE reader per repository (keyed by the realpath of its commondir, so every
-// worktree of a repo and every symlinked path to it share it) runs git once
-// per path per refresh and fans the result out to every watch on it.
-//
-// Every `git` is a short-lived process, and on macOS each one costs syspolicyd
-// two log errors — measured at ~3.4M a day from an idle app polling 20 paths
-// every 3 s. So:
-//   - watches share a reader (above), reference-counted by stop();
-//   - the reader polls only while at least one of its watches is visible
-//     (`setVisible`, driven by the renderer: active tab, visible document,
-//     screen unlocked). Hidden, nothing runs; what changed meanwhile is
-//     remembered and read once, the moment a watch becomes visible again;
-//   - a watch started over the remote protocol is held by that client's
-//     connection; when the connection closes, the watch goes hidden. A window
-//     closed on a daemon-only machine otherwise left every watch it had
-//     "visible" and polling forever. The next call from a (re)connected
-//     client re-claims it;
-//   - `git` runs by absolute path (see git-binary.ts);
-//   - a poll tick reads status only. `git worktree list` runs when the reader
-//     is created, on reconnect, and when the commondir / `worktrees/`
-//     watchers say the set of worktrees changed.
-// ---------------------------------------------------------------------------
+// Every `git` costs syspolicyd log errors (~3.4M a day from an idle app), so: one reader per repo keyed by
+// the commondir's realpath; poll only while a watch is visible; a remote watch goes hidden when its
+// connection closes; git runs by absolute path; a poll tick reads status only.
 
 export interface PathSnapshot {
   path: string;
@@ -270,32 +220,21 @@ export interface PathSnapshot {
 }
 
 export interface RepoSnapshot {
-  /** Relative to the project folder; '' for the project folder itself. */
   name: string;
-  /** The repo's own checkout. */
   root: PathSnapshot;
-  /** Sibling worktrees, sorted by path. */
   worktrees: PathSnapshot[];
 }
 
 export interface SessionGitSnapshot {
-  /** The project folder's repo first (when it is one), then watched sub-repos. */
   repos: RepoSnapshot[];
-  /** Repos discovered in the project and not watched. */
   foundCount: number;
 }
 
-/** Which repos a project's sessions watch — `ProjectReposService` in the daemon. */
 export interface SessionGitRepoSource {
   watchedRepos(projectPath: string): { path: string; name: string }[];
   foundCount(projectPath: string): Promise<number>;
 }
 
-/**
- * The client connection a call arrived on. The last one to call about a watch
- * holds it; when that connection closes, the watch goes hidden. Absent on the
- * in-process IPC path, whose renderer dies with the app.
- */
 export interface WatchHolder {
   onClose(listener: () => void): void;
 }
@@ -304,66 +243,50 @@ export interface SessionGitWatcherService {
   start(projectPath: string, holder?: WatchHolder): Promise<{ watchId: string; snapshot: SessionGitSnapshot }>;
   reconnect(watchId: string, holder?: WatchHolder): Promise<SessionGitSnapshot | null>;
   stop(watchId: string): void;
-  /**
-   * Whether anyone is looking at this watch. A new watch starts visible, so a
-   * client that never calls this keeps today's behaviour.
-   */
   setVisible(watchId: string, visible: boolean, holder?: WatchHolder): void;
-  /** Re-read which repos `projectPath` watches and re-subscribe its live watches. */
   reconfigure(projectPath: string): Promise<void>;
   disposeAll(): void;
 }
 
 export interface SessionGitWatcherDeps extends GitWatcherDeps {
-  /** Per-`git status` timeout in ms. Defaults to 5000. */
   readTimeoutMs?: number;
-  /** Defaults to: the project folder alone, when it is a repo; nothing found. */
   repos?: SessionGitRepoSource;
 }
 
-/** A status read covers known paths; a full one re-lists worktrees first. */
 type RefreshKind = 'status' | 'full';
 
 const mergeKind = (a: RefreshKind | null, b: RefreshKind | null): RefreshKind | null =>
   a === 'full' || b === 'full' ? 'full' : a ?? b;
 
-/** One session's watch: a subscriber on the reader of each repo it shows. */
 interface Watch {
   id: string;
   projectPath: string;
   projectReal: string;
   visible: boolean;
   holder: WatchHolder | null;
-  /** Real repo paths, in display order. */
   order: string[];
   subs: Map<string, Subscriber>;
   foundCount: number;
-  /** Last snapshot sent to this watch, to skip no-op emits. */
   last: SessionGitSnapshot;
-  /** Syncs run one at a time: a quick on/off must not interleave. */
+  /** One at a time: a quick on/off must not interleave. */
   syncing: Promise<void>;
 }
 
-/** A watch's interest in one repo, registered on that repo's reader. */
 interface Subscriber {
   id: string;
   watch: Watch;
   reader: RepoReader;
   name: string;
-  /** Echoed back as `root.path`: the caller's project path for the project's own repo. */
   repoPath: string;
   repoReal: string;
 }
 
 interface RepoReader {
   key: string;
-  /** Where `git worktree list` runs; any path in the repository will do. */
   anchor: string;
   commondir: string | null;
-  /** Real paths of every worktree from the last `git worktree list`. */
   worktreePaths: string[];
   branchHints: Map<string, string | null>;
-  /** Latest reading per real path. */
   readings: Map<string, PathSnapshot>;
   gitdirs: Map<string, string>;
   gitdirWatchers: Map<string, fs.FSWatcher>;
@@ -372,22 +295,18 @@ interface RepoReader {
   subscribers: Map<string, Subscriber>;
   pollTimer: NodeJS.Timeout | null;
   debounceTimer: NodeJS.Timeout | null;
-  /** Work deferred while nobody was looking, or while a refresh was running. */
   pending: RefreshKind | null;
   refreshing: boolean;
-  /** Settles when the reader's first full read has landed. */
   seeded: Promise<void>;
 }
 
-/** Per-path read with timeout + try/catch — never throws, always returns a PathSnapshot. */
 async function readPathSnapshot(
   p: string,
   gitdir: string | null,
   branchHint: string | null,
   timeoutMs: number,
 ): Promise<PathSnapshot> {
-  // A watched repo deleted on disk: say so, rather than spawning git into a
-  // missing cwd and reporting that as "spawn git ENOENT".
+  // Check first: spawning git into a missing cwd reports "spawn git ENOENT".
   if (!fs.existsSync(p)) {
     return { path: p, branch: branchHint, changed: 0, untracked: 0, error: 'Folder no longer exists' };
   }
@@ -503,7 +422,6 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
     }
   }
 
-  /** Ask for a refresh. Nobody looking: remember it for when someone is. */
   function schedule(r: RepoReader, kind: RefreshKind): void {
     if (!anyVisible(r)) {
       r.pending = mergeKind(r.pending, kind);
@@ -543,8 +461,6 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
         console.error('[session-git-watcher] failed to watch gitdir:', err);
       }
     }
-    // The first `git worktree add` creates `commondir/worktrees/`; pick it up
-    // here so later adds and removes are seen without a poll.
     if (!r.worktreesDirWatcher && r.commondir) {
       const wtDir = path.join(r.commondir, 'worktrees');
       if (fs.existsSync(wtDir)) {
@@ -559,7 +475,6 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
     }
   }
 
-  /** Read every path once (after re-listing worktrees, for a full refresh) and fan out. */
   async function refresh(r: RepoReader, kind: RefreshKind): Promise<void> {
     if (r.refreshing) {
       r.pending = mergeKind(r.pending, kind);
@@ -584,8 +499,7 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
       emitAll(r);
     } finally {
       r.refreshing = false;
-      // Anything asked for mid-read runs next — through schedule(), so it
-      // waits again if everyone has looked away in the meantime.
+      // Through schedule(), so it waits again if everyone looked away meanwhile.
       if (r.pending && readers.get(r.key) === r) {
         const next = r.pending;
         r.pending = null;
@@ -594,7 +508,6 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
     }
   }
 
-  /** Poll while someone is looking; stop the moment nobody is. */
   function syncPolling(r: RepoReader): void {
     const want = anyVisible(r);
     if (want && !r.pollTimer) {
@@ -606,7 +519,6 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
     }
   }
 
-  /** Make `holder` the connection this watch lives and dies with. */
   function claim(w: Watch, holder: WatchHolder | undefined): void {
     if (!holder || w.holder === holder) return;
     w.holder = holder;
@@ -665,8 +577,6 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
     if (commondir) {
       try {
         const w = fs.watch(commondir, { persistent: false }, (_e, filename) => {
-          // A tripwire for `worktrees/` appearing or going; the full refresh
-          // it schedules re-lists everything else.
           if (filename === 'worktrees' || filename === null) schedule(r, 'full');
         });
         w.on('error', (err) => console.error('[session-git-watcher] commondir watch error:', err));
@@ -675,17 +585,15 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
         console.error('[session-git-watcher] failed to watch commondir:', err);
       }
     }
-    // Seeded as a full read, whatever the visibility: the first paint needs data.
+    // Full read whatever the visibility: the first paint needs data.
     r.seeded = refresh(r, 'full');
     return { r, created: true };
   }
 
-  /** Subscribe `w` to the reader of one repo, reading it now if its readings are stale. */
   async function attach(w: Watch, repo: { path: string; name: string }): Promise<void> {
     const repoReal = realpathOr(repo.path);
     const { r, created } = await readerFor(repoReal);
-    // The watch may have stopped, or dropped this repo, while the reader was
-    // being found. Registering now would leave it polling with no way to stop.
+    // Re-check after the await: registering a stopped watch leaves it polling with no way to stop.
     if (watches.get(w.id) !== w || !w.order.includes(repoReal) || w.subs.has(repoReal)) {
       if (r.subscribers.size === 0) dispose(r);
       return;
@@ -696,18 +604,13 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
       watch: w,
       reader: r,
       name: repo.name,
-      // The project's own repo echoes the caller's path, as it always has.
       repoPath: repo.name === '' ? w.projectPath : repoReal,
       repoReal,
     };
     r.subscribers.set(sub.id, sub);
     w.subs.set(repoReal, sub);
     await r.seeded;
-    // Read now if this path was never read (a worktree not yet re-listed),
-    // or if the reader sat unwatched — its readings are as old as the last
-    // time anyone looked, and working-tree edits never woke it. A reader
-    // created just now was seeded a moment ago; joining a watched one costs
-    // nothing.
+    // Read now if never read, or if the reader sat unwatched: its readings are stale.
     if (!r.readings.has(repoReal) || (!created && !wasVisible)) {
       const kind = mergeKind(r.pending, 'status') ?? 'status';
       r.pending = null;
@@ -724,7 +627,6 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
     else syncPolling(r);
   }
 
-  /** Bring `w`'s subscriptions in line with what its project watches now, one sync at a time. */
   function sync(w: Watch): Promise<void> {
     w.syncing = w.syncing.then(() => syncNow(w), () => syncNow(w));
     return w.syncing;
@@ -773,8 +675,6 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
       claim(w, holder);
       await Promise.all(readersOf(w).map(async (r) => {
         await r.seeded;
-        // Tear down the per-path and worktrees/ watchers; the full refresh
-        // re-creates them from a freshly listed set.
         for (const fw of r.gitdirWatchers.values()) {
           try { fw.close(); } catch { /* best effort */ }
         }
@@ -800,7 +700,6 @@ export function createSessionGitWatcher(deps: SessionGitWatcherDeps): SessionGit
       for (const r of rs) {
         syncPolling(r);
         if (!was.get(r) && visible) {
-          // Back in view: one read now, covering whatever was deferred.
           const kind = mergeKind(r.pending, 'status') ?? 'status';
           r.pending = null;
           void refresh(r, kind);

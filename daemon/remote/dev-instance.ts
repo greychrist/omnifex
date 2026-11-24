@@ -1,52 +1,16 @@
-/**
- * The dev instance: `npm start` gets its own daemon, beside the installed
- * app's rather than instead of it.
- *
- * A dev build and the installed app share `~/.omnifex` and port 47700, so the
- * one daemon on that port held every live CLI process the user had open —
- * belonging to the app they actually work in. Launching the dev app used to
- * SIGTERM it (see remote-launcher.ts, which no longer lets it), and even once
- * it could not, dev drove those same live sessions: killing, interrupting and
- * prompting real conversations from a build under test.
- *
- * So dev moves: its own state dir, its own port, and a marker that follows the
- * daemon it spawns. What it deliberately does NOT move is the database — the
- * dev app still sees the real accounts, projects and history, which is most of
- * why one runs it. That sharing is what `periodicWorkGate` is for.
- */
+// Dev shares the database on purpose, never the state dir or port: the installed app's daemon holds the user's live sessions.
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 export type Env = Record<string, string | undefined>;
 
-/** `~/.omnifex-dev`, beside the real `~/.omnifex`. */
 export const DEV_STATE_DIR_NAME = '.omnifex-dev';
-/** One above the real 47700, so both daemons can listen at once. */
 export const DEV_PORT = 47701;
-/** Set on the dev app and inherited by the daemon it spawns. */
 export const DEV_DAEMON_ENV = 'OMNIFEX_DEV_DAEMON';
 
 /**
- * The dev instance as an environment overlay, resolved against `env` but
- * never written into it.
- *
- * It used to be written into `process.env` directly, which made the spawned
- * daemon inherit it for free — and everything else the app spawns inherit it
- * too. A CLI session, an agent, a Brain extraction and any shell command run
- * inside a session all carried `OMNIFEX_PORT=47701`, so `npm test` from a
- * terminal inside a dev session failed remote-config's "the file overrides
- * the port" case against a port the test never set. Worse, launching the
- * PACKAGED app from a dev session pointed the real product at the dev daemon:
- * `loadServerConfig()` reads the environment regardless of which app runs.
- *
- * So the overlay is returned and handed to the two places that want it —
- * `loadServerConfig()` in main, and the environment `daemon-control` gives
- * the daemon it spawns. The daemon still learns where the instance lives the
- * same way it always did, from its own environment; what changed is that
- * nothing else does.
- *
- * An explicit value in `env` is kept — a throwaway `OMNIFEX_STATE_DIR` for a
- * smoke run still wins. Empty counts as unset.
+ * Returned, never written into `process.env`: everything spawned would inherit it, and a packaged app
+ * launched from a dev session would talk to the dev daemon. Explicit values in `env` win; empty is unset.
  */
 export function devInstanceEnv(env: Env, home: string = homedir()): Env {
   return {
@@ -56,23 +20,11 @@ export function devInstanceEnv(env: Env, home: string = homedir()): Env {
   };
 }
 
-/** Whether this process is (or was spawned by) the dev instance. */
 export function isDevDaemon(env: Env = process.env): boolean {
   return env[DEV_DAEMON_ENV] === '1';
 }
 
-/**
- * The `enabled` gate for `startPeriodicWork` in a daemon: closed for a dev
- * daemon, absent (meaning "always") for the real one.
- *
- * The dev daemon shares the database, and the cost backfill, archive prune,
- * free-page reclaim and Brain sweep/drain are not idempotent with respect to
- * money — `brain_spend` is append-only and `recoverOrphans()` re-queues rows
- * the other process is mid-extraction on, so a second sweeper pays twice for
- * one distillation. Maintenance stays with the installed pair; a dev daemon
- * is a fixture. Nothing is lost while only dev is running, it is just
- * deferred to the next time the real app is up.
- */
+/** Closed for a dev daemon: it shares the DB, and a second sweeper pays twice (`brain_spend`). */
 export function periodicWorkGate(env: Env = process.env): (() => boolean) | undefined {
   return isDevDaemon(env) ? () => false : undefined;
 }

@@ -1,32 +1,6 @@
-// Screen replay for claude's TUI output.
-//
-// The `/usage` dialog is drawn by a DIFFING renderer. After the first full
-// paint, each subsequent frame re-emits only the cells whose contents changed
-// and steps over the unchanged ones with cursor-positioning escapes. A real
-// terminal keeps the stepped-over cells; a linear "escape → space" stripper
-// cannot, because the character was never in the byte stream a second time.
-//
-// Captured from 2.1.236, the Subagents row arrives as:
-//
-//   \r  ESC[3C  ESC[1B  g  ESC[6G  neral-purpose
-//
-// `ESC[1B` moves DOWN WITHOUT RESETTING THE COLUMN, and `ESC[6G` jumps over
-// the cell holding `e`. Stripping each escape to a single space yields
-// `g neral-purpose`; only replaying into a grid yields `general-purpose`.
-// That is what this module does — it maintains a character grid, applies
-// cursor motion and erase operations to it, and serializes the result.
-//
-// Every corruption the old stripper produced (`/ mnifex-rele se`,
-// `mc -atlassian`, `these ind p nd t characteristi s`) came from this one
-// cause. `daemon/__tests__/usage-runner-render.test.ts` pins it against a
-// real captured render.
-//
-// Only the subset of sequences Claude's TUI actually emits is implemented;
-// anything else is skipped rather than guessed at. Unhandled sequences move
-// no cursor and write no cells, which is the safe failure mode.
+// The CLI's diffing renderer steps over unchanged cells with cursor escapes, and `ESC[nB` moves down without resetting
+// the column, so only replaying into a grid recovers the text. Unhandled sequences move nothing and write nothing.
 
-// ANSI control sequences are inherently regex over control characters;
-// the lint warning here is correct in the abstract but inapplicable.
 /* eslint-disable no-control-regex */
 const CSI = /^\x1b\[([0-?]*)([ -/]*)([@-~])/;
 const OSC_END = /\x07|\x1b\\/;
@@ -46,7 +20,6 @@ class Screen {
 
   write(ch: string): void {
     const line = this.lineAt(this.row);
-    // Pad with spaces rather than holes so a later join() sees real cells.
     while (line.length < this.col) line.push(' ');
     line[this.col] = ch;
     this.col += 1;
@@ -117,12 +90,7 @@ class Screen {
     line.length = 0;
   }
 
-  /**
-   * Serialize to text. Trailing whitespace goes per row, and runs of spaces
-   * collapse to one so the parser's `<label> <value>` regexes see the same
-   * single-space shape they always have — the grid pads to real screen
-   * columns, which would otherwise leave 40-space gutters between columns.
-   */
+  /** Runs of spaces collapse to one: the parser's regexes expect single spaces, not padded columns. */
   toString(): string {
     return this.rows
       .map((line) => line.join('').replace(/\s+$/, '').replace(/ {2,}/g, ' '))
@@ -166,9 +134,7 @@ export function stripAnsi(input: string): string {
           case 'K': screen.eraseLine(params[0] ?? 0); break;
           case 'h':
           case 'l':
-            // Alternate-screen switch starts a fresh screen, exactly as it
-            // does in a real terminal. Claude enters it at startup, so this
-            // is what drops the shell's scrollback from the capture.
+            // Alternate-screen switch starts a fresh screen, which drops the shell's scrollback.
             if (isPrivate && params.includes(1049)) screen.eraseDisplay(2);
             break;
           default: break; // SGR (m), scroll (S/T), device queries, … — no cell effect

@@ -1,28 +1,5 @@
-// Account identity — "who is actually logged in to this config dir?"
-//
-// OmniFex routes projects to accounts by config dir, but nothing in that chain
-// verifies the config dir is authenticated as the account we think it is. A dir
-// can be silently re-authed as somebody else, or logged out, and a session will
-// still launch against it. This module supplies the ground truth for that check.
-//
-// Two operations, deliberately different costs:
-//
-//   readOauthIdentity  — reads <configDir>/.claude.json. Instant, no spawn.
-//                        This is the HOT PATH: it runs on session start.
-//   probeAuthStatus    — spawns `claude auth status --json`. Authoritative
-//                        (~1s), async. Runs behind an explicit user action
-//                        in Settings, and behind login-expiry.ts's cache.
-//                        Never on session start.
-//
-// `oauthAccount` lingers in .claude.json after a logout, so the cheap read
-// detects the wrong-account case reliably but the logged-out case only
-// sometimes. That's why Settings also offers the probe: it is the CLI's own
-// answer, and it distinguishes logged-out from stale.
-//
-// No Electron imports and no DB access — callers inject everything, so this
-// module is directly unit-testable.
-//
-// See docs/superpowers/specs/2026-07-27-account-email-verification-design.md
+// readOauthIdentity is the hot path (session start, no spawn); probeAuthStatus spawns the CLI and never runs on session start.
+// `oauthAccount` lingers after a logout, so only the probe tells logged-out from stale.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,17 +20,11 @@ export interface AuthStatus {
   apiProvider: string | null;
   orgName: string | null;
   subscriptionType: string | null;
-  /**
-   * When the stored claude.ai sign-in ends (ISO), CLI >= 2.1.318. Null for
-   * API-key sign-ins, older CLIs, and logged-out dirs.
-   */
   loginExpiresAt: string | null;
 }
 
 export interface ProbeDeps {
-  /** Resolves the `claude` binary. Null when none can be found. */
   resolveBinary: () => string | null;
-  /** Injectable for tests. Defaults to an async execFile with a 10s timeout. */
   exec?: (bin: string, args: string[], env: NodeJS.ProcessEnv) => string | Promise<string>;
 }
 
@@ -71,13 +42,7 @@ function str(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null;
 }
 
-/**
- * Read the OAuth identity cached in `<configDir>/.claude.json`. Returns null
- * for every failure shape — missing dir, missing file, malformed JSON, or a
- * file with no `oauthAccount` (which is what a logged-out dir looks like on a
- * fresh install). Never throws: this runs on the session-start path and must
- * not be able to break a launch.
- */
+/** Never throws: runs on session start and must not break a launch. */
 export function readOauthIdentity(configDir: string): OauthIdentity | null {
   if (!configDir) return null;
   let parsed: unknown;
@@ -98,11 +63,7 @@ export function readOauthIdentity(configDir: string): OauthIdentity | null {
   };
 }
 
-/**
- * Ask the CLI directly. `claude auth status --json` honors CLAUDE_CONFIG_DIR,
- * so this reports the identity for exactly the dir we pass. Costs a process
- * spawn — callers must keep it off hot paths.
- */
+/** Spawns a process: keep it off hot paths. */
 export async function probeAuthStatus(configDir: string, deps: ProbeDeps): Promise<AuthStatus> {
   const bin = deps.resolveBinary();
   if (!bin) return LOGGED_OUT;
@@ -149,28 +110,11 @@ export async function probeAuthStatus(configDir: string, deps: ProbeDeps): Promi
   };
 }
 
-/** Coalesce bursts — an atomic rewrite lands as several fs events. */
 const WATCH_DEBOUNCE_MS = 150;
 
 /**
- * Call `onChange` when the account signed into `<configDir>` actually changes,
- * so a logout / login performed outside OmniFex (in a terminal, say) updates
- * the UI without the user hunting for a refresh button.
- *
- * Two non-obvious constraints, both learned the hard way:
- *
- * 1. Watches the PARENT DIRECTORY, not the file. The CLI — and OmniFex's own
- *    scratch-cwd helper — rewrite `.claude.json` atomically (write `.tmp`,
- *    then rename), which detaches a file-targeted watcher after the first
- *    change. Same reasoning as the Codex auth watcher in auth/codex-auth.ts.
- *
- * 2. Dedupes on the RESULTING EMAIL, not on the event's filename. macOS
- *    FSEvents names `.claude.json` in the stream even when an unrelated file
- *    in the same directory was written, so filename filtering cannot be
- *    load-bearing. Comparing the parsed identity is platform-independent and
- *    is the guarantee callers actually want: fire only on a real change.
- *
- * Never throws: an unwatchable dir yields a disposable no-op.
+ * Watches the parent dir: `.claude.json` is rewritten by atomic rename, which detaches a file watcher.
+ * Dedupes on the resulting email: macOS FSEvents names `.claude.json` for unrelated writes in the dir.
  */
 export function watchOauthIdentity(
   configDir: string,
@@ -179,7 +123,6 @@ export function watchOauthIdentity(
   let timer: NodeJS.Timeout | null = null;
   let watcher: fs.FSWatcher | null = null;
   let disposed = false;
-  // Snapshot at attach time so the first real change is detectable.
   let lastEmail = readOauthIdentity(configDir)?.email ?? null;
 
   const schedule = (): void => {
@@ -188,7 +131,7 @@ export function watchOauthIdentity(
       timer = null;
       if (disposed) return;
       const nextEmail = readOauthIdentity(configDir)?.email ?? null;
-      if (nextEmail === lastEmail) return; // noise, not a change
+      if (nextEmail === lastEmail) return;
       lastEmail = nextEmail;
       try {
         onChange();
@@ -201,8 +144,6 @@ export function watchOauthIdentity(
   try {
     watcher = fs.watch(configDir, (_event, filename) => {
       if (disposed) return;
-      // Cheap pre-filter — meaningful on Linux/Windows, unreliable on macOS
-      // (see note 2), which is why `schedule` re-checks by value anyway.
       if (filename === null || filename === '.claude.json') schedule();
     });
     watcher.on('error', () => { /* directory vanished; stay quiet */ });
@@ -223,16 +164,7 @@ export function watchOauthIdentity(
   };
 }
 
-/**
- * The verdict of an identity check, as a closed set.
- *
- * `unknown-account` and `unverified` are deliberately distinct. Both mean "no
- * comparison happened", but only `unverified` is a choice the user made — the
- * other means a config dir is in play that no account row owns, which is a
- * routing or path-normalization bug. Collapsing them lets a broken check
- * masquerade as a deliberate opt-out, which is exactly the failure mode this
- * feature exists to prevent.
- */
+/** `unknown-account` and `unverified` stay distinct: only `unverified` is the user's choice; the other is a routing bug. */
 export type IdentityStatus =
   | 'verified'
   | 'mismatch'
@@ -247,12 +179,7 @@ export interface IdentityVerdict {
   configDir: string;
 }
 
-/**
- * The single comparison used by every surface — the session pre-flight check,
- * the post-init re-check, the Settings row, and the session badge. Kept pure
- * and exported so there is exactly one definition of what "verified" means;
- * a second copy in the renderer would drift.
- */
+/** The one definition of "verified"; a renderer copy would drift. */
 export function classifyIdentity(opts: {
   accountExists: boolean;
   expected: string | null | undefined;
@@ -266,11 +193,7 @@ export function classifyIdentity(opts: {
   return emailsMatch(expected, detected) ? 'verified' : 'mismatch';
 }
 
-/**
- * Trimmed, case-insensitive comparison. Deliberately does NOT normalize Gmail
- * dots or plus-addressing: two addresses the user considers distinct must not
- * silently compare equal, or the check stops being a check.
- */
+/** No Gmail dot/plus normalization: addresses the user considers distinct must not compare equal. */
 export function emailsMatch(
   a: string | null | undefined,
   b: string | null | undefined,
@@ -281,22 +204,11 @@ export function emailsMatch(
   return na === nb;
 }
 
-/**
- * The verdict the daemon hands to the sessions service.
- *
- * Lives here, next to `classifyIdentity`, because two composition roots once
- * built their own copies of it — and only one kept the reasoning for the
- * `unknown-account` warning.
- *
- * Cheap by construction: the `.claude.json` read, never a CLI spawn, and an
- * account with no `expected_email` short-circuits before any I/O. The session
- * pre-flight path runs this on every cold start.
- */
+/** Cheap by construction (the `.claude.json` read, never a spawn): runs on every cold start. */
 export function createAccountIdentityVerdict(deps: {
   accounts: {
     getAccountByConfigDir(configDir: string): { expected_email?: string | null } | null | undefined;
   };
-  /** Seam for tests; production passes `readOauthIdentity`. */
   readIdentity?: (configDir: string) => { email: string | null } | null;
   log: { writeBatch(entries: LogEntry[]): void };
 }): (configDir: string) => IdentityVerdict {
@@ -305,16 +217,11 @@ export function createAccountIdentityVerdict(deps: {
   return (configDir: string): IdentityVerdict => {
     const account = deps.accounts.getAccountByConfigDir(configDir);
     const expected = account?.expected_email ?? null;
-    // Read even with no expectation: who is signed in drives the account
-    // popover's Sign in / Sign out choice. It is one small file, and the status
-    // still comes out 'unverified' — detecting is not verifying.
+    // Read even with no expectation: it drives Sign in / Sign out. Detecting is not verifying.
     const detected = account ? (readIdentity(configDir)?.email ?? null) : null;
     const status = classifyIdentity({ accountExists: !!account, expected, detected });
     if (status === 'unknown-account') {
-      // Nothing owns this config dir, so nothing can be checked. That state is
-      // indistinguishable from "passed" unless we say so — a routing or
-      // path-normalization bug would otherwise silently disable verification
-      // while looking like a clean bill of health.
+      // Say so: an unowned config dir would otherwise silently disable verification while looking clean.
       deps.log.writeBatch([{
         timestamp: new Date().toISOString(),
         level: 'warn',

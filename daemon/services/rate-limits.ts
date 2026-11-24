@@ -2,40 +2,25 @@ import type { Database } from './database';
 import type { AccountsService } from './accounts';
 import type { LoggingService } from './logging';
 
-// ---------------------------------------------------------------------------
-// Public types
-// ---------------------------------------------------------------------------
-
 export type RateLimitType =
   | 'five_hour'
   | 'seven_day'
   | 'seven_day_opus'
   | 'seven_day_sonnet'
-  // The CLI renders per-model weekly bars from an open `limits` array
-  // (`Current week (Fable)` landed in 2.1.236), so this cannot be closed.
-  // `humanType` and `shouldNotify` both handle an unseen `seven_day_*`.
+  // Open set: the CLI renders per-model weekly bars from an open `limits` array.
   | `seven_day_${string}`
   | 'overage';
 
 export type RateLimitStatus = 'allowed' | 'allowed_warning' | 'rejected';
 
-/**
- * Shape that mirrors the CLI's `CliRateLimitInfo`. We accept the CLI value
- * directly via `recordEvent`; this re-declared type keeps the service free of
- * any external dependency for testing. `rateLimitType` is widened to `string`
- * so future CLI values pass through unchanged.
- */
+/** Mirrors the CLI's `CliRateLimitInfo`; `rateLimitType` stays `string` so new values pass through. */
 export interface RateLimitInfo {
   status: RateLimitStatus;
   rateLimitType?: string;
   utilization?: number;
   resetsAt?: number;
   surpassedThreshold?: number;
-  /**
-   * Every window the API reported on this response, keyed by type. The CLI
-   * builds it from the per-window `anthropic-ratelimit-unified-*` headers,
-   * so a window missing here is one the account does not have.
-   */
+  /** A window missing here is one the account does not have. */
   unifiedWindows?: Record<string, unknown>;
 }
 
@@ -58,11 +43,7 @@ export interface RateLimitSettings {
 
 export interface RateLimitsService {
   recordEvent(configDir: string, info: RateLimitInfo): void;
-  /**
-   * Update utilization (and reset time) for a window without overwriting the
-   * CLI-derived `status`. Called by the usage-runner when fresh /usage data
-   * arrives. If no snapshot exists yet, creates one with `status: 'allowed'`.
-   */
+  /** Never overwrites the CLI-derived `status`. */
   recordUtilization(
     configDir: string,
     rateLimitType: string,
@@ -78,21 +59,11 @@ export interface RateLimitsService {
 export interface RateLimitsDeps {
   db: Database;
   accounts: AccountsService;
-  /**
-   * An OS notification for a crossed threshold. The daemon has no display:
-   * it hands this to its clients, and the app on the Mac raises the banner
-   * (see `notifyClients` in remote/daemon.ts).
-   */
   notifications: { show(title: string, body: string, isError: boolean): void };
   sendToRenderer: (channel: string, payload: unknown) => void;
   logging?: LoggingService | null;
-  /** Override for tests so we can drive time forward deterministically. */
   now?: () => number;
 }
-
-// ---------------------------------------------------------------------------
-// Defaults
-// ---------------------------------------------------------------------------
 
 const SETTINGS_KEY = 'rate_limit_settings';
 
@@ -103,10 +74,6 @@ const DEFAULT_SETTINGS: RateLimitSettings = {
   seven_day_thresholds_pct: [75, 90],
   sound_enabled: true,
 };
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function safeParseSettings(raw: string | null): RateLimitSettings {
   if (!raw) return { ...DEFAULT_SETTINGS };
@@ -151,9 +118,6 @@ function humanType(rateLimitType: string): string {
   if (rateLimitType === 'seven_day') return '7-day';
   if (rateLimitType === 'seven_day_opus') return '7-day Opus';
   if (rateLimitType === 'seven_day_sonnet') return '7-day Sonnet';
-  // Per-model weekly windows are an open set (`seven_day_fable`, …) — render
-  // any unseen one rather than leaking a snake_case identifier into a
-  // notification body.
   if (rateLimitType.startsWith('seven_day_')) {
     const model = rateLimitType.slice('seven_day_'.length).replace(/_/g, ' ');
     return `7-day ${model.charAt(0).toUpperCase()}${model.slice(1)}`;
@@ -174,10 +138,6 @@ function formatResetTime(resetsAt: number | null | undefined, nowMs: number): st
   const hrs = hours % 24;
   return `${days}d ${hrs}h`;
 }
-
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
 
 export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService {
   const { db, accounts, notifications, sendToRenderer, logging } = deps;
@@ -200,10 +160,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Settings
-  // -------------------------------------------------------------------------
-
   function getSettings(): RateLimitSettings {
     return safeParseSettings(db.getSetting(SETTINGS_KEY));
   }
@@ -215,22 +171,13 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     return next;
   }
 
-  // -------------------------------------------------------------------------
-  // Snapshots
-  // -------------------------------------------------------------------------
-
   function upsertSnapshot(
     accountName: string,
     info: RateLimitInfo,
     rateLimitType: string,
     observedAt: number,
   ): void {
-    // The CLI does not always include `utilization` (or `resetsAt`) on every
-    // rate_limit_event — observed in practice on max-plan accounts where many
-    // events arrive with `status: 'allowed'` and only the reset time. Use
-    // COALESCE so an incoming null leaves the previous good value intact;
-    // otherwise the widget would show "?%" right after a fresh percentage
-    // reading just because the next event omitted it.
+    // COALESCE: the CLI often omits utilization/resetsAt, and a null must not wipe the last good value.
     db.raw
       .prepare(
         `INSERT INTO rate_limit_snapshots
@@ -288,8 +235,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
       return;
     }
     const observedAt = now();
-    // Update only utilization + resets_at; preserve status (and create with
-    // status='allowed' when no row exists yet).
     db.raw
       .prepare(
         `INSERT INTO rate_limit_snapshots
@@ -309,9 +254,7 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
         JSON.stringify({ source: 'usage_cli', utilization, resetsAt }),
         observedAt,
       );
-    // Emit the persisted row (status preserved from any prior CLI event)
-    // on the same channel + shape the CLI-event path uses, so the renderer's
-    // single `rate-limits:updated` listener picks up CLI-runner refreshes.
+    // Same channel and shape as the CLI-event path: the renderer has one listener.
     const merged = db.raw
       .prepare(
         `SELECT account_name, rate_limit_type, status, utilization, resets_at, observed_at
@@ -331,10 +274,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
       },
     });
   }
-
-  // -------------------------------------------------------------------------
-  // Threshold dedup
-  // -------------------------------------------------------------------------
 
   function hasFired(
     accountName: string,
@@ -368,10 +307,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
       .run(accountName, rateLimitType, windowResetsAt, thresholdKey, firedAt);
   }
 
-  // -------------------------------------------------------------------------
-  // Notification dispatch
-  // -------------------------------------------------------------------------
-
   function fireNotification(
     title: string,
     body: string,
@@ -394,7 +329,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     const human = humanType(rateLimitType);
     const tail = info.resetsAt ? ` — resets in ${formatResetTime(info.resetsAt, observedAt)}` : '';
 
-    // 1. CLI-rejected: highest urgency, distinct copy
     if (info.status === 'rejected') {
       const key = 'sdk_rejected';
       if (!hasFired(accountName, rateLimitType, window, key)) {
@@ -405,7 +339,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
       return;
     }
 
-    // 2. CLI-warning signal: fire once per window regardless of percent
     if (info.status === 'allowed_warning') {
       const key = 'sdk_warning';
       if (!hasFired(accountName, rateLimitType, window, key)) {
@@ -415,7 +348,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
       }
     }
 
-    // 3. User-configured percent thresholds
     if (typeof info.utilization === 'number') {
       const thresholds = thresholdsForType(rateLimitType, settings)
         .slice()
@@ -431,28 +363,14 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Account resolution
-  // -------------------------------------------------------------------------
-
   function resolveAccountName(configDir: string): string | null {
     const account = accounts.listAccounts().find((a) => a.config_dir === configDir);
     return account?.name ?? null;
   }
 
-  // -------------------------------------------------------------------------
-  // Windows the account no longer has
-  // -------------------------------------------------------------------------
-
   /**
-   * Max dropped the 5-hour window around 2026-10-31: the API stopped sending
-   * its headers, so the CLI's `unifiedWindows` stopped carrying it, and the
-   * last five_hour row stayed on screen for good. An event that lists its
-   * windows and leaves five_hour out is the evidence to drop it; an event
-   * with no `unifiedWindows` at all says nothing either way.
-   *
-   * Only five_hour: the weekly windows are always present on a subscription,
-   * and the per-model ones come from `/usage`, never from `unifiedWindows`.
+   * An event listing its windows without five_hour drops it; one with no `unifiedWindows` says nothing.
+   * Only five_hour: per-model windows come from `/usage`, never from `unifiedWindows`.
    */
   function pruneAbsentWindows(accountName: string, info: RateLimitInfo): void {
     const windows = info.unifiedWindows;
@@ -464,10 +382,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     if (changes > 0) sendToRenderer('rate-limits:updated', { account_name: accountName, removed: 'five_hour' });
   }
 
-  // -------------------------------------------------------------------------
-  // recordEvent — main entry point
-  // -------------------------------------------------------------------------
-
   function recordEvent(configDir: string, info: RateLimitInfo): void {
     const accountName = resolveAccountName(configDir);
     if (!accountName) {
@@ -476,8 +390,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     }
 
     if (!info.rateLimitType) {
-      // Some events arrive without a typed window — record under a generic
-      // key so we don't drop the data, but skip threshold detection.
       logWarn(`rate-limits: event missing rateLimitType`, { accountName });
       return;
     }
@@ -488,8 +400,6 @@ export function createRateLimitsService(deps: RateLimitsDeps): RateLimitsService
     checkThresholds(accountName, info, info.rateLimitType, observedAt);
     pruneAbsentWindows(accountName, info);
 
-    // Emit the persisted (sticky-merged) row, not the raw incoming event,
-    // so the renderer sees the COALESCE'd utilization / resets_at.
     const merged = db.raw
       .prepare(
         `SELECT account_name, rate_limit_type, status, utilization, resets_at, observed_at

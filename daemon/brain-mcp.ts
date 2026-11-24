@@ -1,17 +1,5 @@
-/**
- * The Brain MCP server.
- *
- * Spawned by the Claude CLI — never by OmniFex — on the daemon's own node
- * (the app's `omnifexd`), so `better-sqlite3` loads against the one Node ABI
- * it was built for. Whatever `node` is on PATH may be another major, and would
- * abort on open.
- *
- * It has no account concept and cannot enumerate vaults: it reads the one path
- * it was handed in `OMNIFEX_VAULT`. That is the entire isolation model. A
- * session under the personal account cannot reach the work vault because this
- * process was never told where that vault is — isolation is a property of the
- * process environment, not of a filter some future call site could forget.
- */
+// Runs on the daemon's own node (better-sqlite3's ABI), never PATH node.
+// Isolation is the environment: it reads only OMNIFEX_VAULT. Never add a vault parameter.
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -29,11 +17,7 @@ import {
 import { brainInstructions } from './services/brain/instructions';
 import { NOTE_TYPES } from './services/brain/types';
 
-/**
- * MCP content for a tool result. A failed tool is `isError`, never a thrown
- * exception: the CLI shows the model an error it can act on rather than
- * losing the server.
- */
+/** A failed tool is `isError`, never a throw: a throw loses the server. */
 function reply<T>(result: ToolResult<T>, body: (ok: T) => unknown) {
   if (!result.ok) {
     return { isError: true, content: [{ type: 'text' as const, text: result.error }] };
@@ -44,31 +28,20 @@ function reply<T>(result: ToolResult<T>, body: (ok: T) => unknown) {
     content: [
       {
         type: 'text' as const,
-        // Notes are markdown, and nothing on the other side parses this — a
-        // model reads it. JSON-encoding a note spends a fifth of the response
-        // escaping the newlines it is made of.
+        // Markdown verbatim: JSON-escaping newlines costs a fifth of the response.
         text: typeof rendered === 'string' ? rendered : JSON.stringify(rendered, null, 2),
       },
     ],
   };
 }
 
-/**
- * What the server tells every session about itself, computed once at startup.
- *
- * The CLI spawns this process in the session's working directory, which is what
- * makes a repo-specific directive possible from in here at all — the same fact
- * `brain_remember` already relies on to stamp a capture's `cwd`.
- *
- * Every failure is silent and yields the generic text. The Brain is auxiliary:
- * a missing index must not stop the server that still serves `brain_read`.
- */
+/** Every failure yields the generic text: a missing index must not stop `brain_read`. */
 function instructionsFor(dbPath: string): string {
   let cwd: string | null = null;
   try {
     cwd = process.cwd();
   } catch {
-    // A deleted working directory throws here. Unattributed is still useful.
+    // A deleted cwd throws; unattributed is still useful.
   }
   try {
     const index = openVaultIndexReadOnly(dbPath);
@@ -98,18 +71,13 @@ function main(): Promise<void> {
     now: () => new Date(),
   });
 
-  // `instructions` is the whole reason a session reaches for any of this. It
-  // reaches the model whether or not a tool is ever called, and it replaces the
-  // SessionStart hook that used to do this job from outside the app — see
-  // services/brain/instructions.ts for why that was worth collapsing.
+  // `instructions` is what drives invocation; read instructions.ts before reintroducing a SessionStart hook.
   const server = new McpServer(
     { name: 'omnifex-brain', version: '1.0.0' },
     { instructions: instructionsFor(dbPath) },
   );
 
-  // The descriptions state what each tool IS, and leave when-to-call to the
-  // instructions above. Repeating the trigger conditions here would pay for
-  // them three times — once per tool — in every session.
+  // Descriptions say what a tool IS; when-to-call lives only in `instructions`, or every tool pays for it.
   server.registerTool(
     'brain_search',
     {

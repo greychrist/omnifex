@@ -1,10 +1,4 @@
-// Cost module — pure per-session cost computation.
-//
-// Input: raw contents of one session's main JSONL plus its subagent JSONLs.
-// Output: a live snapshot (drives the header CostWidget) and daily rows for
-// the session_cost_daily table (drives the Costs history view). Pure so the
-// live watcher and the backfill sweep share one implementation and tests need
-// no filesystem.
+// Pure: the live watcher and the backfill sweep share one implementation.
 
 import {
   computeMessageCost,
@@ -27,23 +21,17 @@ export interface SessionCostSnapshot {
     cacheWriteTokens: number;
   }[];
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
-  /** `subagentUsd` split per agent, keyed by the agent id in its transcript's
-   *  name (`agent-<id>.jsonl`). Feeds the per-row stats in the `agents`
-   *  popover. */
   bySubagent: Record<string, SubagentCost>;
 }
 
 export interface SubagentCost {
   usd: number;
   estimated: boolean;
-  /** The latest request's input + cache read + cache write + output: what
-   *  the agent's context holds now. Not a sum over requests. */
+  /** The latest request's tokens, not a sum over requests. */
   contextTokens: number;
-  /** The latest request's model, for the context window. */
   model: string;
 }
 
-/** One subagent transcript and the agent id its file name carries. */
 export interface SubagentFile {
   agentId: string;
   content: string;
@@ -51,30 +39,22 @@ export interface SubagentFile {
 
 export interface SessionCostDailyRow {
   session_id: string;
-  /**
-   * Which OmniFex-internal activity paid for this row, or absent for a real
-   * user session. Set by `recordInternal` from the kind the run was launched
-   * as, never inferred from the transcript by the cost sweep.
-   */
+  /** Set by `recordInternal`, never inferred from the transcript. */
   internal_kind?: string | null;
   date: string;
   model: string;
   account_name: string;
   config_dir: string;
   project_path: string | null;
-  /** 0 = main loop, 1 = subagent. Part of the primary key, so a day+model can
-   *  hold one row of each and every metric splits along the same axis. */
+  /** 0 main loop, 1 subagent; part of the primary key. */
   is_subagent: number;
-  /** Billed API requests folded into this row — one per deduped usage record. */
   request_count: number;
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens: number;
   cache_write_5m_tokens: number;
   cache_write_1h_tokens: number;
-  /** Component costs as billed, stored rather than derived. Recomputing these
-   *  from tokens x current rates would stop them summing to `cost_usd` the
-   *  moment a rate changed, and they would disagree silently. */
+  /** Stored as billed: recomputed from current rates they would stop summing to `cost_usd`. */
   input_usd: number;
   output_usd: number;
   cache_read_usd: number;
@@ -104,12 +84,6 @@ export function computeSessionCost(args: ComputeSessionCostArgs): SessionCost {
   return priceSessionUsage(extractSessionUsage(args.sessionContent, args.subagentFiles), args);
 }
 
-/**
- * Price a session's already-extracted usage (`extractSessionUsage`, or the
- * same rows an incremental reader folded). The pricing half of
- * `computeSessionCost`, split out so the live watcher re-prices without
- * re-reading.
- */
 export function priceSessionUsage(
   usage: { main: ExtractedUsageRow[]; subagents: readonly SubagentUsage[] },
   args: SessionCostMeta,
@@ -129,10 +103,7 @@ export function priceSessionUsage(
   const ingest = (rows: ExtractedUsageRow[], agent: SubagentCost | null): void => {
     const isSubagent = agent !== null;
     for (const row of rows) {
-      // Price at the row's own UTC day so an effective-dated rate change does
-      // not re-price history on the next backfill sweep. Rows with no
-      // timestamp fall through to today's rates — they cannot be bucketed
-      // into history either, so they only reach the live snapshot.
+      // Price at the row's own UTC day so a rate change does not re-price history.
       const date = row.timestamp ? row.timestamp.slice(0, 10) : '';
       const cost = computeMessageCost(
         row.model,
@@ -155,7 +126,6 @@ export function priceSessionUsage(
         snapshot.subagentUsd += cost.usd;
         agent.usd += cost.usd;
         agent.estimated = agent.estimated || cost.estimated;
-        // Rows are chronological, so the last one standing is the latest.
         agent.contextTokens = input + cacheRead + t5m + t1h + output;
         agent.model = row.model;
       }
@@ -175,9 +145,6 @@ export function priceSessionUsage(
       m.cacheReadTokens += cacheRead;
       m.cacheWriteTokens += t5m + t1h;
 
-      // Daily bucket — UTC date from the Z-suffixed ISO timestamp. Rows with
-      // no timestamp still count toward the live snapshot but cannot be
-      // bucketed into history.
       if (date.length === 10) {
         const key = `${date}|${row.model}|${isSubagent ? 1 : 0}`;
         let d = daily.get(key);

@@ -2,21 +2,7 @@ import { qualifies } from './curate';
 import { serializeNote } from './frontmatter';
 import type { ParsedNote } from './types';
 
-/**
- * What the Brain costs, and whether curation is firing at the right time
- * (spec §5).
- *
- * Pure: the registry does the reading, this does the arithmetic. The threshold
- * in `curate.ts` was inherited from Rowboat and never measured against a real
- * vault; `qualifyingCount` and `timelineBuckets` are what replace that
- * inheritance with an observation.
- */
-
-/**
- * Rough characters per token. This is a RATIO, not a tokenizer — the UI must
- * label every figure derived from it as an estimate, because presenting it as
- * exact would be a claim the number cannot support.
- */
+/** A ratio, not a tokenizer: the UI must label derived figures as estimates. */
 export const BYTES_PER_TOKEN = 4;
 
 const DATED_ENTRY = /^- \*\*\d{4}-\d{2}-\d{2}\*\*/;
@@ -24,35 +10,18 @@ const DATED_ENTRY = /^- \*\*\d{4}-\d{2}-\d{2}\*\*/;
 export interface VaultStats {
   noteCount: number;
   totalBytes: number;
-  /** Note type → count. Keys are `NoteType` values. */
   byType: Record<string, number>;
   medianBytes: number;
   largestBytes: number;
   largestNote: string | null;
-  /** Every figure here is derived from BYTES_PER_TOKEN. Label as estimated. */
   estimatedTokens: { median: number; largest: number; vault: number };
   timelineBuckets: { label: string; count: number }[];
-  /**
-   * What indexing this vault has cost so far, in USD.
-   *
-   * Not derivable from the notes — it lives in `brain_sources`, which the
-   * registry sums and layers on. `computeVaultStats` therefore reports 0 and
-   * the registry overwrites it; the alternative was passing a DB handle into a
-   * pure fold over Markdown.
-   */
   spentUsd: number;
   qualifyingCount: number;
 }
 
 const BUCKET_ORDER = ['none', '1–3', '4–7', '8–15', '16+'];
 
-/**
- * Dated Timeline bullets in a note.
- *
- * Scans the body directly rather than going through `parseSections`: this runs
- * over every note in the vault on each reading, and the section map allocates
- * per note for two numbers this only needs one of.
- */
 function timelineLength(note: ParsedNote): number {
   let inTimeline = false;
   let count = 0;
@@ -88,8 +57,6 @@ export function computeVaultStats(
   let qualifyingCount = 0;
 
   for (const { relPath, note } of notes) {
-    // The canonical serialization, which is byte-for-byte what is on disk for
-    // every machine-written note — and what a retrieval actually pays for.
     const bytes = Buffer.byteLength(serializeNote(note), 'utf8');
     sizes.push(bytes);
     totalBytes += bytes;

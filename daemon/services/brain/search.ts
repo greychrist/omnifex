@@ -11,41 +11,26 @@ export interface SearchHit {
   type: string;
   title: string;
   snippet: string;
-  /** Raw bm25 score. More negative is a better match. */
+  /** Raw bm25: more negative is better. */
   score: number;
 }
 
 export interface SearchOptions {
   type?: string;
-  /** Exact frontmatter `project` value, e.g. "[[Projects/omnifex]]". */
   project?: string;
   limit?: number;
 }
 
-/**
- * The read half of a vault index. `openVaultIndexReadOnly` returns one of
- * these; the read-write `VaultIndex` is a superset. The MCP server takes this
- * narrower type because it must never be able to write — it runs in a separate
- * process from the indexing worker, and a second writer is contention the
- * design deliberately avoids.
- */
-/** One `(project, type)` bucket of the index. */
 export interface ProjectTypeCount {
-  /** The frontmatter project wikilink, or '' for an unattributed note. */
   project: string;
   type: string;
   count: number;
 }
 
+/** The MCP server gets only this: it runs in another process and must never write. */
 export interface ReadonlyVaultIndex {
   search(query: string, opts?: SearchOptions): SearchHit[];
-  /**
-   * Every `(project, type)` bucket, for the MCP server's `instructions`.
-   *
-   * Counts rather than titles: the server states how much this project knows,
-   * never what it knows. A table of contents would be thousands of tokens in
-   * every session prompt, spent guessing at relevance before the task is known.
-   */
+  /** Counts, never titles: a table of contents would cost thousands of tokens in every session. */
   projectCounts(): ProjectTypeCount[];
   close(): void;
 }
@@ -53,38 +38,25 @@ export interface ReadonlyVaultIndex {
 export interface VaultIndex extends ReadonlyVaultIndex {
   upsert(notePath: string, title: string, note: ParsedNote): void;
   remove(notePath: string): void;
-  /** Reindex the whole vault from disk. Returns the number of notes indexed. */
   rebuild(vault: Vault): number;
 }
 
-/** No usable index at a path: missing, unreadable, or on an older schema. */
 export class BrainIndexUnavailableError extends Error {}
 
 const DEFAULT_LIMIT = 20;
 
-/**
- * The FTS5 column list. `project` is UNINDEXED and sits beside `type` because
- * both are filters rather than search targets — matching a project name as
- * free text would rank every note in a project against a query naming it.
- */
+/** `project` is UNINDEXED: as free text it would rank a whole project against a query naming it. */
 const COLUMNS =
   'note_path UNINDEXED, type UNINDEXED, project UNINDEXED, title, aliases, keywords, summary, body';
 
 const TOKENIZER = `tokenize = "porter unicode61 tokenchars '-_'"`;
 
-/**
- * Column weights for bm25, in declaration order:
- *   note_path, type, project, title, aliases, keywords, summary, body
- * UNINDEXED columns get 0. Title, aliases and keywords dominate so that a note
- * which *is* about a subject outranks one that mentions it in passing — the
- * aliases field is what makes FTS5 competitive with semantic search here.
- */
+/** bm25 weights in COLUMNS order; UNINDEXED columns must be 0. */
 const BM25_WEIGHTS = '0.0, 0.0, 0.0, 10.0, 8.0, 6.0, 3.0, 1.0';
 
-/** Ordinal of the body column, for snippet(). */
+/** Must match the body column's ordinal in COLUMNS. */
 const BODY_COLUMN = 7;
 
-/** Shared by both openers, for the same reason `runSearch` is. */
 function runProjectCounts(db: BetterSqlite3.Database): ProjectTypeCount[] {
   return db
     .prepare(
@@ -95,20 +67,13 @@ function runProjectCounts(db: BetterSqlite3.Database): ProjectTypeCount[] {
     .all() as ProjectTypeCount[];
 }
 
-/**
- * The one search query, shared by the read-write and read-only openers.
- *
- * Shared rather than copied: the MCP server and the Brain tab must rank the
- * same corpus identically, and two copies of the weights would drift without
- * any test noticing.
- */
+/** Shared by both openers: the MCP server and the Brain tab must rank identically. */
 function runSearch(
   db: BetterSqlite3.Database,
   query: string,
   opts: SearchOptions,
 ): SearchHit[] {
   const match = toFtsQuery(query);
-  // An empty MATCH is a syntax error, so bail before touching SQLite.
   if (!match) return [];
 
   const clauses: string[] = [];
@@ -139,13 +104,7 @@ function runSearch(
     .all(...params) as SearchHit[];
 }
 
-/**
- * Whether an existing `brain_fts` carries the `project` column.
- *
- * This is the schema version check. A bare version number in a side table
- * would be one more thing to keep in step with the table it describes; asking
- * the table what it has cannot go stale.
- */
+/** The schema version check: ask the table, never a side-table version. */
 function hasProjectColumn(db: BetterSqlite3.Database): boolean {
   try {
     const cols = db.prepare('PRAGMA table_info(brain_fts)').all() as { name: string }[];
@@ -155,15 +114,7 @@ function hasProjectColumn(db: BetterSqlite3.Database): boolean {
   }
 }
 
-/**
- * Row count of an existing index, or null when there is no readable index.
- *
- * Deliberately separate from `createVaultIndex`, which CREATES the database it
- * is handed — a status probe must be able to report "configured but never
- * indexed" without bringing the thing it is reporting on into existence.
- * `fileMustExist` is what enforces that; `readonly` keeps a probe from
- * migrating a schema or writing a WAL into a vault nobody opened.
- */
+/** Must never create the database: `fileMustExist` and `readonly` enforce it. */
 export function readIndexedCount(dbPath: string): number | null {
   let db: BetterSqlite3.Database;
   try {
@@ -175,26 +126,14 @@ export function readIndexedCount(dbPath: string): number | null {
     const row = db.prepare('SELECT count(*) AS n FROM brain_fts').get() as { n: number } | undefined;
     return row?.n ?? 0;
   } catch {
-    // A file that exists but has no brain_fts table is corrupt, not empty.
-    // Null means "unknown", which is what the tab should show.
+    // Corrupt, not empty: null means unknown.
     return null;
   } finally {
     db.close();
   }
 }
 
-/**
- * Open an existing index for reading only.
- *
- * This is what the Brain MCP server uses. It never creates the database, never
- * migrates a schema, and never writes a WAL — a separate process holding a
- * write handle on the index the worker owns is exactly the contention the
- * design set out to avoid.
- *
- * Throws rather than returning null: every failure mode here is one the caller
- * must report to the model as a tool error naming a remedy, and a bare null
- * would collapse "no index" and "empty vault" into the same answer.
- */
+/** Never creates, migrates or writes a WAL. Throws, never null: "no index" and "empty vault" must stay distinct. */
 export function openVaultIndexReadOnly(dbPath: string): ReadonlyVaultIndex {
   let db: BetterSqlite3.Database;
   try {
@@ -222,9 +161,7 @@ export function createVaultIndex(dbPath: string): VaultIndex {
 
   db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS brain_fts USING fts5(${COLUMNS}, ${TOKENIZER});`);
 
-  // An index written before `project` existed is dropped and recreated rather
-  // than migrated. The index is derived from the vault and disposable, so the
-  // cost is one rebuild; ALTER on an FTS5 virtual table is not available.
+  // Drop and recreate, never migrate: the index is disposable and FTS5 has no ALTER.
   if (!hasProjectColumn(db)) {
     db.exec('DROP TABLE IF EXISTS brain_fts');
     db.exec(`CREATE VIRTUAL TABLE brain_fts USING fts5(${COLUMNS}, ${TOKENIZER});`);
@@ -237,13 +174,7 @@ export function createVaultIndex(dbPath: string): VaultIndex {
   );
   const clearStmt = db.prepare('DELETE FROM brain_fts');
 
-  /**
-   * The Summary section, used as its own weighted column. Falls back to empty
-   * when a note has no Summary heading. Line-scanned rather than regex-matched:
-   * "everything until the next H2, or end of file" has no clean JS regex form
-   * (there is no \Z anchor), and getting it subtly wrong would silently weight
-   * every note's summary as empty.
-   */
+  /** Line-scanned: JS regex has no \Z, and a subtle miss would weight every summary as empty. */
   function summaryOf(body: string): string {
     const lines = body.split('\n');
     const start = lines.findIndex((l) => /^##\s+Summary\s*$/.test(l));
@@ -285,8 +216,6 @@ export function createVaultIndex(dbPath: string): VaultIndex {
     },
 
     rebuild(vault: Vault): number {
-      // The index is derived, so a rebuild starts from empty. This is also how
-      // notes deleted on disk leave the index.
       clearStmt.run();
       let count = 0;
       for (const relPath of vault.listNotes()) {

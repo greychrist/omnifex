@@ -1,11 +1,4 @@
-// Sessions module — engine-driven query passthroughs
-//
-// Each method looks up the session handle for the tab and forwards to the
-// engine's stream-json control protocol (sendControlRequest) or its cached
-// init data (getInitData). Unknown tabs are no-ops. Engine errors
-// are swallowed and reported as null/[] so a CLI hiccup doesn't crash the
-// IPC layer — except setPermissionMode, which rejects: a refused mode is
-// rolled back, and the picker has to hear about it to roll back too.
+// Engine errors are swallowed to null/[], except setPermissionMode, which rejects so the picker can roll back.
 
 import type {
   SessionHandle,
@@ -36,10 +29,6 @@ export function createQueryPassthroughs(
   cliUsageSink: CliUsageSink | null = null,
   inspectMod: ModInspector | null = null,
 ) {
-  // Persist a control-protocol diagnostic to app_logs. console.error alone
-  // never reaches the DB, which is why mid-session setting changes that
-  // silently no-op (effort/permission/model control_requests) left no trace
-  // to debug. `ok:false` rows record the swallowed engine error.
   const logControl = (
     op: string,
     tabId: string,
@@ -86,17 +75,10 @@ export function createQueryPassthroughs(
     }
   }
 
-  // The CLI waits up to 15 s for the API to confirm a model switch (5 s
-  // before 2.1.307) before refusing it. Outlast it, or a slow confirmation
-  // logs as a failure for a switch the CLI went on to apply.
+  // The CLI waits up to 15 s for the API to confirm a model switch; outlast it.
   const SET_MODEL_TIMEOUT_MS = 20_000;
 
-  /**
-   * Resolves to the model id the CLI says the next turn runs as — `claude -p`
-   * answers set_model with `{model}` since 2.1.307, an alias spelled as the id
-   * it stands for — or null when it acknowledges without one. Rejects when the
-   * CLI refuses or no session is live, so the renderer can roll back.
-   */
+  // Rejects when the CLI refuses or no session is live, so the renderer can roll back.
   async function setModel(tabId: string, model?: string): Promise<string | null> {
     const handle = liveEngine(tabId);
     if (!handle) {
@@ -119,23 +101,9 @@ export function createQueryPassthroughs(
     }
   }
 
-  /**
-   * Rename the session. The CLI persists this as a `custom-title` record and
-   * lets it outrank the `ai-title` it generated for itself, so this is what
-   * makes a rename official — verified end to end against CLI 2.1.273, which
-   * answered `{subtype:'success'}` and wrote the record to the transcript.
-   *
-   * `source: 'host'` is the CLI's own term for a rename made in the hosting
-   * application, which is what OmniFex is.
-   *
-   * Alone among the passthroughs here, this one reports back. The others can
-   * afford to no-op quietly because the next turn shows whether the model or
-   * mode changed; a rename that silently did nothing would leave the pencil
-   * looking like it worked while the session kept its old name.
-   */
+  // Reports back, unlike the others: a rename that silently no-ops would look like it worked.
   async function setTitle(tabId: string, title: string): Promise<boolean> {
-    // The CLI reads an empty custom title as "clear the rename", dropping the
-    // session back to its generated name. Never what the pencil meant.
+    // The CLI reads an empty custom title as "clear the rename".
     const trimmed = title.trim();
     if (!trimmed) {
       logControl('rename_session', tabId, { ok: false, reason: 'blank-title' });
@@ -161,24 +129,15 @@ export function createQueryPassthroughs(
     }
   }
 
-  // Side questions are slow — a fork of the whole context — and the CLI gives
-  // them 660 s (600 s before 2.1.299) against 75 s for other subtypes. The
-  // registry default is 10 s.
+  // The CLI gives side questions 660 s; the registry default is 10 s.
   const SIDE_QUESTION_TIMEOUT_MS = 600_000;
   const sideChatAborts = new Map<string, AbortController>();
 
   function emitSideChat(tabId: string, handle: SessionHandle): void {
-    // A handle that has been stopped or replaced no longer speaks for the tab.
     if (sessions.get(tabId) !== handle) return;
     sendToRenderer?.(`session-side-chat:${tabId}`, handle.sideChat.snapshot());
   }
 
-  /**
-   * Ask the CLI a side question — its `/btw`. Answered from the conversation
-   * so far, no tools, never written to the transcript. Returns once the
-   * exchange is pending; the answer arrives as a snapshot on
-   * `session-side-chat:<tabId>`.
-   */
   async function askSideQuestion(tabId: string, question: string): Promise<SideChatAskResult> {
     const handle = liveEngine(tabId);
     if (!handle) return { ok: false, error: 'No live session' };
@@ -194,8 +153,7 @@ export function createQueryPassthroughs(
     const abort = new AbortController();
     sideChatAborts.set(tabId, abort);
     handle.engine
-      // The print-mode wire shape (2.1.282): no usage — the wrapper drops the
-      // fork's token totals — and a snake_case refusal_fallback.
+      // The print-mode wrapper drops the fork's usage and renames refusalFallback to snake_case.
       .sendControlRequest<{ response?: unknown; synthetic?: unknown; refusal_fallback?: { fallback_model?: string } }>(
         'side_question',
         { question: exchange.question, ...(history.length > 0 && { history }) },
@@ -205,9 +163,7 @@ export function createQueryPassthroughs(
         const response = typeof res?.response === 'string' ? res.response : null;
         logControl('side_question', tabId, {
           ok: true,
-          // The reply names no model. The fork reuses the last main-loop
-          // request's cache-safe params, so the last assistant model is the
-          // one that answered — unless the CLI fell back after a refusal.
+          // The reply names no model: the fork reuses the last main-loop request's params.
           model: handle.lastModel ?? null,
           fallback_model: res?.refusal_fallback?.fallback_model ?? null,
           synthetic: res?.synthetic ?? null,
@@ -222,8 +178,7 @@ export function createQueryPassthroughs(
       })
       .finally(() => {
         if (sideChatAborts.get(tabId) === abort) sideChatAborts.delete(tabId);
-        // The reply carries no usage, and no result may follow a question
-        // asked between turns: read the CLI's totals now so the spend lands.
+        // No result may follow a question asked between turns: read the totals now so the spend lands.
         if (cliUsageSink && sessions.get(tabId) === handle) refreshCliUsage(handle, cliUsageSink);
       });
     return { ok: true };
@@ -232,8 +187,7 @@ export function createQueryPassthroughs(
   function closeSideChat(tabId: string): void {
     sideChatAborts.get(tabId)?.abort();
     sideChatAborts.delete(tabId);
-    // Even with no session left, a client showing a thread must be told it
-    // is gone — otherwise its panel cannot close.
+    // Tell the client even with no session left, or its panel cannot close.
     const handle = sessions.get(tabId);
     if (handle) endSideChat(handle.sideChat, tabId, sendToRenderer);
     else sendToRenderer?.(`session-side-chat:${tabId}`, EMPTY_SIDE_CHAT);
@@ -243,14 +197,7 @@ export function createQueryPassthroughs(
     return sessions.get(tabId)?.sideChat.snapshot() ?? EMPTY_SIDE_CHAT;
   }
 
-  /**
-   * Ask the CLI to propose a name for this session, from `description`
-   * (the first prompt), WITHOUT persisting it — `persist: false` makes the
-   * CLI return the title and write nothing. The user saves it through
-   * `setTitle` if they want it. Naming is on demand by design: the CLI
-   * stopped auto-naming stdin-driven sessions in 2.1.277, and nothing here
-   * spends a model call the user did not ask for.
-   */
+  // `persist: false`: the CLI returns the title and writes nothing.
   async function suggestTitle(tabId: string, description: string): Promise<string | null> {
     const trimmed = description.trim();
     if (!trimmed) {
@@ -284,17 +231,12 @@ export function createQueryPassthroughs(
       logControl('set_permission_mode', tabId, { ok: false, reason: 'no-live-engine', mode });
       return;
     }
-    // The CLI allows Bypass mid-session only when it was spawned in Bypass
-    // (CLI 2.1.287: `isBypassPermissionsModeAvailable` is the launch mode
-    // being bypass, or --allow-dangerously-skip-permissions, which OmniFex
-    // never passes). Refused here so the error says how to get there.
+    // The CLI allows Bypass mid-session only when it was spawned in Bypass.
     if (mode === 'bypassPermissions' && handle.startParams.permissionMode !== 'bypassPermissions') {
       logControl('set_permission_mode', tabId, { ok: false, reason: 'bypass-not-launched', mode });
       throw new Error('Bypass is only available in a session started in Bypass. Restart the session in Bypass to use it.');
     }
-    // Set before the request so a permission prompt racing it is decided
-    // under the new mode; rolled back if the CLI refuses, because the decider
-    // reads this field and must not auto-answer under a mode the CLI is not in.
+    // Set before the request so a racing prompt is decided under the new mode; rolled back if the CLI refuses.
     const previous = handle.permissionMode;
     handle.permissionMode = mode;
     try {
@@ -319,9 +261,7 @@ export function createQueryPassthroughs(
       return;
     }
     try {
-      // 'auto' and null both hand effort back to the model's default. The CLI
-      // does that on an explicit `effortLevel: null`; an absent key (what
-      // `undefined` serialises to) is nothing to apply, and silently no-ops.
+      // The CLI resets effort on an explicit `effortLevel: null`; an absent key silently no-ops.
       const effortLevel = level === 'auto' ? null : level;
       const res = await handle.engine.sendControlRequest('apply_flag_settings', {
         settings: { effortLevel },
@@ -334,13 +274,7 @@ export function createQueryPassthroughs(
     }
   }
 
-  // Push rule lists into the live session. Required because the CLI loads
-  // settings files only at session start; rule edits made via the UI later
-  // (settings panel, "Add Rule" sidebar) sit on disk but the running
-  // session never sees them, so it keeps prompting for things the user
-  // already allowed. apply_flag_settings shallow-merges the permissions
-  // key, so callers must send the full effective allow/deny list each
-  // time, not just the delta.
+  // The CLI loads settings only at start, and apply_flag_settings replaces the lists: send the full allow/deny set, never a delta.
   async function applyPermissions(
     tabId: string,
     permissions: { allow?: string[]; deny?: string[]; ask?: string[] },
@@ -388,15 +322,7 @@ export function createQueryPassthroughs(
     }
   }
 
-  /**
-   * The tail of a background shell or Monitor task's output
-   * (`get_task_output`, CLI 2.1.287+): the last 8 KiB, the same tail the
-   * TUI's /tasks detail view reads. Read-only and no model turn, so the
-   * renderer polls it while a row is open. Null when the CLI refuses — an
-   * unknown or evicted task, or a CLI too old to know the subtype — which
-   * the row shows as "no output available", not as an error. Not logged:
-   * a poll every couple of seconds would flood app_logs.
-   */
+  // Not logged: the renderer polls this every couple of seconds.
   async function getTaskOutput(tabId: string, taskId: string): Promise<TaskOutputTail | null> {
     const handle = liveEngine(tabId);
     if (!handle) return null;
@@ -417,12 +343,6 @@ export function createQueryPassthroughs(
     }
   }
 
-  /**
-   * Stop one background task — a backgrounded shell, Monitor or agent — by
-   * the task_id `background_tasks_changed` / `task_started` reported
-   * (`stop_task`). A user action, so the CLI's refusal propagates for the row
-   * to show rather than vanishing.
-   */
   async function stopTask(tabId: string, taskId: string): Promise<void> {
     const handle = liveEngine(tabId);
     if (!handle) {
@@ -439,16 +359,8 @@ export function createQueryPassthroughs(
     }
   }
 
-  /** Tabs whose CLI refused `prompt_draft_activity` (older than 2.1.326). */
   const draftActivityRefused = new Set<string>();
 
-  /**
-   * Tell the CLI the person is typing a prompt in OmniFex's composer
-   * (`prompt_draft_activity`, 2.1.326, @internal). It carries no text;
-   * between turns the CLI may use the time to get the next request ready,
-   * during a turn it does nothing. A hint: never throws, writes app_logs only
-   * for a refusal, and stops going to a tab whose CLI refused it.
-   */
   async function promptDraftActivity(tabId: string): Promise<void> {
     const handle = liveEngine(tabId);
     if (handle?.agent !== 'claude' || draftActivityRefused.has(tabId)) return;
@@ -463,14 +375,6 @@ export function createQueryPassthroughs(
     }
   }
 
-  /**
-   * Move one running foreground task — a Bash call or a subagent, named by
-   * the tool_use that started it — to the background (`background_tasks`,
-   * the control-request form of Ctrl+B). The blocking tool call returns at
-   * once with a "running in the background" result and the turn carries on;
-   * the task reports back with a task notification. Resolves false when the
-   * CLI found no foreground task for that tool_use (it already finished).
-   */
   async function backgroundTask(tabId: string, toolUseId: string): Promise<boolean> {
     const handle = liveEngine(tabId);
     if (!handle) {
@@ -492,15 +396,7 @@ export function createQueryPassthroughs(
     }
   }
 
-  /**
-   * The CLI's `/status` screen, as the rows it would draw (`get_status`, CLI
-   * 2.1.280+ — the request the VSCode extension's Status dialog uses). Chat
-   * mode has no TUI to type `/status` into, so this is the only way to see it.
-   *
-   * Filtered to the documented shape rather than passed through: the rows are
-   * rendered as-is, and a malformed one should vanish, not crash the dialog.
-   * An older CLI rejects the subtype, which reads as null ("unavailable").
-   */
+  // Filtered to the documented shape: a malformed row should vanish, not crash the dialog.
   async function getCliStatus(tabId: string): Promise<CliStatusReport | null> {
     const handle = liveEngine(tabId);
     if (!handle) return null;
@@ -528,24 +424,7 @@ export function createQueryPassthroughs(
     return { sections: out };
   }
 
-  /**
-   * The session's LIVE permission rules, straight from the CLI.
-   *
-   * This is the read-back half of `applyPermissions`. That method pushes a
-   * file-derived allow/deny union into the session and has no way to confirm
-   * what the session ended up with; `permissions-io.ts` reads only `allow` and
-   * `deny` out of three settings files, so `ask` rules, policy/managed rules,
-   * `--allowedTools` grants and session-only approvals are all invisible to
-   * the panel. The CLI knows all of them.
-   *
-   * Read-only by contract ("this request never changes rules"), so it is safe
-   * to call on every panel open.
-   *
-   * `null` means "no answer" and NEVER "no rules" — the caller must fall back
-   * to the file-derived view. Two ways to get it: a CLI older than 2.1.269
-   * (answers "list_permission_rules is not available on this connection"), or
-   * a malformed envelope.
-   */
+  // `null` means "no answer", never "no rules": the caller must fall back to the file-derived view.
   async function listPermissionRules(
     tabId: string,
   ): Promise<CliPermissionRulesState | null> {
@@ -596,7 +475,6 @@ export function createQueryPassthroughs(
     return [];
   }
 
-  /** Run one MCP control request; CLI errors propagate with the CLI's message. */
   async function mcpControl<T>(
     subtype: string,
     tabId: string,
@@ -641,28 +519,15 @@ export function createQueryPassthroughs(
     await mcpControl('mcp_toggle', tabId, serverName, { enabled });
   }
 
-  /** Reconnect a failed or disconnected server (the /mcp menu's Reconnect). */
   async function mcpReconnect(tabId: string, serverName: string): Promise<void> {
     await mcpControl('mcp_reconnect', tabId, serverName);
   }
 
-  /**
-   * Finish an MCP OAuth sign-in by handing the CLI the URL the browser was
-   * redirected to. For a client that is not on the daemon's machine (the
-   * iPad): the redirect targets the CLI's localhost listener, which the
-   * client's browser cannot reach, so the user pastes the URL it landed on.
-   * The CLI checks it carries `code` or `error`.
-   */
   async function mcpSubmitCallbackUrl(tabId: string, serverName: string, callbackUrl: string): Promise<void> {
     await mcpControl('mcp_oauth_callback_url', tabId, serverName, { callbackUrl }, { timeoutMs: 60_000 });
   }
 
-  // reload_plugins is side-effectful — it re-runs every mod's session.start —
-  // so it is sent only when the caller asks for a refresh. Otherwise the list
-  // comes from the latest system:init, which carries it, and falls back to a
-  // reload only before the first init has arrived. Cache is keyed by tabId;
-  // lifecycle calls evictPluginCache(tabId) on session stop so entries don't
-  // accumulate forever.
+  // reload_plugins re-runs every mod's session.start, so send it only on an explicit refresh.
   const pluginCache = new Map<string, EnrichedPlugin[]>();
   function evictPluginCache(tabId: string): void {
     pluginCache.delete(tabId);

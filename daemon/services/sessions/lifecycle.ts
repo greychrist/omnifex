@@ -1,11 +1,3 @@
-// Sessions module — controller (factory + session management)
-//
-// Thin glue layer that composes the agent engine (subprocess speaking
-// stream-json to `claude`), `runtime.listenToMessages` (the FSM driven by
-// engine events), and the per-tab permission-request handler. Holds the
-// live `Map<tabId, SessionHandle>` and exposes the public
-// `SessionsService` IPC surface.
-
 import type {
   SessionHandle,
   SessionStartParams,
@@ -50,91 +42,26 @@ import { createAutoRecap, type AutoRecapPolicy } from './auto-recap';
 import { dispatchModNotificationRemoval } from './notifications';
 
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-
 export function createSessionsService(
   sendToRenderer: SendToRenderer,
   logging: LoggingService | null = null,
   persistPermissionRule: PersistPermissionRuleFn | null = null,
   rateLimitHook: RateLimitHook | null = null,
   onSessionClosed: SessionClosedHook | null = null,
-  /**
-   * Optional account resolver. When provided, main re-resolves the configDir
-   * for cold-start CLI sessions at the moment of `start()` so a path-rule
-   * change between form-mount and Start-click doesn't spawn under a stale
-   * account. Skipped for resumes (the resume id is tied to the owning
-   * account's JSONL) and when `manualAccountOverride: true` is passed
-   * (user explicitly picked an account on the form).
-   */
   resolveAccountConfigDir: ((projectPath: string) => string | null) | null = null,
-  /**
-   * Optional write-through for the CLI init-time model catalog. Called with
-   * (configDir, models) when a live session's `system:init` carries a model
-   * list; main wires this to the models service's `upsertCatalog` so
-   * pre-session pickers stay warm without ephemeral engine spawns.
-   */
   modelCatalogSink: ((configDir: string, models: unknown[]) => void) | null = null,
-  /**
-   * Optional identity verifier. Given the resolved configDir, returns an
-   * AccountMismatch when the account's `expected_email` disagrees with whoever
-   * is actually authenticated there, or null when it matches / no expectation
-   * is set. Injected as a closure so lifecycle keeps no DB dependency.
-   *
-   * MUST be cheap — this runs on every cold start. the daemon wires it to the
-   * `.claude.json` read, never to a CLI spawn. See
-   * docs/superpowers/specs/2026-07-27-account-email-verification-design.md
-   */
+  // MUST be cheap: it runs on every cold start, so never a CLI spawn.
   verifyAccountIdentity: ((configDir: string) => AccountMismatch | null) | null = null,
-  /**
-   * Optional post-init identity re-check, forwarded to runtime. Compares
-   * against the account email the CLI reports in its own `system:init`
-   * payload — the identity of the running process, so it catches a stale
-   * `.claude.json` that the pre-flight check would have believed.
-   */
   accountMismatchSink:
     | ((configDir: string, observedEmail: string | null) => AccountMismatch | null)
     | null = null,
-  /**
-   * Optional extra CLI arguments for a spawn, derived from its resolved
-   * configDir. Returns [] when there is nothing to add.
-   *
-   * Injected rather than computed here so the session layer keeps no knowledge
-   * of the Brain: the daemon is where accounts, vaults and app paths are all in
-   * scope, and it is the only place that can map a configDir to a vault
-   * without this module growing a dependency on either.
-   */
   _extraSpawnArgs: ((configDir: string) => string[]) | null = null,
-  /**
-   * Resolve the claude binary to spawn. main and the daemon wire this to
-   * `ClaudeBinaryService.findBestBinary()` so the binary picked in Settings
-   * wins; unset, sessions fall back to plain discovery.
-   */
   resolveClaudeBinary: (() => string | null) | null = null,
-  /**
-   * Optional recorder for the CLI's own running token totals — the spend the
-   * transcript never shows (side questions, title generation). main and the
-   * daemon both wire it to `createCliProcessUsageStore(db).record`; the cost
-   * sweep prices what the transcript lacks. See sessions/cli-usage.ts.
-   */
   cliUsageSink: CliUsageSink | null = null,
-  /**
-   * Optional auto-recap policy, read fresh at each turn end and again when the
-   * timer fires. main and the daemon both wire it to `readAutoRecapPolicy`
-   * over the settings table; unset, no recap is ever sent. See auto-recap.ts.
-   */
   autoRecapPolicy: (() => AutoRecapPolicy) | null = null,
-  /**
-   * Whether mods' `$.ui.notify` notifications are raised; read per
-   * notification. The daemon wires it to the `mod_notifications_enabled`
-   * setting; unset, they are on.
-   */
   modNotificationsEnabled: (() => boolean) | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
-  // Hoisted so both the public return and stop()'s plugin-cache eviction
-  // share the same instance.
   const queryPassthroughs = createQueryPassthroughs(
     sessions,
     sendToRenderer,
@@ -145,8 +72,6 @@ export function createSessionsService(
   const autoRecap = autoRecapPolicy
     ? createAutoRecap({
         policy: autoRecapPolicy,
-        // `/recap` is a Claude CLI command; the turn and the queue are
-        // re-checked because the timer outlives the moment it was armed.
         canSend: (tabId) => {
           const h = sessions.get(tabId);
           return !!h && h.agent === 'claude' && h.sessionStatus === 'started'
@@ -168,21 +93,10 @@ export function createSessionsService(
     modNotificationsEnabled,
   };
 
-  // -------------------------------------------------------------------------
-  // start()
-  // -------------------------------------------------------------------------
-
   function start(params: SessionStartParams): void | Promise<void> {
     const { tabId, projectPath } = params;
 
-    // Re-resolve the configDir from current account rules so a path-rule
-    // change between form-mount and Start-click doesn't spawn under a
-    // stale account. Skipped for: (1) resumes — the resume id is tied to
-    // a specific account's JSONL, re-routing it would orphan the saved
-    // transcript; (2) explicit user overrides — the user deliberately
-    // picked a non-rule account on the form; (3) when no resolver was
-    // injected — back-compat for unit tests that construct the service
-    // bare. See `docs/session-lifecycle.md`.
+    // Never re-resolve a resume: its id is tied to the owning account's JSONL. An explicit override also wins.
     let configDir = params.configDir;
     const shouldReResolve =
       !params.resumeSessionId &&
@@ -204,12 +118,7 @@ export function createSessionsService(
       }
     }
 
-    // Secondary confirmation: is this config dir actually logged in as the
-    // account we think it is? Runs against the RE-RESOLVED configDir —
-    // checking the renderer-supplied one would verify the wrong account
-    // exactly when a path rule just changed. Never blocks: the session
-    // starts either way. See
-    // docs/superpowers/specs/2026-07-27-account-email-verification-design.md
+    // Verify the re-resolved configDir, not the renderer's. Never blocks the start.
     if (verifyAccountIdentity && configDir) {
       try {
         const mismatch = verifyAccountIdentity(configDir);
@@ -230,7 +139,6 @@ export function createSessionsService(
       }
     }
 
-    // Close any existing session for this tab
     const existing = sessions.get(tabId);
     if (existing) {
       endSideChat(existing.sideChat, tabId, sendToRenderer);
@@ -270,30 +178,11 @@ export function createSessionsService(
       engine = createClaudeCliEngine({ tabId, claudeBinaryPath: binaryPath });
     }
 
-    // CLI sessions are identified by a UUID pinned at spawn. For cold-start
-    // we mint a fresh one; for resume we reuse the caller's id. JSONL path
-    // is known up front either way.
     const sessionId = params.resumeSessionId ?? randomUUID();
-    // Resume ONLY when the CLI has actually written a transcript for this id.
-    //
-    // A session's UUID is pinned at spawn and pushed to the renderer via
-    // `session-init` immediately, so `claudeSessionId` exists long before any
-    // JSONL does. Reconnect and restart both hand that id straight back as
-    // `resumeSessionId`. When the user never sent a message there is no
-    // transcript, and `--resume` makes the CLI print "No conversation found
-    // with session ID …" and exit — the session dies the moment it starts.
-    // Keeping the id and spawning with `--session-id` gives the same UUID a
-    // fresh transcript, which is what the caller wanted anyway.
+    // Resume only when the CLI wrote a transcript: `--resume` on an id with none exits at once.
     const resume = !!params.resumeSessionId
       && hasTranscript(configDir, projectPath, sessionId);
 
-    // The CLI is ready to accept stdin the moment we spawn it — there is
-    // no application-level "ready" handshake in stream-json mode. We
-    // construct the handle in the 'started' state from the start; any
-    // spawn failure flips us to 'error' via engine.onError / onExit
-    // (wired by listenToMessages). This is honest about the CLI's actual
-    // model and unblocks the renderer immediately so `agent-output:`
-    // events have a place to land.
     const handle: SessionHandle = {
       agent,
       engine,
@@ -316,16 +205,12 @@ export function createSessionsService(
       sideChat: createSideChatStore(),
       projectPath,
       configDir,
-      // A resumed conversation is never auto-named: it either already carries
-      // a title or predates the CLI's naming gap, and a name derived from a
-      // prompt landing mid-conversation is worse than none. See auto-title.ts.
       autoTitleAttempted: resume,
     };
 
     sessions.set(tabId, handle);
 
-    // Wire permission-request handler + runtime message subscribers
-    // before spawning so the very first message lands somewhere.
+    // Wire before spawning so the very first message lands somewhere.
     engine.onPermissionRequest(
       createPermissionRequestHandler(handle, tabId, sendToRenderer, logging),
     );
@@ -337,41 +222,27 @@ export function createSessionsService(
       console.error(`[sessions] Unhandled error in listenToMessages for tab ${tabId}:`, err);
     });
 
-    // Tell the renderer we're live. This must broadcast BEFORE the engine
-    // can produce messages so the renderer's session state is in
-    // 'started' when agent-output:<tabId> events arrive.
+    // Must broadcast before the engine can produce messages.
     sendToRenderer(`session-status:${tabId}`, {
       sessionStatus: 'started',
     });
-    // Push the pinned sessionId immediately so the renderer can seed
-    // claudeSessionId without waiting for the CLI's `system:init` (which
-    // only arrives mid-first-turn in stream-json mode). Anything the UI
-    // gates on claudeSessionId — mode toggle, model picker, persistence —
-    // becomes interactive the moment the user clicks Start.
     sendToRenderer(`session-init:${tabId}`, {
       sessionId,
       projectPath,
     });
 
-    // Spawn the CLI. Fire-and-forget — failures route through engine.onError
-    // and engine.onExit, which the runtime translates into sessionStatus
-    // transitions + error notifications.
     void engine.start({
       projectPath,
       configDir,
       model: params.model,
       permissionMode: params.permissionMode,
-      // Carried by session_start all along and dropped here, so a fresh
-      // session ran at the model's default effort, not the picker's.
       effort: params.effort,
       sessionId,
       resume,
     }).then(async () => {
       if (sessions.get(tabId) !== handle) return;
-      // Baseline the CLI's running totals before this process spends anything.
       if (cliUsageSink) beginCliProcess(handle, cliUsageSink);
-      // Apply OmniFex-extended permission modes ('auto', 'dontAsk') the
-      // CLI's argv parser doesn't accept. No-op for argv-valid modes.
+      // OmniFex-extended modes (`auto`, `dontAsk`) the CLI's argv parser rejects.
       if (params.permissionMode) {
         await engine.applyExtendedPermissionMode(params.permissionMode);
       }
@@ -391,27 +262,13 @@ export function createSessionsService(
     });
   }
 
-  // -------------------------------------------------------------------------
-  // sendMessage() / sendStructuredMessage()
-  // -------------------------------------------------------------------------
-
   function ensureLiveEngine(tabId: string, handle: SessionHandle): void {
-    // If the previous stream errored, restart the engine transparently.
     if (handle.sessionStatus === 'error') {
       restartQuery(tabId, handle, runtimeDeps);
     }
   }
 
-  /**
-   * Ask the CLI to name the session from its first prompt, fire-and-forget.
-   *
-   * Sent alongside the prompt rather than after the turn: the tab label's job
-   * is telling open tabs apart WHILE the turn runs, and a name that arrives
-   * five minutes in has missed it. `persist: true` makes the CLI write the
-   * `ai-title` record itself, so `extractSessionMetadata` and the tab subtitle
-   * pick it up with no further plumbing. Auxiliary work — it must never block
-   * the prompt or fail the turn.
-   */
+  // Auxiliary: must never block the prompt or fail the turn.
   function maybeAutoTitle(tabId: string, handle: SessionHandle, description: string): void {
     if (!shouldAutoTitle({ attempted: handle.autoTitleAttempted, prompt: description })) return;
     handle.autoTitleAttempted = true;
@@ -434,37 +291,27 @@ export function createSessionsService(
     maybeAutoTitle(tabId, handle, prompt);
   }
 
-  /**
-   * The user wrote to the session: a mod's delayed notification sent with
-   * `until_back` must not fire now. User sends only — never the auto-recap.
-   */
+  // User sends only, never the auto-recap.
   function personReturned(handle: SessionHandle): void {
     if (handle.modNotices) dispatchModNotificationRemoval(handle.modNotices.back(), sendToRenderer);
   }
 
-  /**
-   * A message the user sends while an AskUserQuestion card is open is their
-   * reply to it. Answering first keeps the CLI from sitting on the question
-   * with the message queued behind it. User sends only — never the auto-recap.
-   */
+  // Answer the open question first, or the CLI sits on it with the message queued behind. User sends only, never the auto-recap.
   function replyToOpenQuestion(tabId: string): void {
     const handle = sessions.get(tabId);
     if (handle) answerPendingQuestionInChat(handle, tabId, sendToRenderer);
   }
 
-  /** Hand a prompt to the CLI and open the turn — the user's, or the auto-recap's. */
   function deliverMessage(tabId: string, prompt: string): SessionHandle | null {
     const handle = sessions.get(tabId);
     if (!handle) return null;
 
     ensureLiveEngine(tabId, handle);
 
-    // The turn opens the moment the prompt is handed over, before the write,
-    // so a result row that races back cannot be missed.
+    // Open the turn before the write, so a racing result row cannot be missed.
     setTurn(handle, 'running', tabId, sendToRenderer);
     void handle.engine.send(prompt).catch((err: unknown) => {
       console.error(`[sessions] engine.send failed for tab ${tabId}:`, err);
-      // The prompt never reached the CLI, so there is no turn to wait on.
       setTurn(handle, 'idle', tabId, sendToRenderer);
     });
     return handle;
@@ -490,10 +337,6 @@ export function createSessionsService(
     maybeAutoTitle(tabId, handle, autoTitleDescription(content));
   }
 
-  // -------------------------------------------------------------------------
-  // respondPermission()
-  // -------------------------------------------------------------------------
-
   function respondPermission(
     tabId: string,
     behavior: 'allow' | 'deny',
@@ -516,10 +359,6 @@ export function createSessionsService(
     );
   }
 
-  // -------------------------------------------------------------------------
-  // respondElicitation()
-  // -------------------------------------------------------------------------
-
   async function respondElicitation(
     tabId: string,
     action: ElicitationAction,
@@ -531,34 +370,23 @@ export function createSessionsService(
     await respondToElicitation(handle, tabId, sendToRenderer, action, content, requestId);
   }
 
-  // -------------------------------------------------------------------------
-  // stop() / stopAll()
-  // -------------------------------------------------------------------------
-
   function stop(tabId: string, reason: SessionCloseReason = 'closed'): void {
     const handle = sessions.get(tabId);
     if (!handle) return;
 
-    // Capture identity before teardown so the close hook still fires for
-    // sessions that have a known sessionId (UUID).
     const closedSessionId = handle.sessionId;
     const closedProjectPath = handle.projectPath;
     const closedConfigDir = handle.configDir;
 
-    // A stopped session is not working on anything. Announce before the
-    // handle goes, so whoever mirrors the axis learns it.
+    // Announce before the handle goes, so whoever mirrors the axis learns it.
     setTurn(handle, 'idle', tabId, sendToRenderer);
     autoRecap?.forget(tabId);
     endSideChat(handle.sideChat, tabId, sendToRenderer);
     void handle.engine.close().catch(() => { /* ignore */ });
     sessions.delete(tabId);
-    // Evict the per-tab plugin cache so closed-tab entries don't accumulate
-    // over the lifetime of the service.
     queryPassthroughs.evictPluginCache(tabId);
 
     if (closedSessionId && closedProjectPath && onSessionClosed) {
-      // Fire-and-forget — auto-on-close summarization shouldn't block
-      // session teardown, and any errors are logged inside the hook.
       try {
         onSessionClosed(closedSessionId, closedProjectPath, closedConfigDir, reason);
       } catch (err) {
@@ -567,18 +395,12 @@ export function createSessionsService(
     }
   }
 
-  // Every caller of stopAll is a process going away (app quit, daemon
-  // SIGTERM, installer swap), so its closes are 'shutdown': the close hook
-  // must not start work the imminent exit would kill.
+  // Every caller is a process going away, so the close hook must not start work the exit would kill.
   function stopAll(): void {
     for (const tabId of sessions.keys()) {
       stop(tabId, 'shutdown');
     }
   }
-
-  // -------------------------------------------------------------------------
-  // Query helpers
-  // -------------------------------------------------------------------------
 
   function getSessionId(tabId: string): string | null {
     return sessions.get(tabId)?.sessionId ?? null;
@@ -614,17 +436,7 @@ export function createSessionsService(
     return Array.from(sessions.keys());
   }
 
-  /**
-   * The session UUIDs of every open session, deduplicated.
-   *
-   * The join lives here rather than in each caller: this map is the only
-   * authority on which conversations are still being written to, and the Brain
-   * needs exactly that set — a transcript whose session is still open would be
-   * distilled half-finished and then recorded as done.
-   *
-   * Handles with no UUID yet (a cold start that has not minted one) contribute
-   * nothing; there is no transcript on disk to protect yet either.
-   */
+  // The only authority on open sessions: the Brain must not distill a transcript still being written.
   function listActiveSessionIds(): string[] {
     const ids = new Set<string>();
     for (const handle of sessions.values()) {
@@ -667,13 +479,8 @@ export function createSessionsService(
       sessionId: handle.sessionId,
       sessionStatus: handle.sessionStatus,
       turn: { ...handle.turn },
-      // Decides whether Bypass is reachable mid-session (queries.ts), so a
-      // renderer that reloaded and did not start this session can still tell.
       launchPermissionMode: handle.startParams.permissionMode ?? null,
-      // The mode the decider enforces now (mid-session switches included).
-      // A resume spawns from the daemon's persisted options, never the
-      // renderer's picker, so the picker reads this back instead of guessing
-      // from the transcript.
+      // A resume spawns from the daemon's persisted options, so the picker reads this back.
       permissionMode: handle.permissionMode || null,
     };
   }
@@ -682,10 +489,6 @@ export function createSessionsService(
     const handle = sessions.get(tabId);
     return handle ? { ...handle.turn } : IDLE_TURN;
   }
-
-  // -------------------------------------------------------------------------
-  // Return service
-  // -------------------------------------------------------------------------
 
   return {
     start,

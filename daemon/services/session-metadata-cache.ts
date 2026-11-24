@@ -3,7 +3,6 @@ import path from 'node:path';
 import { isRequestReplayLine } from './util/request-replay';
 import type { Database } from './database';
 
-/** What a session row needs from its transcript. */
 export interface SessionMetadata {
   aiTitle?: string;
   customTitle?: string;
@@ -14,45 +13,25 @@ export interface SessionMetadata {
 export interface SessionMetadataEntry extends SessionMetadata {
   size: number;
   mtimeMs: number;
-  /** Byte offset just past the last complete line parsed. */
   offset: number;
 }
 
-/**
- * Where entries outlive the process. The in-memory map stays the fast path;
- * the store is consulted for a file the map has not seen (first look after a
- * restart) and written whenever a file is re-read.
- */
 export interface SessionMetadataStore {
   load(filePath: string): SessionMetadataEntry | null;
   save(filePath: string, entry: SessionMetadataEntry): void;
-  /** Drop rows for files directly in `dir` that are not in `present`. */
   prune(dir: string, present: Set<string>): void;
 }
 
 export interface SessionMetadataCache {
-  /**
-   * The transcript's metadata, reading only what changed since the last call.
-   * Reads go through the thread pool, so a cold project does not stall the
-   * daemon; overlapping calls for one file share a read.
-   */
   get(filePath: string, stat: fs.Stats): Promise<SessionMetadata>;
-  /** Drop entries for files in `dir` that are no longer in `present`. */
   prune(dir: string, present: Set<string>): void;
   size(): number;
-  /** Total transcript bytes read so far — what the tests measure. */
   bytesRead(): number;
 }
 
 /**
- * The sessions page used to read and parse every transcript of a project in
- * full on every visit — 500 MB and ~1 s for a busy project, synchronously, so
- * the whole daemon stalled with it. The four values it wants are all
- * first-seen or last-wins, which makes a transcript's metadata a fold over its
- * lines: keep the fold and where it stopped, and an unchanged file (same size
- * and modified time) costs nothing, a grown one costs only its new lines.
- * Anything else — smaller, or same size with a new mtime — is read again from
- * the start.
+ * Every field is first-seen or last-wins, so metadata is a fold over lines: same size and mtime costs nothing,
+ * a grown file costs only its new lines, and anything else is re-read from the start.
  */
 export function createSessionMetadataCache(store?: SessionMetadataStore): SessionMetadataCache {
   const entries = new Map<string, SessionMetadataEntry>();
@@ -68,23 +47,19 @@ export function createSessionMetadataCache(store?: SessionMetadataStore): Sessio
         if (typeof parsed !== 'object' || parsed === null) continue;
         obj = parsed as Record<string, unknown>;
       } catch {
-        continue; // malformed, or a line still being written
+        continue;
       }
-      // Every entry carrying a timestamp brackets the session's activity.
       const ts = obj.timestamp;
       if (typeof ts === 'string') {
         if (!entry.firstTimestamp) entry.firstTimestamp = ts;
         entry.lastTimestamp = ts;
       }
-      // The CLI rewrites its generated title every turn; last one wins.
       if (obj.type === 'ai-title') {
         const title = obj.aiTitle;
         if (typeof title === 'string' && title.trim()) entry.aiTitle = title.trim();
         continue;
       }
-      // A rename. Kept separate from the generated title: the CLI goes on
-      // rewriting `ai-title` after a rename, so the two are resolved by
-      // precedence (pickSessionTitle), never by which record came last.
+      // Resolved by precedence (pickSessionTitle), never by which came last: the CLI keeps rewriting `ai-title` after a rename.
       if (obj.type === 'custom-title') {
         const title = obj.customTitle;
         if (typeof title === 'string' && title.trim()) entry.customTitle = title.trim();
@@ -122,7 +97,6 @@ export function createSessionMetadataCache(store?: SessionMetadataStore): Sessio
 
   const inflight = new Map<string, Promise<SessionMetadata>>();
 
-  /** Memory first; the store answers for a file this process has not seen. */
   function lookup(filePath: string): SessionMetadataEntry | undefined {
     const inMemory = entries.get(filePath);
     if (inMemory || !store) return inMemory;
@@ -144,15 +118,11 @@ export function createSessionMetadataCache(store?: SessionMetadataStore): Sessio
     const entry: SessionMetadataEntry = appended ? { ...seen } : { size: 0, mtimeMs: 0, offset: 0 };
     try {
       const chunk = await readFrom(filePath, entry.offset, stat.size);
-      // Parse through the trailing partial line too (a file with no final
-      // newline is still complete), but resume next time from the last
-      // newline so a half-written line is read again whole. Re-folding a
-      // line is harmless: every field is first-seen or last-wins.
+      // Resume from the last newline so a half-written line is read again whole; re-folding a line is harmless.
       fold(entry, chunk.toString('utf8'));
       const lastNewline = chunk.lastIndexOf(0x0a);
       entry.offset += lastNewline + 1;
     } catch {
-      // Unreadable now: report what we had, and try again next time.
       return seen ? snapshot(seen) : {};
     }
     entry.size = stat.size;
@@ -168,8 +138,6 @@ export function createSessionMetadataCache(store?: SessionMetadataStore): Sessio
 
   return {
     async get(filePath, stat) {
-      // A read already under way for this file: wait for it, then check again
-      // against this caller's stat (it may have seen a later size).
       for (let running = inflight.get(filePath); running; running = inflight.get(filePath)) {
         await running.catch(() => undefined);
       }
@@ -198,7 +166,6 @@ export function createSessionMetadataCache(store?: SessionMetadataStore): Sessio
   };
 }
 
-/** The SQLite store (`session_metadata_cache`, migration 34). */
 export function createSqliteSessionMetadataStore(db: Database): SessionMetadataStore {
   const raw = db.raw;
   const selectOne = raw.prepare(

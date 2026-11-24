@@ -5,16 +5,6 @@ import path from 'node:path';
 import { parseLegacyPricingOverrides } from '../../src/lib/pricing';
 import { repoIdentity } from './git-repos';
 
-/**
- * Wrap the cryptic `NODE_MODULE_VERSION` error that better-sqlite3 throws when
- * its compiled ABI doesn't match the current runtime with a clear, actionable
- * message. The most common way to hit this is running `npm run dev` (Vite-only,
- * no pre-hook rebuild) after a prior `npm test` (which rebuilds for Node) —
- * the first DB access in Electron crashes with a native-module fault that
- * doesn't mention the real fix.
- *
- * Exported so it's unit-testable without needing to induce a real ABI mismatch.
- */
 export function toActionableNativeModuleError(err: unknown): Error {
   const msg = err instanceof Error ? err.message : String(err);
   if (msg.includes('NODE_MODULE_VERSION')) {
@@ -32,28 +22,12 @@ export interface Database {
   raw: BetterSqlite3.Database;
   getSetting(key: string): string | null;
   saveSetting(key: string, value: string): void;
-  /**
-   * Hand pages freed by deletes back to the filesystem, and return how many
-   * bytes that recovered.
-   *
-   * Deleting rows never shrinks a SQLite file on its own: the pages move to an
-   * internal freelist and are reused by later writes. Under
-   * `auto_vacuum = INCREMENTAL` this call is what actually returns them to the
-   * OS. Cheap and interruptible, unlike a full VACUUM — it moves only free
-   * pages and never rewrites live data.
-   *
-   * Returns 0 when there is nothing on the freelist, and when the database
-   * predates the INCREMENTAL default and has not been converted yet (the
-   * pragma is a harmless no-op under `auto_vacuum = NONE`).
-   */
+  /** Returns freed pages to the OS; needs `auto_vacuum = INCREMENTAL` (a no-op under NONE). */
   reclaimFreePages(): number;
   close(): void;
 }
 
 export interface MigrationOptions {
-  /** Home directory used by migrations that probe the filesystem (e.g. v11's
-   *  in-migration Codex discovery). Defaults to `os.homedir()`. Injectable so
-   *  tests can point it at a tmp dir. */
   homeDir?: string;
 }
 
@@ -63,16 +37,7 @@ export interface Migration {
   up: (db: BetterSqlite3.Database, opts: MigrationOptions) => void;
 }
 
-/**
- * DDL for the Brain vault's orchestration tables (`brain_sources`,
- * `brain_queue`). Defined once and shared by both `initSchema` (the
- * canonical post-migration shape for fresh installs) and migration v18
- * (the upgrade path for existing installs) so the two copies cannot drift.
- *
- * Note: *content* never lives here — only pointers (source_id/item_key) and
- * status — so this table pair is not a hole in the per-account isolation
- * model.
- */
+/** Shared by initSchema and migration v18 so the two can't drift. Pointers and status only, never note content. */
 const BRAIN_TABLES_DDL = `
   CREATE TABLE IF NOT EXISTS brain_sources (
     account_id INTEGER NOT NULL,
@@ -112,17 +77,8 @@ const BRAIN_TABLES_DDL = `
 `;
 
 /**
- * The Brain's append-only spend ledger (Plan 8 §3).
- *
- * Deliberately NOT part of session_cost_daily. That table is keyed
- * (session_id, date, model) and upserts a daily total; a Brain item key for a
- * session source IS a session UUID, so the two would collide on exactly the
- * rows a user indexes on the day they ran, and "latest value for this day"
- * cannot represent re-indexing as new money on top of old money.
- *
- * No FOREIGN KEY on account_id, and account_name is denormalised, on purpose:
- * money spent is history. Deleting an account must not silently shrink a month
- * that has already been reported.
+ * Append-only, apart from session_cost_daily: its daily upsert can't represent re-indexing as new spend.
+ * No FK on account_id: deleting an account must not shrink a month already reported.
  */
 const BRAIN_SPEND_DDL = `
   CREATE TABLE IF NOT EXISTS brain_spend (
@@ -156,20 +112,8 @@ const BRAIN_SPEND_DDL = `
 `;
 
 /**
- * The CLI's own running per-model token totals, one row per CLI process
- * (`docs/superpowers/specs/2026-09-25-side-chat-design.md`, "Cost").
- *
- * The transcript is not the whole bill: the CLI runs forks with
- * `skipTranscript` — side questions, title generation — that never reach a
- * JSONL, but it does count them in the totals it reports on every `result`
- * and from `get_usage`. `baseline_json` is taken before the process spends
- * anything (a `--resume` may restore an earlier process's totals, or may
- * not); `latest_json` is the newest figure. Their difference is what the
- * process spent; what the transcript lacks of it is priced as
- * `cli-unlogged-<session>` rows by the cost sweep.
- *
- * Kept apart from session_cost_daily for the same reason brain_spend is: that
- * table is derived and replaced wholesale per session_id, this is evidence.
+ * `latest_json - baseline_json` is what the process spent; a `--resume` may restore an earlier process's totals.
+ * Kept apart from session_cost_daily: this is evidence, that table is derived and replaced per session.
  */
 const CLI_PROCESS_USAGE_DDL = `
   CREATE TABLE IF NOT EXISTS cli_process_usage (
@@ -184,16 +128,7 @@ const CLI_PROCESS_USAGE_DDL = `
   );
 `;
 
-/**
- * User-editable model pricing — the delta layer over the rates this build
- * shipped with. Shared by `initSchema` (fresh installs) and migration 25
- * (existing ones) so the two cannot drift.
- *
- * Rows hold only what the user says differs from `src/lib/pricing.ts`. The
- * table is deliberately NOT seeded from that constant: a seeded copy pins an
- * install to whatever the rates were on the day it was created, so a release
- * that corrects a price would never reach it. See `services/model-pricing.ts`.
- */
+/** Deltas only, never seeded from src/lib/pricing.ts: a seeded copy would never receive a release's price fix. */
 const MODEL_PRICING_DDL = `
   CREATE TABLE IF NOT EXISTS model_pricing (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -330,10 +265,6 @@ export const migrations: Migration[] = [
     up: (db) => {
       const cols = db.pragma('table_info(accounts)') as { name: string }[];
       if (cols.some((c) => c.name === 'is_default')) {
-        // SQLite ≥ 3.35 supports ALTER TABLE DROP COLUMN. better-sqlite3 ships
-        // a modern SQLite so this is safe; if a user is on an older bundle the
-        // ALTER will throw and the migration's transaction rolls back, leaving
-        // the schema_version row unwritten so a future run can retry.
         db.exec('ALTER TABLE accounts DROP COLUMN is_default');
       }
     },
@@ -344,9 +275,7 @@ export const migrations: Migration[] = [
       'Add agent column to account_path_rules (forward-compat for Codex routing). ' +
       'Defaults to "claude" so every existing rule keeps its current behavior.',
     up: (db) => {
-      // Skip if the table hasn't been created yet — runMigrations tests
-      // bootstrap a minimal schema and rely on every migration being a no-op
-      // when its target table is missing.
+      // Migrations must no-op when their table is missing: the tests bootstrap minimal schemas.
       const tableExists = db
         .prepare(
           "SELECT name FROM sqlite_master WHERE type='table' AND name='account_path_rules'"
@@ -382,15 +311,9 @@ export const migrations: Migration[] = [
         notnull: number;
       }[];
       const accountIdCol = cols.find((c) => c.name === 'account_id');
-      // notnull===0 means the column is already nullable; nothing to do.
       if (!accountIdCol || accountIdCol.notnull === 0) return;
 
-      // NB: plain INTEGER PRIMARY KEY (no AUTOINCREMENT). The DROP TABLE below
-      // would remove the table's row from sqlite_sequence, breaking the
-      // monotonic-id contract AUTOINCREMENT promises. We don't need it here —
-      // nothing FKs against account_path_rules.id, and lookups are by path —
-      // so we drop AUTOINCREMENT entirely (SQLite docs explicitly recommend
-      // this when not strictly needed).
+      // No AUTOINCREMENT: the DROP TABLE below would remove its sqlite_sequence row.
       db.exec(`
         CREATE TABLE account_path_rules_new (
           id INTEGER PRIMARY KEY,
@@ -429,12 +352,7 @@ export const migrations: Migration[] = [
           (db.pragma(`table_info(${table})`) as { name: string }[]).map((c) => c.name),
         );
 
-      // --- Step 1: In-migration Codex discovery (gated on real need) --------
-      // Phase 3 stored Codex path rules with account_id=NULL and agent='codex'.
-      // Those orphans need a Codex account to bind to. We only create one — and
-      // only touch the filesystem — when such orphans exist. Otherwise fresh
-      // installs and the test suite would scan the real ~/.codex and inject a
-      // phantom account.
+      // Touch the filesystem only when orphan Codex rules exist, or fresh installs and tests scan the real ~/.codex.
       const pathRulesExist = tableExists('account_path_rules');
       const hasAgentCol = pathRulesExist && columnNames('account_path_rules').has('agent');
       const hasOrphanCodexRules =
@@ -458,8 +376,6 @@ export const migrations: Migration[] = [
             .prepare(`SELECT id FROM accounts WHERE config_dir = ?`)
             .get(codexHome);
           if (!existingCodex) {
-            // accounts still carries account_type here (renamed below). Empty
-            // label — Codex has no Claude subscription tier.
             db.prepare(
               `INSERT INTO accounts (name, config_dir, account_type) VALUES (?, ?, ?)`,
             ).run('Codex', codexHome, '');
@@ -473,7 +389,6 @@ export const migrations: Migration[] = [
         }
       }
 
-      // --- Step 2: accounts columns -----------------------------------------
       if (tableExists('accounts')) {
         const cols = columnNames('accounts');
         if (!cols.has('engine')) {
@@ -486,20 +401,15 @@ export const migrations: Migration[] = [
           db.exec(`ALTER TABLE accounts RENAME COLUMN account_type TO subscription_label`);
         }
 
-        // Capitalize legacy tier labels; only 'max' was previously free.
         db.exec(`UPDATE accounts SET subscription_label = 'Max', has_cost = 0 WHERE subscription_label = 'max'`);
         db.exec(`UPDATE accounts SET subscription_label = 'Pro' WHERE subscription_label = 'pro'`);
         db.exec(`UPDATE accounts SET subscription_label = 'Enterprise' WHERE subscription_label = 'enterprise'`);
         db.exec(`UPDATE accounts SET subscription_label = 'Free' WHERE subscription_label = 'free'`);
 
-        // A freshly-inserted Codex row defaulted to engine='claude'. Flip it.
         db.prepare(`UPDATE accounts SET engine = 'codex' WHERE config_dir = ?`).run(codexHome);
       }
 
-      // --- Step 3: account_path_rules — drop agent, NOT NULL account_id -----
       if (hasAgentCol) {
-        // Bind orphan Codex rules to the Codex account (discovered above or
-        // pre-existing), then drop any that still have no account.
         db.exec(`
           UPDATE account_path_rules
              SET account_id = (
@@ -526,7 +436,6 @@ export const migrations: Migration[] = [
         `);
       }
 
-      // --- Step 4: project_account_overrides composite (project_path, engine)
       if (
         tableExists('project_account_overrides') &&
         !columnNames('project_account_overrides').has('engine')
@@ -656,9 +565,7 @@ export const migrations: Migration[] = [
       'so the session-start verification does no I/O for accounts that have ' +
       'not opted in.',
     up: (db) => {
-      // No-op when `accounts` is missing. A bare `table_info` pragma returns []
-      // for a nonexistent table, which would read as "column absent" and send
-      // us into an ALTER against nothing — see the same guard on v7/v8.
+      // `table_info` on a missing table returns [], which would read as "column absent".
       const tableExists = db
         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'")
         .get();
@@ -726,19 +633,12 @@ export const migrations: Migration[] = [
       + 'happens on the first launch after this ships: scannedSignatures is '
       + 'in-memory and starts empty every process.',
     up: (db) => {
-      // Migration 16 creates this table with CREATE TABLE IF NOT EXISTS, so it
-      // is not guaranteed present when the runner is pointed at a partial
-      // image (the migration tests do exactly that). Mirror 16's
-      // tolerance rather than assuming: create the new shape outright when
-      // there is nothing to migrate from.
+      // The table may be absent on a partial image (the migration tests use them).
       const exists = db
         .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_cost_daily'")
         .get() !== undefined;
 
-      // Indexes follow a renamed table, so they are dropped first — otherwise
-      // the CREATE INDEX IF NOT EXISTS below finds the names still taken,
-      // skips silently, and the new table is left unindexed while the old
-      // indexes ride away with the table they were attached to.
+      // Drop indexes before the rename, or CREATE INDEX IF NOT EXISTS skips and the new table is left unindexed.
       if (exists) {
         db.exec(`
           DROP INDEX IF EXISTS idx_session_cost_daily_date;
@@ -812,17 +712,13 @@ export const migrations: Migration[] = [
       + 'every existing row and every existing query keeps its exact current '
       + 'meaning: NULL is not "unknown", it is "a real session".',
     up: (db) => {
-      // Migration 16 creates this table with CREATE TABLE IF NOT EXISTS, so it
-      // is not guaranteed present when the runner is pointed at a partial
-      // image. Migration 22 learned this by breaking the migration tests; do
-      // not relearn it.
+      // The table may be absent on a partial image.
       const exists = db
         .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_cost_daily'")
         .get() !== undefined;
       if (!exists) return;
 
-      // ALTER TABLE ADD COLUMN throws on a duplicate, and migrations must be
-      // safe to re-run against an image that already has the column.
+      // ADD COLUMN throws on a duplicate, and migrations must be re-runnable.
       const has = (db.prepare('PRAGMA table_info(session_cost_daily)').all() as { name: string }[])
         .some((c) => c.name === 'internal_kind');
       if (!has) db.exec('ALTER TABLE session_cost_daily ADD COLUMN internal_kind TEXT');
@@ -848,13 +744,12 @@ export const migrations: Migration[] = [
         db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name) !== undefined;
       if (!has('session_cost_daily')) return;
 
-      // Whatever the race happened to capture. Deleted rather than kept
-      // alongside the ledger, which would double-count the overlap.
+      // Deleted, not kept: alongside the ledger it would double-count.
       db.prepare("DELETE FROM session_cost_daily WHERE project_path LIKE '%omnifex-summary-scratch%'").run();
 
       if (!has('brain_spend')) return;
 
-      // Deterministic session ids, so re-running replaces rather than doubles.
+      // Deterministic ids, so a re-run replaces rather than doubles.
       db.prepare("DELETE FROM session_cost_daily WHERE session_id LIKE 'brain-spend-%'").run();
 
       db.exec(`
@@ -914,11 +809,7 @@ export const migrations: Migration[] = [
     up: (db) => {
       db.exec(MODEL_PRICING_DDL);
 
-      // Migrations run against images of unknown vintage, and the v24
-      // tests point the runner at partial ones that have no app_settings at
-      // all. Migration 22 left a comment saying not to relearn this; consider
-      // it relearned. There is nothing to import from a database that has
-      // never had a settings table.
+      // The table may be absent on a partial image.
       const hasSettings = db
         .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_settings'")
         .get() !== undefined;
@@ -929,15 +820,11 @@ export const migrations: Migration[] = [
         .get() as { value: string } | undefined;
       if (!blob?.value?.trim()) return;
 
-      // Parsed with a reader scoped to exactly what a blob could contain, so
-      // a value that never applied does not silently start applying now.
+      // Scoped reader: a value that never applied must not start applying.
       const parsed = parseLegacyPricingOverrides(blob.value);
       if (!parsed || parsed.length === 0) return;
 
-      // Column list is spelled out, not generated from PRICING_FIELDS: a
-      // migration must describe the schema as of ITS version forever. Deriving
-      // it would let a later field change silently rewrite what this migration
-      // did to databases that ran it months ago.
+      // Columns spelled out, never derived from PRICING_FIELDS: a migration describes its own version's schema forever.
       const ins = db.prepare(
         `INSERT OR REPLACE INTO model_pricing (
            pattern, effective_from,
@@ -958,8 +845,6 @@ export const migrations: Migration[] = [
           r.cacheWrite5mPerM ?? null,
           r.cacheWrite1hPerM ?? null,
           r.label ?? null,
-          // color_slot: v31 drops the column; nothing an old blob said about
-          // it survives, so it is written empty here rather than carried.
           null,
         );
       }
@@ -976,8 +861,6 @@ export const migrations: Migration[] = [
       + 'resume. The window is now data on the model row, shipped in '
       + 'pricing.ts and overridable here.',
     up: (db) => {
-      // Guarded: fresh installs get the column from MODEL_PRICING_DDL, and so
-      // does a pre-v25 image, whose v25 runs the current DDL.
       const cols = (db.prepare('PRAGMA table_info(model_pricing)').all() as { name: string }[])
         .map((c) => c.name);
       if (cols.length > 0 && !cols.includes('context_window')) {
@@ -993,8 +876,6 @@ export const migrations: Migration[] = [
       + 'CLI now refuses thinking-off on Fable 5, Fable 5.1 and Opus 5.5 '
       + 'anyway. Stripped here once so nothing has to ignore it on read.',
     up: (db) => {
-      // Guarded like v26: an image old enough to predate the column (or the
-      // table) has nothing to strip.
       const cols = (db.prepare('PRAGMA table_info(accounts)').all() as { name: string }[])
         .map((c) => c.name);
       if (!cols.includes('session_defaults')) return;
@@ -1007,7 +888,7 @@ export const migrations: Migration[] = [
         try {
           parsed = JSON.parse(row.session_defaults);
         } catch {
-          continue; // not ours to repair; leave it exactly as found
+          continue;
         }
         if (!parsed || typeof parsed !== 'object') continue;
         const { thinkingConfig: _dropped, ...rest } = parsed as Record<string, unknown>;
@@ -1036,8 +917,6 @@ export const migrations: Migration[] = [
       + 'autoscroll_disengage_px). The chat now follows on one distance, '
       + 'autoscroll_follow_px; nothing reads the old pair.',
     up: (db) => {
-      // Guarded like v26: an image old enough to predate the table has
-      // nothing to delete.
       const hasTable = db
         .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_settings'")
         .get();
@@ -1077,9 +956,6 @@ export const migrations: Migration[] = [
     up: (db) => {
       const cols = db.pragma('table_info(model_pricing)') as { name: string }[];
       if (cols.some((c) => c.name === 'color_slot')) {
-        // SQLite ≥ 3.35 supports ALTER TABLE DROP COLUMN (v8 relies on the
-        // same). A failure rolls the transaction back, leaving the
-        // schema_version row unwritten so a future run can retry.
         db.exec('ALTER TABLE model_pricing DROP COLUMN color_slot');
       }
     },
@@ -1118,7 +994,7 @@ export const migrations: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_repo_branch_colors_repo ON repo_branch_colors(repo_path);
       `);
       const cols = db.pragma('table_info(branch_colors)') as { name: string }[];
-      if (!cols.some((c) => c.name === 'project_path')) return; // no v6 table (minimal test fixtures)
+      if (!cols.some((c) => c.name === 'project_path')) return;
       const rows = db.prepare(
         'SELECT project_path, branch_name, color, sort_order, created_at FROM branch_colors ORDER BY id',
       ).all() as { project_path: string; branch_name: string; color: string; sort_order: number; created_at: number }[];
@@ -1126,8 +1002,7 @@ export const migrations: Migration[] = [
         const id = repoIdentity(r.project_path);
         return { ...r, repo_path: id ?? r.project_path, direct: !id || id === r.project_path };
       });
-      // Rows already keyed by the main checkout first, so INSERT OR IGNORE
-      // lets them win over a worktree's row for the same branch.
+      // Main-checkout rows first, so INSERT OR IGNORE lets them win.
       keyed.sort((a, b) => Number(b.direct) - Number(a.direct));
       const ins = db.prepare(
         `INSERT OR IGNORE INTO repo_branch_colors (repo_path, branch_name, color, sort_order, created_at)
@@ -1190,19 +1065,6 @@ export const migrations: Migration[] = [
   },
 ];
 
-/**
- * Run any migrations whose `version` is greater than the highest version
- * recorded in `schema_version`. Each migration runs inside its own transaction
- * together with the `schema_version` row insert, so a crashing migration
- * leaves the DB in a clean pre-migration state.
- *
- * `opts.migrationsOverride` is for tests only — production callers pass no
- * argument and use the module-level `migrations` list. Exposing the override
- * lets tests exercise the runner against a synthetic migration (no-op,
- * throwing, etc.) without having to land a real schema change first.
- * `opts.homeDir` is forwarded to each migration's `up()` for filesystem-probing
- * migrations (see v11).
- */
 export function runMigrations(
   db: BetterSqlite3.Database,
   opts: { migrationsOverride?: Migration[]; homeDir?: string } = {},
@@ -1210,7 +1072,6 @@ export function runMigrations(
   const migrationsToRun = opts.migrationsOverride ?? migrations;
   const migrationOpts: MigrationOptions = { homeDir: opts.homeDir };
 
-  // Ensure schema_version table exists (safe to call multiple times).
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_version (
       version INTEGER PRIMARY KEY,
@@ -1246,25 +1107,12 @@ export function createDatabase(dbPath: string): Database {
   } catch (err) {
     throw toActionableNativeModuleError(err);
   }
-  // MUST come first — before `journal_mode` and before any table exists.
-  // Switching to WAL writes the database header, and once that is written the
-  // auto_vacuum mode can only be changed by a full VACUUM. Verified both ways
-  // against SQLite: `journal_mode=WAL` then `auto_vacuum=INCREMENTAL` leaves
-  // the mode at 0, the reverse order gives 2. Existing installs (created
-  // before this line) are converted lazily instead — see `reclaimDiskSpace` in
-  // services/logging.ts, which piggybacks on a VACUUM it was running anyway.
-  //
-  // INCREMENTAL rather than FULL: FULL compacts on every commit, putting the
-  // work on the hot write path. INCREMENTAL parks freed pages on the freelist
-  // until someone calls `reclaimFreePages()`, so the cost lands on a timer
-  // instead of on the user's next log write.
+  // Must precede journal_mode: once WAL writes the header, auto_vacuum changes only via a full VACUUM.
+  // INCREMENTAL, not FULL: FULL compacts on every commit.
   raw.pragma('auto_vacuum = INCREMENTAL');
   raw.pragma('journal_mode = WAL');
   raw.pragma('foreign_keys = ON');
-  // Two processes can share this file: the real daemon and the dev
-  // instance's, and the app reads notification settings from it. WAL lets readers
-  // and one writer coexist, but a second writer still gets SQLITE_BUSY
-  // instantly unless told to wait. Five seconds is far above any write here.
+  // Two daemons (real and dev) share this file; without a timeout a second writer gets SQLITE_BUSY instantly.
   raw.pragma('busy_timeout = 5000');
 
   initSchema(raw);
@@ -1295,8 +1143,7 @@ export function createDatabase(dbPath: string): Database {
       if (before === 0) return 0;
 
       raw.pragma('incremental_vacuum');
-      // WAL mode again: the rewrite lands in the -wal and the main file keeps
-      // its old size until the WAL is checkpointed back and truncated.
+      // In WAL mode the main file keeps its size until checkpointed and truncated.
       raw.pragma('wal_checkpoint(TRUNCATE)');
 
       const after = (raw.pragma('freelist_count', { simple: true }) as number) || 0;
@@ -1309,14 +1156,7 @@ export function createDatabase(dbPath: string): Database {
   };
 }
 
-/**
- * Write default values for app_settings keys that don't yet have a stored
- * value. Called from the daemon on startup — gives new installs sensible
- * defaults without clobbering user-edited values.
- *
- * An empty string counts as user-set ("I deliberately cleared this"); only
- * truly-missing keys (getSetting returns null) get filled.
- */
+/** An empty string counts as user-set; only missing keys are filled. */
 export function ensureDefaultSettings(db: Database, defaults: Record<string, string>): void {
   for (const [key, value] of Object.entries(defaults)) {
     if (db.getSetting(key) === null) {
@@ -1434,11 +1274,7 @@ function initSchema(db: BetterSqlite3.Database): void {
 
   db.exec(MODEL_PRICING_DDL);
 
-  // Canonical post-migration shape for brain_sources/brain_queue — see
-  // BRAIN_TABLES_DDL. Keeps fresh installs from needing migration v18 at all.
   db.exec(BRAIN_TABLES_DDL);
-  // The spend ledger exists only here; its migrations (v20, v21) were
-  // removed 2026-10-08 once every install had run them.
   db.exec(BRAIN_SPEND_DDL);
   db.exec(CLI_PROCESS_USAGE_DDL);
 }

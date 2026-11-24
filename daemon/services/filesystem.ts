@@ -1,33 +1,6 @@
 /**
- * Filesystem service — powers the FilePicker's `@`-mention navigation and
- * the Projects page's New Project folder creation.
- *
- * Pure I/O with no account / config coupling:
- *
- *   - `listDirectoryContents(path)` returns one level of entries, sorted
- *     directories first then files (alpha within each group), with
- *     dot-prefixed names hidden by default.
- *   - `searchFiles(basePath, query)` walks `basePath` recursively, returning
- *     entries whose name contains `query` (case-insensitive). Dot-prefixed
- *     directories are skipped so we don't descend into `.git/` or
- *     `node_modules`-adjacent hidden trees. Results are capped so deep
- *     monorepos can't produce runaway responses.
- *   - `createDirectory(path)` makes one new folder. An existing folder is
- *     returned as-is — the save dialog behind New Project offers "Replace?"
- *     for one, and a retry after a cancelled account picker names the folder
- *     the first try made; both mean "open it". An existing file is refused,
- *     and missing parents are never created, so a mistyped path fails loudly.
- *   - `saveDroppedFile(name, base64)` keeps a copy of a file dropped onto the
- *     chat that has no path of its own (dragged from a browser, the iPad) and
- *     returns where it went, for the prompt to `@`-mention. One folder per
- *     drop so equal names never collide; drops past the retention window are
- *     deleted on the next save rather than by a timer. The dir is the
- *     tmpdir's realpath: the CLI matches permission rules on resolved paths,
- *     and macOS's tmpdir is a `/var` symlink.
- *
- * All three throw a regular `Error` on malformed input — the IPC
- * wrap-and-repackage layer in `daemon/ipc/handlers.ts` will surface
- * `error.message` to the renderer.
+ * Dropped files go under the tmpdir's realpath: the CLI matches permission rules on resolved paths, and macOS's tmpdir is a `/var` symlink.
+ * createDirectory never creates parents, so a mistyped path fails loudly.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -52,15 +25,10 @@ export interface FilesystemService {
 }
 
 export interface FilesystemServiceOptions {
-  /** Cap on entries returned by `searchFiles`. */
   maxResults?: number;
-  /** Cap on directory-tree depth searched by `searchFiles`. */
   maxDepth?: number;
-  /** Where dropped-file copies go. Defaults to `<tmpdir realpath>/omnifex-dropped`. */
   droppedDir?: string;
-  /** Largest dropped file accepted, in bytes. */
   maxDroppedBytes?: number;
-  /** How long a dropped copy is kept. */
   droppedRetentionMs?: number;
   now?: () => number;
 }
@@ -69,7 +37,6 @@ const DEFAULT_MAX_RESULTS = 200;
 const DEFAULT_MAX_DEPTH = 8;
 // The WebSocket frame cap is 100 MiB and base64 is 4/3 the size.
 const DEFAULT_MAX_DROPPED_BYTES = 50 * 1024 * 1024;
-// Long enough for a resumed session to still find what it was given.
 const DEFAULT_DROPPED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function extensionOf(name: string): string | undefined {
@@ -82,11 +49,6 @@ function isHidden(name: string): boolean {
   return name.startsWith('.');
 }
 
-/**
- * Stable comparator: directories first, then files, alpha within each
- * group. Case-insensitive name compare matches what the FilePicker's
- * substring search already does, so list + search agree on ordering.
- */
 function compareEntries(a: FileEntry, b: FileEntry): number {
   if (a.is_directory !== b.is_directory) return a.is_directory ? -1 : 1;
   return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
@@ -155,7 +117,7 @@ export function createFilesystemService(
         entries.push({ name: d.name, path: full, is_directory: true, size: 0 });
         continue;
       }
-      if (!d.isFile()) continue; // symlink / device / fifo — skip rather than stat
+      if (!d.isFile()) continue;
       let size = 0;
       try {
         const s = await fsPromises.stat(full);
@@ -189,7 +151,7 @@ export function createFilesystemService(
       try {
         dirents = await fsPromises.readdir(dir, { withFileTypes: true });
       } catch {
-        return; // permission denied / vanished — skip silently
+        return;
       }
       for (const d of dirents) {
         if (results.length >= maxResults) return;

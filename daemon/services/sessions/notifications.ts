@@ -1,11 +1,3 @@
-// Sessions module — notification dispatch
-//
-// Dispatches an OS notification, dock-badge update, and renderer-side
-// `claude-notification` IPC for a completed turn, and for a background
-// agent that finishes after its turn already ended. Behavior wrapped in a
-// pure function so any future event-stream consumer can reuse it without
-// duplicating the title/body/IPC shape.
-
 import path from 'node:path';
 import type { SendToRenderer } from './types';
 import type { RuntimeEvent } from './events';
@@ -34,13 +26,11 @@ export function dispatchResultNotification(args: DispatchArgs): void {
 export interface DispatchAgentArgs {
   tabId: string;
   projectPath: string;
-  /** The agent's own label, from the `task_started` this notification pairs with. */
   description: string;
   event: Extract<RuntimeEvent, { kind: 'taskNotification' }>;
   sendToRenderer: SendToRenderer;
 }
 
-/** `44630` → `44s`, `724000` → `12m 04s`. Empty for a missing duration. */
 function formatDuration(ms: number | null): string {
   if (ms === null || ms <= 0) return '';
   const total = Math.round(ms / 1000);
@@ -49,18 +39,6 @@ function formatDuration(ms: number | null): string {
   return minutes > 0 ? `${minutes}m ${String(seconds).padStart(2, '0')}s` : `${seconds}s`;
 }
 
-/**
- * Notify that a backgrounded agent finished.
- *
- * Since CLI >=2.1.232 an agent spawn is backgrounded by default: the turn
- * that launched it ends within seconds and fires its own "Task complete"
- * notification, then the agent works for minutes more. Without this, the
- * one notification the user gets is the one that arrives while the real
- * work is still running.
- *
- * The summary is deliberately not in the body — an agent's final report can
- * be pages long, and its subagent row already carries it.
- */
 export function dispatchAgentNotification(args: DispatchAgentArgs): void {
   const { tabId, projectPath, description, event, sendToRenderer } = args;
   const projectName = path.basename(projectPath) || 'OmniFex';
@@ -82,12 +60,7 @@ export function dispatchAgentNotification(args: DispatchAgentArgs): void {
   });
 }
 
-/**
- * A mod's notification (`system/ui_notify`), on the channel every client
- * already raises. `id` lets the notification centre replace or take it back;
- * `deliver_at` asks it to hold the banner until then. `origin: 'mod'` keeps
- * it from marking the tab as having an unread result.
- */
+// `origin: 'mod'` keeps it from marking the tab as having an unread result.
 export function dispatchModNotification(tabId: string, notice: ModNotice, sendToRenderer: SendToRenderer): void {
   sendToRenderer('claude-notification', {
     tab_id: tabId,
@@ -101,7 +74,6 @@ export function dispatchModNotification(tabId: string, notice: ModNotice, sendTo
   });
 }
 
-/** Take back mods' notifications, shown or still waiting. Ids are global. */
 export function dispatchModNotificationRemoval(ids: string[], sendToRenderer: SendToRenderer): void {
   if (ids.length > 0) sendToRenderer('claude-notification-remove', { ids });
 }

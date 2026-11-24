@@ -1,17 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// ---------------------------------------------------------------------------
-// Public interfaces
-// ---------------------------------------------------------------------------
-
 export interface MCPServerConfig {
   command?: string;
   args?: string[];
   env?: Record<string, string>;
   url?: string;
   transport?: string;
-  [key: string]: unknown; // allow extra fields for forward compat
+  [key: string]: unknown;
 }
 
 export interface MCPServer extends MCPServerConfig {
@@ -68,10 +64,6 @@ export interface MCPService {
   saveProjectConfig(projectPath: string, config: MCPProjectConfig): string;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function readJsonFile(filePath: string): Record<string, unknown> {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
@@ -81,36 +73,15 @@ function readJsonFile(filePath: string): Record<string, unknown> {
   }
 }
 
-/**
- * Read-modify-write, never a whole-file replace: `.claude.json` also holds the
- * account's OAuth session, per-project trust state and caches, and dropping
- * them would sign the account out.
- */
+/** Read-modify-write, never replace: `.claude.json` also holds the OAuth session, and dropping it signs the account out. */
 function writeJsonFile(filePath: string, contents: Record<string, unknown>): void {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(contents, null, 2), 'utf-8');
 }
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-
 export function createMCPService(): MCPService {
-  /**
-   * User-scope MCP servers live in `<configDir>/.claude.json`, NOT
-   * `settings.json`.
-   *
-   * Claude Code has never read an `mcpServers` key from `settings.json` — the
-   * only MCP keys it honours there are `enableAllProjectMcpServers`,
-   * `enabledMcpjsonServers` and `disabledMcpjsonServers`, which govern
-   * APPROVAL of servers defined elsewhere. This service wrote to settings.json
-   * until 2026-08-12, so every server added through OmniFex's MCP tab was
-   * silently ignored by the CLI.
-   *
-   * configDir is required for every operation. There is no default-account
-   * fallback to ~/.claude — the caller must pass the resolved account's dir.
-   */
+  /** User-scope servers live in `<configDir>/.claude.json`: the CLI never reads `mcpServers` from settings.json. No `~/.claude` fallback. */
   function getUserConfigPath(configDir?: string): string {
     if (!configDir) {
       throw new Error(
@@ -173,7 +144,6 @@ export function createMCPService(): MCPService {
   }
 
   function addJson(params: MCPAddJsonParams): MCPServer {
-    // Parse JSON string config and add
     const { name, json, configDir: cd } = params;
     let config: Record<string, unknown>;
     try {
@@ -185,19 +155,16 @@ export function createMCPService(): MCPService {
   }
 
   function addFromClaudeDesktop(scope?: string, _configDir?: string): MCPImportResult {
-    // Stub: reads Claude Desktop config and imports MCP servers
     return { imported: 0, scope: scope ?? 'global', message: 'Claude Desktop import not yet implemented' };
   }
 
   function serve(): string {
-    // Stub: MCP process management is a later feature
     return 'MCP serve not yet implemented';
   }
 
   function testConnection(name: string, configDir?: string): string {
-    // Stub: testing live connections requires running processes
     try {
-      get(name, configDir); // Validate server exists
+      get(name, configDir);
       return `Connection test for "${name}": stub response (not yet implemented)`;
     } catch (e: unknown) {
       return `Error: ${e instanceof Error ? e.message : String(e)}`;
@@ -205,12 +172,10 @@ export function createMCPService(): MCPService {
   }
 
   function resetProjectChoices(): string {
-    // Stub: resets user's per-project MCP choices
     return 'Project choices reset (not yet implemented)';
   }
 
   function getServerStatus(configDir?: string): Record<string, MCPServerStatus> {
-    // Stub: returns status of running MCP processes
     const servers = getMcpServers(configDir);
     const status: Record<string, MCPServerStatus> = {};
     for (const name of Object.keys(servers)) {

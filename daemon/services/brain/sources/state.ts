@@ -3,14 +3,7 @@ import { createReadStream } from 'node:fs';
 import type { Database } from '../../database';
 import { pathsOf, type SourceItem } from './types';
 
-/**
- * Where an item stands with the indexer.
- *
- * `blocked` is distinct from `failed` on purpose: failed means the pipeline
- * tried and something went wrong, blocked means it was never eligible (no
- * owning account, per spec §4's "no silent default-account fallback"). They
- * need different remedies, so they cannot share a status.
- */
+/** `blocked` (never eligible, e.g. no owning account) is distinct from `failed`: different remedies. */
 export type SourceStatus = 'pending' | 'indexed' | 'skipped' | 'failed' | 'blocked';
 
 export interface SourceState {
@@ -22,46 +15,32 @@ export interface SourceState {
   lastIndexedAt: string | null;
   status: SourceStatus;
   error: string | null;
-  /** What the last run that spent anything on this item cost. See RunCost. */
   cost: RunCost | null;
 }
 
-/**
- * What one model-backed run cost, as the CLI itself reported it.
- *
- * Null fields mean "the CLI did not say", never "zero" — an envelope that
- * stops carrying a field must degrade to unknown rather than to free.
- */
+/** Null fields mean "the CLI did not say", never zero. */
 export interface RunCost {
   costUsd: number | null;
   inputTokens: number | null;
   outputTokens: number | null;
   cacheReadTokens: number | null;
   cacheCreationTokens: number | null;
-  /** The model that billed (CliRunResult.model). Absent or null: unreported. */
   model?: string | null;
 }
 
 export interface RecordOptions {
   status: SourceStatus;
-  /** Cleared when omitted, so a fixed failure stops being reported. */
+  /** Cleared when omitted. */
   error?: string;
-  /**
-   * What this run spent, when it spent anything. Omitted by every path that
-   * costs nothing — a gate rejection, a translating source, an unchanged item
-   * — and those leave any previously recorded figures intact.
-   */
+  /** Omitted by paths that cost nothing; those leave recorded figures intact. */
   run?: RunCost;
 }
 
 export interface SourceStateStore {
   get(accountId: number, sourceId: string, itemKey: string): SourceState | null;
   list(accountId: number, sourceId: string): SourceState[];
-  /** Upsert. Stamps mtime and a fresh content hash from the item's file. */
   record(item: SourceItem, opts: RecordOptions): Promise<void>;
-  /** Rowboat's hybrid: mtime first, sha256 only when mtime disagrees. */
   hasChanged(item: SourceItem): Promise<boolean>;
-  /** Bytes read to hash so far — what the tests measure. */
   bytesHashed(): number;
 }
 
@@ -91,8 +70,6 @@ function toState(row: Row): SourceState {
     lastIndexedAt: row.last_indexed_at,
     status: row.status as SourceStatus,
     error: row.error,
-    // All-null means nothing was ever spent here; the object would be five
-    // nulls saying the same thing, so the whole thing is null instead.
     cost:
       row.cost_usd === null &&
       row.input_tokens === null &&
@@ -110,22 +87,7 @@ function toState(row: Row): SourceState {
   };
 }
 
-/**
- * One sha256 over every file behind an item, in order, or null when any of
- * them cannot be read.
- *
- * Not just `item.path`: a session resumed in another cwd spans several files
- * (see `SourceItem.paths`), and hashing only the newest would miss an edit to
- * an earlier half — the note would stay built from content that had changed
- * underneath it. Null reads as "cannot tell", and every caller treats that as
- * changed: a file that vanished between discovery and hashing is exactly the
- * case where re-examining it is correct.
- *
- * Streamed, never `readFileSync`: transcripts run to hundreds of MB, and this
- * runs in the daemon whose one event loop streams every live session. A
- * stream reads through the thread pool and hands the loop back between
- * chunks.
- */
+/** Every file behind an item: a resumed session spans several. Null means changed. Streamed: never readFileSync on the event loop. */
 async function hashFiles(paths: string[], onBytes: (n: number) => void): Promise<string | null> {
   const h = createHash('sha256');
   try {
@@ -142,34 +104,14 @@ async function hashFiles(paths: string[], onBytes: (n: number) => void): Promise
   }
 }
 
-/**
- * What identifies an item's bytes without reading them: its files, their
- * total size and the newest mtime — the same evidence `hasChanged`'s fast path
- * already trusts. A hash is reused only while all three hold.
- */
 function fingerprint(item: SourceItem): string {
   return `${pathsOf(item).join('\0')}\0${String(item.size)}\0${String(item.mtimeMs)}`;
 }
 
-/**
- * Change detection and status for every source adapter.
- *
- * State lives in SQLite rather than Rowboat's `knowledge_graph_state.json`
- * (spec §5): the DB, its migrations and the `createDatabase(':memory:')` test
- * harness already exist, and a JSON blob rewritten per item is a corruption
- * risk their design simply accepts.
- *
- * Note CONTENT never lives here — only pointers and status (spec §4).
- */
+/** Note content never lives here, only pointers and status. */
 export function createSourceStateStore(db: Database): SourceStateStore {
   const raw = db.raw;
   let totalHashed = 0;
-  /**
-   * Hashes already computed, per item, with the fingerprint they were taken
-   * at. In memory only: it is an optimization over a value the table already
-   * persists, and the Sources pane asks about the same moved-but-unedited
-   * transcript on every open — without this, each open re-reads it in full.
-   */
   const hashes = new Map<string, { fingerprint: string; hash: Promise<string | null> }>();
 
   function hashItem(item: SourceItem): Promise<string | null> {
@@ -181,7 +123,7 @@ export function createSourceStateStore(db: Database): SourceStateStore {
       totalHashed += n;
     });
     hashes.set(key, { fingerprint: fp, hash });
-    // An unreadable file is not an answer worth keeping: try again next time.
+    // Never cache an unreadable result: try again next time.
     void hash.then((h) => {
       if (h === null && hashes.get(key)?.hash === hash) hashes.delete(key);
     });
@@ -208,9 +150,7 @@ export function createSourceStateStore(db: Database): SourceStateStore {
 
   async function record(item: SourceItem, opts: RecordOptions): Promise<void> {
     const hash = await hashItem(item);
-    // A run that spent nothing (a gate rejection, a translating source) leaves
-    // the previous figures alone rather than nulling them: what an item cost to
-    // index is still true after a later run declined to index it again.
+    // A run that spent nothing leaves the previous figures alone, never nulls them.
     const run = opts.run;
     raw
       .prepare(
@@ -251,13 +191,8 @@ export function createSourceStateStore(db: Database): SourceStateStore {
   async function hasChanged(item: SourceItem): Promise<boolean> {
     const prior = get(item.accountId, item.sourceId, item.itemKey);
     if (!prior) return true;
-    // Fast path: an untouched mtime means untouched bytes on every filesystem
-    // this app runs on, and it costs one integer compare instead of a full
-    // file read.
     if (prior.mtime === Math.floor(item.mtimeMs)) return false;
-    // Slow path. mtime moving does NOT imply the content moved — a restore, a
-    // branch switch, or a `touch` all rewrite timestamps over identical bytes,
-    // and treating those as edits would re-index an entire vault for nothing.
+    // mtime moving does not imply content moved (restore, branch switch, touch).
     const current = await hashItem(item);
     if (current === null || prior.hash === null) return true;
     return current !== prior.hash;

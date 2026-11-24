@@ -39,61 +39,18 @@ export interface UsageRunnerDeps {
   accounts: AccountsService;
   rateLimits: RateLimitsService;
   spawnPty?: PtySpawner;
-  /**
-   * `ClaudeBinaryService.findBestBinary()` in both roots, so the Settings pick
-   * wins. An account's own `cli_path` still overrides it.
-   */
   findClaudeBinary: () => string | null;
   now?: () => number;
   logging?: LoggingService | null;
-  /**
-   * Resolves the cwd to spawn Claude in for a given account. Prior versions
-   * used `os.homedir()` and tripped Claude Code's first-launch safety
-   * dialog ("Quick safety check: Is this a project you created…"), which
-   * the pty automation couldn't recognize and timed out on. The default
-   * production binding creates a per-account empty scratch dir under
-   * `<userData>/usage-cwd/<accountKey>/` and pre-trusts it via
-   * `<configDir>/.claude.json` — see ./usage-runner/scratch-cwd.ts.
-   *
-   * Tests inject a stub returning a fixed string so they don't touch real
-   * filesystem state.
-   */
+  /** The cwd must be pre-trusted: the home dir trips the CLI's first-launch safety dialog, which the pty cannot answer. */
   ensureCwd?: (accountKey: string, configDir: string) => string;
-  /**
-   * `app.getPath('userData')`. Used by the default `ensureCwd` binding;
-   * ignored when a custom `ensureCwd` is provided.
-   */
   userDataDir?: string;
-  // Tunables (defaults match the spec)
   settleQuietMs?: number;
   usageQuietMs?: number;
-  /**
-   * After the captured text first looks fully rendered (all three windows +
-   * Resets lines), wait this many extra ms in case more bytes are still
-   * inbound. Defaults to 200ms.
-   */
   fullRenderQuietMs?: number;
-  /**
-   * When the buffer goes quiet for `usageQuietMs` but the parse is
-   * incomplete (fewer than all 3 windows), wait an additional grace
-   * period for the missing block to arrive. As of Claude Code 2.1.132 the
-   * Sonnet bar is rendered asynchronously via cursor redraws over a
-   * "Refreshing…" placeholder, sometimes after the rest of the screen
-   * has gone quiet. If the grace expires without completion, snapshot
-   * what we have. Defaults to 3000ms.
-   */
+  /** The CLI can redraw a bar over a "Refreshing…" placeholder after the screen has gone quiet. */
   incompleteParseGraceMs?: number;
-  /**
-   * When the buffer shows the literal "Loading usage data" placeholder AND
-   * the parse is still incomplete, use this longer grace period instead of
-   * `incompleteParseGraceMs`. Claude Code 2.1.146+ async-loads rate-limit
-   * blocks from the server after rendering the Session block, and the
-   * network call can sit quiet for many seconds with no pty bytes. The
-   * standard 3s grace expires before the response arrives and we end up
-   * snapshotting only the placeholder → `no_windows` parse failure on
-   * every poll. Defaults to 12000ms, leaving headroom under the 20s hard
-   * timeout. Capped at hardTimeoutMs at use site.
-   */
+  /** Behind "Loading usage data" the CLI async-loads windows and can send no bytes for seconds. Capped at hardTimeoutMs. */
   loadingDataGraceMs?: number;
   hardTimeoutMs?: number;
   killGraceMs?: number;
@@ -101,12 +58,7 @@ export interface UsageRunnerDeps {
 
 const LOADING_DATA_MARKER = 'Loading usage data';
 
-// Plausibility caps per window. The 5h window maxes at 5 hours from now and
-// the 7d window at 7 days; we add a small margin to absorb clock skew + the
-// time spent rendering and capturing the TUI output before stamping
-// `observedAt`. Anything beyond the cap is treated as a parse glitch (the
-// classic case is a relative-format parser swallowing leftover digits and
-// computing "in 500h" or similar).
+// Beyond the window length plus a margin, a reset is a parse glitch (leftover digits read as "in 500h").
 const FIVE_HOUR_CAP_MS = 6 * 60 * 60 * 1000;
 const SEVEN_DAY_CAP_MS = 8 * 24 * 60 * 60 * 1000;
 
@@ -117,15 +69,10 @@ function validateResetEpoch(
   rawLabel: string,
 ): { accepted: number | null; reason: string } {
   if (epochMs == null) {
-    // "The CLI printed no Resets line" and "the CLI printed one we don't
-    // understand" are different events. Only the second is drift worth
-    // raising — conflating them buried it under a daily warning.
+    // Only an unparseable label is drift; an absent one is routine.
     return { accepted: null, reason: rawLabel.trim() ? 'unparseable' : 'absent' };
   }
   const dt = epochMs - observedAtMs;
-  // Slightly-negative is normal, not a glitch: see CLOCK_LABEL_GRACE_MS. Clamp
-  // such a reset to `observedAtMs` so the countdown reads "now" rather than
-  // going negative.
   if (dt < -CLOCK_LABEL_GRACE_MS) return { accepted: null, reason: 'in_past' };
   const cap = label === 'current_session' ? FIVE_HOUR_CAP_MS : SEVEN_DAY_CAP_MS;
   if (dt > cap) return { accepted: null, reason: `beyond_cap (dt=${dt}ms cap=${cap}ms)` };
@@ -208,9 +155,7 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
   ): Promise<UsageRunResult> {
     const observedAt = now();
 
-    // Resolve a trusted cwd. If this throws (e.g. malformed .claude.json),
-    // surface the error to the caller and the Log tab rather than
-    // launching into the safety dialog.
+    // A failed trust setup must surface, never launch into the safety dialog.
     let cwd: string;
     try {
       cwd = ensureCwd(accountName, configDir);
@@ -228,21 +173,13 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
 
     let pty: FakePty;
     try {
-      // No MCP servers: the TUI would start every configured one (uvx / npx
-      // launchers, by bare name) only for this scrape to kill it seconds
-      // later — ~84 PATH-miss processes for syspolicyd every 5 minutes. The
-      // /usage tables, MCP included, come from local session history, so
-      // the render is the same without them. Only strict mode makes the
-      // empty set authoritative; --mcp-config alone merges.
+      // No MCP servers: each would spawn by bare name only to be killed (PATH-probe storm).
+      // --mcp-config alone merges; only --strict-mcp-config makes the empty set authoritative.
       pty = spawnPty(binary, ['--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'], {
         cwd,
         env: buildClaudeEnv(configDir),
         cols: 200,
-        // Tall enough that the whole `/usage` dialog fits on one screen.
-        // `stripAnsi` replays the escape stream into a character grid and
-        // returns what the SCREEN holds, so anything the CLI pushes below the
-        // fold (it prints a `↓` and stops) is simply not in the capture. At 60
-        // rows the Subagents / Plugins / MCP tables fell off the bottom.
+        // stripAnsi returns the screen, so rows below the fold are lost; 60 rows dropped the tables.
         rows: 200,
       });
     } catch (err) {
@@ -264,59 +201,20 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
 
     const hardDeadline = Date.now() + hardTimeoutMs;
 
-    // Phase 1: navigate past startup until we reach the welcome/prompt
-    // screen. Two transient screens can appear first:
-    //   - Workspace-trust dialog (when cwd hasn't been trusted yet for
-    //     this config dir). Default-highlighted choice is "Yes, I trust
-    //     this folder" — pressing Enter confirms.
-    //   - Welcome screen with the input prompt and a "? for shortcuts"
-    //     footer that's our reliable "ready" signal.
-    //
-    // We wait for the welcome footer to appear; if we see the trust
-    // dialog before then, we send Enter once to confirm and keep waiting.
-    // The earlier heuristic of "wait for `❯` then quiet" was wrong — the
-    // trust dialog uses `❯` as its highlight cursor, so it triggered
-    // immediately and we sent /usage into the dialog.
-    // Welcome-footer markers. Claude Code's TUI footer text drifts across
-    // versions, so we match a small set rather than a single fixed string:
-    //   - `for shortcuts`           pre-2.1.132 ("? for shortcuts")
-    //   - `shift+tab to cycle`      2.1.132+ ("⏵⏵ auto mode on (shift+tab to cycle) …")
-    // Add new entries here when Claude rewords the footer again. The
-    // failure mode is loud (timeout + raw buffer in Log tab), so the next
-    // drift is easy to diagnose.
-    // Claude Code 2.1.146 lays out parts of the banner with cursor-
-    // positioning ANSI escapes (CUF, etc.) instead of literal space chars.
-    // After stripAnsi the visible characters remain but the spaces are gone
-    // (e.g. `shift+tab to cycle` arrives as `shift+tabtocycle`). Normalize
-    // whitespace on both sides so the matcher survives any inter-word
-    // spacing variant the TUI produces.
+    // The trust dialog also uses `❯`, so wait for a footer marker, not the cursor. The footer wording drifts: add markers here.
+    // The banner places words with cursor escapes, so spaces vanish after stripAnsi; match compacted text.
     const READY_MARKERS = ['for shortcuts', 'shift+tab to cycle'];
     const TRUST_MARKER = 'trust this folder';
-    // Startup interstitials that render INSTEAD of the welcome footer, and so
-    // deadlock this loop unless we answer them. Every one of these is answered
-    // with Esc — the decline path. Enter would accept whatever option the TUI
-    // happens to highlight, and a read-only usage scrape must never change the
-    // user's configuration as a side effect of being run.
-    //
-    // Match on the prompt title, compacted and lowercased, so inter-word
-    // spacing produced by cursor-positioning escapes doesn't defeat it.
+    // Interstitials that replace the welcome footer. Always Esc: a read-only scrape must never change the user's config.
     const ESC_DISMISSIBLE: { id: string; marker: string; why: string }[] = [
       {
-        // First-run "Claude in Chrome extension detected". Highlighted choice
-        // is "❯ 1. Yes, use my browser", which would opt the account into
-        // browser tools; Esc keeps them off.
+        // Enter would opt the account into browser tools.
         id: 'chrome_extension',
         marker: 'chrome extension detected',
         why: 'keeps browser tools off',
       },
       {
-        // "Try the new fullscreen renderer?" — CLI 2.1.239 capped it at three
-        // impressions (`fullscreenUpsellSeenCount`), but within those three it
-        // replaces the welcome screen entirely. Verified against 2.1.240 by
-        // forcing it in a pty: the captured screen holds the dialog and none
-        // of READY_MARKERS. Highlighted choice is "❯ 1. Yes, try it", which
-        // starts a renderer trial and persists `tui: "fullscreen"` into the
-        // user's settings.json if the session stays healthy. Esc is "Not now".
+        // Enter starts a trial that persists `tui: "fullscreen"` into settings.json.
         id: 'fullscreen_offer',
         marker: 'try the new fullscreen renderer',
         why: 'leaves the renderer choice to the user',
@@ -345,9 +243,6 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
         break;
       }
       if (!trustConfirmed && compactStripped.includes(COMPACT_TRUST_MARKER)) {
-        // Defensive — the scratch-cwd helper pre-trusts the folder, so
-        // this branch shouldn't fire under normal operation. If it does,
-        // log it so we can tell whether the trust mark stopped sticking.
         logWarn('trust dialog observed despite pre-trust — sending Enter', {
           account: accountName, cwd,
         });
@@ -370,14 +265,6 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
     if (exited || Date.now() >= hardDeadline) {
       const raw = stripAnsi(buffer);
       try { pty.kill(); } catch { /* already gone */ }
-      // `raw` is now the SCREEN, not a byte soup of stacked frames, so
-      // whatever modal is holding startup is legible at a glance. That is the
-      // whole diagnosis for this class of failure: 2.1.235 shipped a
-      // managed-settings approval prompt that could capture the first
-      // keypress, and the next unrecognised dialog will be some other one we
-      // cannot know the wording of in advance. Naming which markers we were
-      // waiting for turns "timed out" into "timed out, and here is the screen
-      // that was up instead".
       logWarn('pty exited or timed out before prompt was ready', {
         account: accountName,
         cwd,
@@ -395,26 +282,10 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
       });
     }
 
-    // Phase 2: send /usage
     const beforeUsage = buffer.length;
     pty.write('/usage\r');
     logInfo('/usage sent — waiting for render', { account: accountName });
 
-    // Phase 3: wait for /usage rendering to settle.
-    //   - Fast path: as soon as the captured text passes
-    //     `isUsageOutputComplete` (all three windows + Resets lines), give
-    //     it a short additional quiet window (`fullRenderQuietMs`) and
-    //     exit.
-    //   - Patient path: if the buffer goes quiet for `usageQuietMs` but
-    //     the parse is *incomplete*, keep waiting up to an additional
-    //     `incompleteParseGraceMs` for the missing block — Claude
-    //     sometimes async-renders the Sonnet bar after the rest has
-    //     stilled. Re-arms whenever bytes arrive (so a slow-but-steady
-    //     trickle continues to extend the wait until either completion
-    //     or hard deadline).
-    //   - Snapshot path: if grace expires without completion, take
-    //     whatever we have. The downstream sanity bounds + COALESCE in
-    //     `recordUtilization` keep junk out of storage.
     let lastSeenLen = beforeUsage;
     let stableSince = Date.now();
     let completeSince: number | null = null;
@@ -433,15 +304,7 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
         if (completeSince == null && isUsageOutputComplete(stripped)) {
           completeSince = Date.now();
         }
-        // Fast path — fully complete render.
         if (completeSince != null && Date.now() - completeSince >= fullRenderQuietMs) break;
-        // Quiet for `usageQuietMs`. If the parse is also complete we
-        // would have already broken via the fast path, so reaching here
-        // means the parse is incomplete. The grace period depends on
-        // whether the TUI is in its async-load state: when the literal
-        // "Loading usage data" placeholder is visible (Claude Code
-        // 2.1.146+), use the longer `loadingDataGraceMs` so the server
-        // response has time to arrive. Otherwise use the standard grace.
         const seenLoading = compactPty(stripped).includes(COMPACT_LOADING_DATA);
         const grace = seenLoading ? loadingDataGraceMs : incompleteParseGraceMs;
         const quietFor = Date.now() - stableSince;
@@ -460,15 +323,10 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
       await sleep(20);
     }
 
-    // Phase 4: clean up
     try { pty.write('/quit\r'); } catch { /* ignore */ }
     setTimeout(() => { try { pty.kill(); } catch { /* already gone */ } }, killGraceMs);
 
     const raw = stripAnsi(buffer.slice(beforeUsage));
-    // Always log the raw pre-parse buffer so successful and failing runs
-    // both leave an inspectable record. (The earlier code only logged
-    // `raw` inside the parse-failure / timeout branches, so a parse that
-    // technically "succeeded" but produced wrong numbers was invisible.)
     logInfo('usage capture (pre-parse)', { account: accountName, raw });
     const parsed = parseUsageOutput(raw);
     if (!parsed.ok) {
@@ -483,23 +341,13 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
       account: accountName,
       windows: parsed.data.windows.map((w) => ({ label: w.label, pct: w.pct_used })),
     });
-    // Silent-zero drift guard. A parse can be structurally `ok` (≥1 window)
-    // while the CLI has reworded a label, in which case the affected field is
-    // stored as a default 0 with no error. Surface that as a loud-but-harmless
-    // warning in the Log tab — same philosophy as the welcome-footer marker
-    // drift — so a future CLI wording change is diagnosable instead of looking
-    // like real zero usage. See collectUsageDriftWarnings.
     const driftWarnings = collectUsageDriftWarnings(raw);
     if (driftWarnings.length > 0) {
       logWarn('usage output drift — parsed ok but expected labels missing (silent zeros likely)', {
         account: accountName, warnings: driftWarnings, raw,
       });
     }
-    // A stale render (2.1.208+ "Showing last-known usage as of …") replays
-    // cached bars from an earlier point in time. Recording those via
-    // recordUtilization would stamp old utilization with a fresh observed_at,
-    // so skip the dual-write entirely — the prior good values in the
-    // rate-limits store already describe that earlier observation.
+    // Stale bars would get a fresh observed_at; the stored values already describe that earlier observation.
     if (parsed.data.stale) {
       logWarn('stale (last-known) usage render — skipping utilization dual-write', {
         account: accountName,
@@ -509,13 +357,7 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
         ok: true, observed_at: observedAt, raw, parsed: parsed.data,
       });
     }
-    // Dual-write to rate-limits — convert the human label ("Resets 7pm
-    // (America/New_York)" or "in 5h") to an absolute epoch (seconds) so the
-    // 7-day/5-hour pills can render the same countdown the 5-hour widget
-    // already shows from claude-stream events. Pass null when the label is
-    // empty, unparseable, or implausibly far away — `recordUtilization`
-    // COALESCEs null against the prior good value so a junk parse never
-    // clobbers a known-good reset time.
+    // null COALESCEs against the prior good value, so a junk parse never clobbers a known reset time.
     for (const w of parsed.data.windows) {
       const type = rateLimitTypeForWindow(w.label);
       const resetsEpochMs = resetsLabelToEpoch(w.resets_at_label, observedAt);
@@ -535,9 +377,6 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
       if (validation.reason === 'ok') {
         logInfo('parsed reset epoch', logCtx);
       } else if (validation.reason === 'absent') {
-        // Nothing to parse — the window rendered without a Resets line. The
-        // prior good value is preserved exactly as for a rejection, but this
-        // is routine CLI output, not drift.
         logInfo('no reset label rendered for this window', logCtx);
       } else {
         logWarn('rejected reset epoch — preserving prior good value', logCtx);
@@ -552,7 +391,6 @@ export function createUsageRunnerService(deps: UsageRunnerDeps): UsageRunnerServ
 
   function cacheAndReturn(accountName: string, result: UsageRunResult): UsageRunResult {
     const prior = cache.get(accountName);
-    // Don't replace a prior ok:true with an ok:false
     if (result.ok || !prior?.ok) cache.set(accountName, result);
     return result;
   }
@@ -573,8 +411,6 @@ function defaultSpawnPty(
   args: string[],
   opts: { cwd: string; env: NodeJS.ProcessEnv; cols: number; rows: number },
 ): FakePty {
-  // Inline import so node-pty isn't loaded unless actually used.
-   
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- inline lazy load; node-pty has heavy native deps.
   const ptyModule = require('node-pty') as typeof import('node-pty');
   const pty = ptyModule.spawn(command, args, opts);

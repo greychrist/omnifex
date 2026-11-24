@@ -1,15 +1,4 @@
-/**
- * Everything that happens because a session closed: the auto-summary, the
- * Brain's enqueues, and the drain behind them.
- *
- * The drain at the end is gated like `periodic-work.ts` gates its own: two
- * daemons can share one SQLite file (the dev instance runs beside the real
- * one), and a second worker on the Brain queue pays twice for one
- * distillation. `enabled` there, `drainEnabled` here, and for the same
- * reason: the gate is a convention until every call site is made to ask.
- * (Until 2026-10-23 the second process was Electron main, which carried a
- * hand-copied version of this block.)
- */
+// The drain is gated (`drainEnabled`) like periodic-work: a second worker on a shared DB pays twice.
 
 import {
   BRAIN_AUTO_INDEX_SETTING_KEY,
@@ -17,7 +6,6 @@ import {
 } from './services/brain/queue';
 import { AUTO_ON_CLOSE_SETTING_KEY, ENABLED_SETTING_KEY } from './services/sessions-summary';
 
-/** Only the Brain surface a close touches. */
 interface BrainLike {
   enqueueSource(accountId: number, itemKey: string): unknown;
   enqueueProjectSources(accountId: number, projectPath: string): unknown;
@@ -31,27 +19,13 @@ interface SummaryLike {
 
 export interface SessionCloseWorkDeps {
   db: { getSetting(key: string): string | null | undefined };
-  /**
-   * Ownership comes from the config dir the session ran under, never from
-   * `resolve()` (spec §4). Still correct if path rules changed after the
-   * session ran, and it never invents a default account.
-   */
+  /** Ownership comes from the session's config dir, never `resolve()`. */
   accounts: { getAccountByConfigDir(configDir: string): { id: number } | null | undefined };
-  /**
-   * Read per close, not captured: the daemon assigns these refs after the
-   * service graph is built, and a session can close before either resolves.
-   */
+  /** Read per close, not captured: assigned after the service graph is built. */
   brain: () => BrainLike | null | undefined;
   summary: () => SummaryLike | null | undefined;
   warn: (message: string, meta: Record<string, unknown>) => void;
-  /**
-   * Whether this process owns the queue drain. Omitted means "always" — the
-   * real daemon. The dev daemon passes a closed gate. Evaluated per close.
-   *
-   * Only the drain is gated. The enqueues are idempotent and near-free, and
-   * the queue is durable, so the process that does own the drain picks the
-   * work up on its next pass.
-   */
+  /** Only the drain is gated: enqueues are idempotent and the queue is durable. */
   drainEnabled?: () => boolean;
 }
 
@@ -66,31 +40,10 @@ export function createSessionCloseWork(deps: SessionCloseWorkDeps): SessionClose
   const drainEnabled = deps.drainEnabled ?? (() => true);
 
   return (sessionId, projectPath, configDir, reason = 'closed') => {
-    // Auto-on-close summarization. Two global toggles gate this path:
-    //   - sessionsSummary.enabled (master) — off means summaries are not used
-    //     at all, so no point generating one.
-    //   - sessionsSummary.autoOnClose — off means the user wants to hit the
-    //     manual refresh button themselves.
-    // The manual path doesn't come through here; it hits `summary_generate`
-    // directly, so autoOnClose has no effect on it. Read fresh on every close
-    // so a flip in Settings takes effect without a restart.
-    //
-    // Fire-and-forget so teardown isn't blocked by model latency; the
-    // size-change gate inside the service makes "close without changes" a
-    // no-op. `configDir` comes from the live SessionHandle, so the JSONL
-    // lookup is anchored to the exact account that ran the session.
     const summaryOn = deps.db.getSetting(ENABLED_SETTING_KEY) === 'true';
     const autoOnClose = deps.db.getSetting(AUTO_ON_CLOSE_SETTING_KEY) === 'true';
-    // A branch, never an early return. Returning here silently disabled Brain
-    // indexing for everyone who had summaries turned off — both consumers
-    // share this one callback, because the sessions service takes a single
-    // `onSessionClosed`.
-    //
-    // Never on shutdown. `stopAll()` closes every tab as the process exits, and
-    // the summary's `claude -p` call was killed by the exit a moment later —
-    // every update restart lost a batch, and a tab open across several
-    // restarts was attempted and killed each time. The periodic summary sweep
-    // (`services/summary-sweep.ts`) generates those once the next process is up.
+    // A branch, never an early return: Brain work shares this callback.
+    // Never on shutdown: the exit kills the summary's `claude -p`; the summary sweep catches up.
     if (summaryOn && autoOnClose && reason !== 'shutdown') {
       deps
         .summary()
@@ -100,35 +53,21 @@ export function createSessionCloseWork(deps: SessionCloseWorkDeps): SessionClose
         });
     }
 
-    // Brain work on close. Both switches are OFF by default — the user opts in
-    // once, after seeing real output. Read fresh on every close, matching the
-    // summary gate above.
     const autoIndexOn = deps.db.getSetting(BRAIN_AUTO_INDEX_SETTING_KEY) === 'true';
     const curateOn = deps.db.getSetting(BRAIN_CURATE_SETTING_KEY) === 'true';
-    // Armed by EITHER switch. Gating on auto-index alone would leave
-    // curation-only users queueing notes that nothing ever drained.
+    // Either switch arms it, or curation-only users queue notes nothing drains.
     if (!autoIndexOn && !curateOn) return;
 
     const account = deps.accounts.getAccountByConfigDir(configDir);
     if (!account) return;
 
-    // Fire-and-forget: session teardown must never wait on Brain work.
+    // Fire-and-forget: teardown must never wait on Brain work.
     Promise.resolve()
       .then(() => (autoIndexOn ? deps.brain()?.enqueueSource(account.id, sessionId) : undefined))
-      // The session just closed in this project, which is exactly when its
-      // auto-memory notes and instruction files were most likely edited — the
-      // memory tool writes during a session, and a CLAUDE.md is edited in one.
-      // Change detection makes the ordinary case a free no-op, so this costs a
-      // directory walk and nothing else.
       .then(() =>
         autoIndexOn ? deps.brain()?.enqueueProjectSources(account.id, projectPath) : undefined,
       )
       .then(() => {
-        // Selected from the vault as it stands NOW, so a note pushed over the
-        // threshold by the indexing queued just above is picked up on the NEXT
-        // close rather than this one. A one-session lag against a 7-day
-        // cooldown, and it self-corrects; selecting after the drain would mean
-        // draining twice on every close.
         if (curateOn) deps.brain()?.enqueueCuration(account.id);
       })
       .then(() => (drainEnabled() ? deps.brain()?.drainQueue() : undefined))

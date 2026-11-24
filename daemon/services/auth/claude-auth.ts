@@ -1,29 +1,6 @@
 /**
- * ClaudeAuthService — sign a Claude account in or out from inside OmniFex.
- *
- * Sign-in drives the CLI's own OAuth through stream-json control requests
- * (`claude_authenticate`, then `claude_oauth_callback` or
- * `claude_oauth_wait_for_completion`) in a short-lived CLI process started for
- * that account's config dir — the same requests the Agent SDK exposes as
- * `claudeAuthenticate()` & co. It replaced `claude auth login` in a one-shot
- * pty (2026-10-24): the terminal opened the default browser itself, so the
- * link could not go to the browser the account is signed in with, and on the
- * iPad there was no browser to open. Verified against 2.1.310 with an empty
- * config dir: one process, no `initialize` needed first, both URLs returned.
- *
- *   automaticUrl  redirects to the CLI's localhost listener — finishes by
- *                 itself when the browser is on the daemon's machine.
- *   manualUrl     shows a `CODE#STATE` string to paste — works anywhere.
- *
- * Logout still drives `claude auth logout`. Credentials are never touched
- * directly: on macOS the tokens live in the Keychain, and the CLI is the only
- * thing that knows where. Logout also drops `oauthAccount` from
- * `.claude.json` (verified on 2.1.280), which is what `watchOauthIdentity`
- * keys on — so the verification badges update through the existing watcher,
- * with no broadcast from here. Sign-in writes it the same way.
- *
- * Every config dir goes through `buildClaudeEnv`, which refuses an empty one
- * rather than letting the CLI fall back to `~/.claude`.
+ * Credentials are never touched directly: on macOS they live in the Keychain and only the CLI knows where.
+ * Logout drops `oauthAccount` from `.claude.json`, which `watchOauthIdentity` keys on, so no broadcast is needed.
  */
 
 import os from 'node:os';
@@ -31,7 +8,6 @@ import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { buildClaudeEnv } from '../util/claude-env';
 
-/** What the CLI reports once a sign-in completes. */
 export interface SignedInAccount {
   email?: string;
   organization?: string;
@@ -47,20 +23,14 @@ export interface SignInFlow {
 }
 
 export interface ClaudeAuthService {
-  /** Start a sign-in for this account. Replaces one already in progress for it. */
   beginSignIn(configDir: string): Promise<SignInFlow>;
-  /** Finish with the code the manual page showed (`CODE#STATE`, or the bare code).
-   *  A rejected code leaves the flow open for another try. */
+  /** A rejected code leaves the flow open for another try. */
   submitCode(flowId: string, pasted: string): Promise<SignedInAccount>;
-  /** Resolve when the browser finishes on the localhost callback. */
   waitForCompletion(flowId: string): Promise<SignedInAccount>;
-  /** Abandon a sign-in; a pending wait rejects. */
   cancel(flowId: string): Promise<void>;
-  /** Run `claude auth logout` for this account. Rejects with the CLI's stderr. */
   logout(configDir: string): Promise<void>;
 }
 
-/** The slice of the CLI engine a sign-in needs. */
 export interface SignInEngine {
   start(params: { projectPath: string; configDir: string; sessionId: string; resume: boolean }): Promise<void>;
   sendControlRequest<T = unknown>(
@@ -73,13 +43,10 @@ export interface SignInEngine {
 
 export interface CreateClaudeAuthServiceDeps {
   resolveBinary(): string | null;
-  /** A stream-json CLI engine on this binary (createClaudeCliEngine in the daemon). */
   createEngine(binary: string): SignInEngine;
-  /** Injectable for tests. Defaults to execFile with a 30s timeout. */
   exec?: (bin: string, args: string[], env: NodeJS.ProcessEnv) => Promise<{ stdout: string; stderr: string }>;
 }
 
-/** How long a sign-in may sit unfinished before its CLI is closed. */
 const FLOW_TTL_MS = 15 * 60_000;
 const BEGIN_TIMEOUT_MS = 30_000;
 const CODE_TIMEOUT_MS = 60_000;
@@ -147,9 +114,7 @@ export function createClaudeAuthService(deps: CreateClaudeAuthServiceDeps): Clau
     try { await flow.engine.close(); } catch { /* best effort */ }
   }
 
-  /** Await a request that ends the flow when it succeeds. The request is
-   *  sent by the caller, so each subtype stays visible where it is sent —
-   *  the control catalog's test reads them from the source. */
+  /** The caller sends the request so each subtype is visible at its send site; the control catalog's test reads them from source. */
   async function finishWith(flow: Flow, request: Promise<unknown>): Promise<SignedInAccount> {
     try {
       const res = await request;

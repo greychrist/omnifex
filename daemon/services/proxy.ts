@@ -1,9 +1,5 @@
 import type { Database } from './database';
 
-// ---------------------------------------------------------------------------
-// Public interfaces
-// ---------------------------------------------------------------------------
-
 export interface ProxySettings {
   http_proxy?: string;
   https_proxy?: string;
@@ -16,19 +12,11 @@ export interface ProxyService {
   saveSettings(settings: ProxySettings): void;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const SETTINGS_KEY = 'proxy_settings';
 
 const DEFAULT_SETTINGS: ProxySettings = {
   enabled: false,
 };
-
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
 
 export function createProxyService(db: Database): ProxyService {
   function getSettings(): ProxySettings {

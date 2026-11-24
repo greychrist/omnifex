@@ -1,9 +1,4 @@
-/**
- * `Promise.all(items.map(fn))` with at most `limit` calls in flight. For fs
- * fan-out: async fs runs on libuv's small thread pool (four workers by
- * default), and hundreds of queued reads would starve every other fs call the
- * daemon makes in the meantime. Results keep input order.
- */
+/** Bounded: async fs runs on libuv's four-worker pool, and hundreds of queued reads starve every other fs call. */
 export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;

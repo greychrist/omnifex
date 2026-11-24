@@ -1,27 +1,4 @@
-/**
- * Convert the `/usage` "Resets …" label string into an absolute epoch (ms)
- * relative to when the runner observed it.
- *
- * Real labels seen in the TUI:
- *   "in 5h"
- *   "in 7d"
- *   "in 5h 23m"
- *   "9:40am (America/New_York)"
- *   "7pm (America/New_York)"
- *   "May 4 at 7pm (America/New_York)"        (when the reset is days away)
- *
- * Returns null for empty / unrecognized / invalid-timezone inputs.
- */
-/**
- * How far a bare clock label may sit behind `observedAtMs` and still be read
- * as "today, just now" rather than "tomorrow".
- *
- * Covers minute truncation in the label (up to 60s) plus the render-and-settle
- * latency between the CLI painting the line and the runner stamping
- * `observedAtMs`. Shared with `validateResetEpoch`, which must accept the
- * slightly-negative delta this now produces instead of rejecting it as
- * `in_past`.
- */
+/** Covers minute truncation plus render latency. `validateResetEpoch` must accept the slightly-negative delta this allows. */
 export const CLOCK_LABEL_GRACE_MS = 2 * 60 * 1000;
 
 export function resetsLabelToEpoch(label: string, observedAtMs: number): number | null {
@@ -29,10 +6,7 @@ export function resetsLabelToEpoch(label: string, observedAtMs: number): number 
   if (!s) return null;
 
   if (/^in\b/i.test(s)) return parseRelative(s, observedAtMs);
-  // Date-prefixed form (`<Month> <Day> at ...`) is tried first because its
-  // regex anchors on a leading word + number; the bare clock form would
-  // match the trailing `<hour>am|pm (tz)` portion and silently drop the
-  // date. If the date form doesn't match we fall back to the bare clock.
+  // Date form first: the bare clock form would match its tail and drop the date.
   const dated = parseDateClockWithTz(s, observedAtMs);
   if (dated != null) return dated;
   return parseClockWithTz(s, observedAtMs);
@@ -71,7 +45,6 @@ function parseRelative(s: string, observedAtMs: number): number | null {
 }
 
 function parseDateClockWithTz(s: string, observedAtMs: number): number | null {
-  // Examples: "May 4 at 7pm (America/New_York)", "May 4 at 7:30pm (...)".
   const m = /^([A-Za-z]+)\s+(\d{1,2})\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([^)]+)\)\s*$/i.exec(s);
   if (!m) return null;
   const monthIdx = MONTH_NAMES[m[1].toLowerCase()];
@@ -87,10 +60,7 @@ function parseDateClockWithTz(s: string, observedAtMs: number): number | null {
   let hour24 = hour12 % 12;
   if (ampm === 'pm') hour24 += 12;
 
-  // Pick the year by rolling forward from observed-at: try this year first,
-  // and if the resulting epoch is already in the past, advance to next year.
-  // This handles year-end transitions (observed Dec 30, reset "Jan 5") and
-  // mid-year resets without ambiguity.
+  // Roll the year forward so a December observation of "Jan 5" lands next year.
   const observedYear = new Date(observedAtMs).getUTCFullYear();
   for (const year of [observedYear, observedYear + 1]) {
     const offsetMs = tzOffsetMs(tz, observedAtMs);
@@ -100,8 +70,7 @@ function parseDateClockWithTz(s: string, observedAtMs: number): number | null {
     if (candidateOffset != null && candidateOffset !== offsetMs) {
       candidateUtc = Date.UTC(year, monthIdx, day, hour24, minute, 0) - candidateOffset;
     }
-    // Reject obviously-bad day numbers (e.g. Feb 30) by checking that the
-    // round-tripped date matches what we asked for in the target tz.
+    // Round-trip to reject impossible days (Feb 30).
     const roundTrip = formatInTz(candidateUtc, tz);
     if (roundTrip == null) return null;
     if (roundTrip.month !== monthIdx + 1 || roundTrip.day !== day) {
@@ -112,7 +81,6 @@ function parseDateClockWithTz(s: string, observedAtMs: number): number | null {
   return null;
 }
 
-/** Returns the wall-clock month/day for `utcMs` in `tz`, or null if invalid. */
 function formatInTz(utcMs: number, tz: string): { month: number; day: number } | null {
   let parts: Intl.DateTimeFormatPart[];
   try {
@@ -136,7 +104,6 @@ function formatInTz(utcMs: number, tz: string): { month: number; day: number } |
 }
 
 function parseClockWithTz(s: string, observedAtMs: number): number | null {
-  // Examples: "9:40am (America/New_York)", "7pm (America/New_York)"
   const m = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([^)]+)\)\s*$/i.exec(s);
   if (!m) return null;
   const hour12 = parseInt(m[1], 10);
@@ -145,34 +112,25 @@ function parseClockWithTz(s: string, observedAtMs: number): number | null {
   const tz = m[4].trim();
 
   if (hour12 < 1 || hour12 > 12 || minute < 0 || minute > 59) return null;
-  let hour24 = hour12 % 12; // 12am → 0, 1am..11am → 1..11
-  if (ampm === 'pm') hour24 += 12; // 12pm → 12, 1pm..11pm → 13..23
+  let hour24 = hour12 % 12;
+  if (ampm === 'pm') hour24 += 12;
 
   const offsetMs = tzOffsetMs(tz, observedAtMs);
   if (offsetMs == null) return null;
 
-  // Wall-clock date in the target tz at observedAt
   const localMs = observedAtMs + offsetMs;
   const ld = new Date(localMs);
   const y = ld.getUTCFullYear();
   const mo = ld.getUTCMonth();
   const d = ld.getUTCDate();
 
-  // Candidate "today at hour24:minute in tz" expressed as UTC epoch.
-  // Adjusting for offset turns wall-clock into UTC; we recompute offset at
-  // the candidate to handle DST boundaries.
+  // Recompute the offset at the candidate for DST boundaries.
   let candidateUtc = Date.UTC(y, mo, d, hour24, minute, 0) - offsetMs;
   const candidateOffset = tzOffsetMs(tz, candidateUtc);
   if (candidateOffset != null && candidateOffset !== offsetMs) {
     candidateUtc = Date.UTC(y, mo, d, hour24, minute, 0) - candidateOffset;
   }
-  // Roll to tomorrow only once the candidate is past by more than the grace
-  // window. A bare clock label is minute-truncated, and `observedAtMs` is
-  // stamped after the TUI has rendered and settled, so a reset happening right
-  // now routinely reads as a few seconds "past". Rolling on that turned a
-  // correct reset time into one 24 hours out, which `validateResetEpoch` then
-  // threw away as beyond_cap. The same wall-clock time cannot recur for 24
-  // hours, so tolerating a couple of minutes is unambiguous.
+  // Roll only past the grace: rolling on a few seconds "past" turned a correct reset into one 24h out.
   if (candidateUtc <= observedAtMs - CLOCK_LABEL_GRACE_MS) {
     candidateUtc = Date.UTC(y, mo, d + 1, hour24, minute, 0) - offsetMs;
     const tomOffset = tzOffsetMs(tz, candidateUtc);
@@ -183,10 +141,6 @@ function parseClockWithTz(s: string, observedAtMs: number): number | null {
   return candidateUtc;
 }
 
-/**
- * Offset (ms) such that `wallClockUtc = utcMs + offset` for the given tz at
- * the given instant. Returns null if the timezone is invalid.
- */
 function tzOffsetMs(tz: string, atUtcMs: number): number | null {
   let parts: Intl.DateTimeFormatPart[];
   try {

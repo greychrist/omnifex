@@ -1,17 +1,3 @@
-/**
- * One-shot terminal service.
- *
- * Owns short-lived pty subprocesses driven by an xterm modal in the renderer
- * (e.g. `codex login`). Lifecycle is "spawn → user interacts → process exits
- * or the renderer kills it on unmount", not the long-running session model
- * in `daemon/services/sessions/`. Each spawn returns an opaque handle that
- * the renderer uses for all subsequent write/resize/kill calls and to
- * subscribe to data/exit events.
- *
- * This file deliberately mirrors the tui.ts pty wiring so any behavioural
- * fixes there port straight across.
- */
-
 import { spawn as ptySpawn, type IPty, type IDisposable } from 'node-pty';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -26,7 +12,6 @@ export interface OneShotTerminalSpawnOpts {
 }
 
 export interface OneShotTerminalHandle {
-  /** Opaque handle id used by renderer to address this pty. */
   ptyHandle: string;
 }
 
@@ -35,9 +20,7 @@ export interface OneShotTerminalService {
   write(ptyHandle: string, data: string): void;
   resize(ptyHandle: string, cols: number, rows: number): void;
   kill(ptyHandle: string): void;
-  /** Subscribe to data on this pty. Returns a Disposable. */
   onData(ptyHandle: string, cb: (data: string) => void): { dispose(): void };
-  /** Subscribe to exit on this pty. Returns a Disposable. */
   onExit(
     ptyHandle: string,
     cb: (info: { exitCode: number; signal?: number }) => void,
@@ -47,9 +30,6 @@ export interface OneShotTerminalService {
 interface Entry {
   pty: IPty;
   disposables: IDisposable[];
-  // We keep the cb arrays explicitly (instead of layering on pty.onData per
-  // subscriber) so cleanup on exit is O(1) and we can detach all of them
-  // when the handle drops out of the map.
   dataCbs: Set<(data: string) => void>;
   exitCbs: Set<(info: { exitCode: number; signal?: number }) => void>;
 }
@@ -72,14 +52,11 @@ export function createOneShotTerminalService(): OneShotTerminalService {
 
   return {
     spawn(opts: OneShotTerminalSpawnOpts): OneShotTerminalHandle {
-      // The binary arrives over IPC. Every caller resolves it first; a bare
-      // name would cost a throwaway process per PATH miss. See util/spawn.ts.
+      // A bare name would cost a throwaway process per PATH miss.
       if (!path.isAbsolute(opts.binary)) {
         throw new Error(`one-shot terminal: binary must be an absolute path, got ${JSON.stringify(opts.binary)}`);
       }
       const handle = randomUUID();
-      // node-pty wants a defined env; pass-through is fine but we drop
-      // undefined values so the child doesn't see literal "undefined" strings.
       const env: Record<string, string> | undefined = opts.env
         ? Object.fromEntries(
             Object.entries(opts.env).filter(([, v]) => typeof v === 'string'),
@@ -103,7 +80,7 @@ export function createOneShotTerminalService(): OneShotTerminalService {
 
       entry.disposables.push(
         pty.onData((data) => {
-          // Snapshot before iterating — handlers may dispose themselves.
+          // Snapshot: handlers may dispose themselves.
           for (const cb of [...entry.dataCbs]) {
             // eslint-disable-next-line no-empty -- one bad subscriber must not break the others.
             try { cb(data); } catch {}
@@ -113,8 +90,7 @@ export function createOneShotTerminalService(): OneShotTerminalService {
       entry.disposables.push(
         pty.onExit((info) => {
           const snapshot = [...entry.exitCbs];
-          // Tear down before firing so subscribers can't accidentally
-          // write/resize a dead pty in their handler.
+          // Tear down first so handlers can't touch a dead pty.
           cleanup(handle);
           for (const cb of snapshot) {
             // eslint-disable-next-line no-empty
@@ -141,9 +117,7 @@ export function createOneShotTerminalService(): OneShotTerminalService {
     kill(ptyHandle: string): void {
       const entry = entries.get(ptyHandle);
       if (!entry) return;
-      // Remove from the map BEFORE pty.kill() so the onExit handler's
-      // cleanup is a no-op (already gone) and concurrent write/resize/kill
-      // calls from the renderer can't race a half-torn-down entry.
+      // Remove before kill() so onExit's cleanup is a no-op and concurrent calls can't race a half-torn-down entry.
       entries.delete(ptyHandle);
       for (const d of entry.disposables) {
         // eslint-disable-next-line no-empty

@@ -1,36 +1,16 @@
 /**
- * Is the Brain worth what it costs? The pure half of the answer.
- *
- * Three measurements used to be run by hand, each once, and each left its
- * numbers in a chat or a `/tmp` file: the invocation rate (how many real
- * sessions call `brain_search` at all), the spend (what indexing and curation
- * cost), and an LLM-judge pass (did a search actually help the session that
- * made it). None could be repeated the same way twice, so none could be
- * compared. This module fixes the definitions; `scripts/brain-eval.ts` reads
- * the transcripts and databases and stores each run for later comparison.
- *
- * Definitions that are load-bearing — each one corrupted an earlier figure:
- *
- * - **OmniFex's own scratch sessions are not sessions.** Summaries and Brain
- *   indexing run `claude -p` in `omnifex-summary-scratch`, outnumber human
- *   sessions, and never search. They are dropped from every denominator.
- * - **A session's date is its first record's timestamp**, not file mtime,
- *   which catches old sessions resumed inside the window.
- * - **Searches are counted from transcripts, money from `session_cost_daily`.**
- *   That table is what the Cost Report reads; `brain_spend` rides alongside as
- *   the audit cross-check, never summed with it.
+ * Load-bearing definitions: scratch sessions (`omnifex-summary-scratch`) leave every
+ * denominator; a session's date is its first record's timestamp, not mtime; money comes from
+ * `session_cost_daily`, with `brain_spend` only a cross-check, never summed with it.
  */
 
-/** OmniFex's internal one-shot runs share this cwd basename. */
 const SCRATCH_DIR_NAME = 'omnifex-summary-scratch';
 
 const TOOL_PREFIX = 'mcp__omnifex-brain__brain_';
 const CODE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
-/** A session needs this many tool uses before a missing search means anything. */
 export const SUBSTANTIVE_TOOL_USES = 20;
 
-/** How much of the prompt and follow-up the judge gets to see per search. */
 const PROMPT_EXCERPT = 1_000;
 const RESULT_EXCERPT = 2_000;
 const AFTER_EXCERPT = 3_000;
@@ -41,18 +21,13 @@ export type BrainTool = 'search' | 'read' | 'remember';
 export interface BrainCall {
   tool: BrainTool;
   toolUseId: string;
-  /** Position among ALL tool uses in the transcript — chains depend on gaps. */
+  /** Among ALL tool uses: chains depend on gaps. */
   ordinal: number;
   query: string | null;
-  /** Note paths a search returned, best first. Empty for reads/remembers. */
   results: string[];
-  /** Size of the result the model had to read — its context cost. */
   resultChars: number;
-  /** The head of that result, so the judge can tell a stale note from a good one. */
   resultExcerpt: string;
-  /** The last user prompt before the call: what the session was trying to do. */
   promptBefore: string;
-  /** What the model said and did next, condensed, for the judge. */
   after: string;
 }
 
@@ -69,14 +44,13 @@ export interface SessionSummary extends TranscriptSummary {
 }
 
 export interface EvalWindow {
-  /** Local dates, YYYY-MM-DD, both inclusive. */
+  /** Local YYYY-MM-DD, both inclusive. */
   since: string;
   until: string;
 }
 
 export interface SpendRow {
   date: string;
-  /** `session_cost_daily.internal_kind`: `brain-index` or `brain-curation`. */
   kind: string;
   usd: number;
 }
@@ -89,9 +63,7 @@ export type ValueKind = (typeof VALUE_KINDS)[number];
 export interface JudgeVerdict {
   caseId: string;
   verdict: Verdict;
-  /** What kind of knowledge made the difference, if any. */
   value: ValueKind;
-  /** A quote from the transcript backing the verdict. */
   evidence: string;
 }
 
@@ -104,13 +76,11 @@ export interface JudgeTally {
   misled: number;
   helpedRate: number | null;
   byValue: Record<string, number>;
-  /** Window spend over the searches the sample says helped. */
   usdPerHelpedSearch: number | null;
 }
 
 export interface RetrievalScore {
   cases: number;
-  /** Null below the minimum case count — a score off three cases is noise. */
   recallAt5: number | null;
   mrr: number | null;
 }
@@ -131,14 +101,13 @@ export interface AccountMetrics {
     remember: number;
     emptySearches: number;
     emptyRate: number | null;
-    /** chars / 4 — an estimate, labelled as one. */
+    /** chars / 4: label it an estimate. */
     searchResultTokens: number;
   };
   spend: {
     indexUsd: number;
     curationUsd: number;
     totalUsd: number;
-    /** `brain_spend` over the same window; should sit close to `totalUsd`. */
     ledgerUsd: number;
     monthlyUsd: number;
     perSearchUsd: number | null;
@@ -157,11 +126,8 @@ export interface RunMetrics {
   accounts: AccountMetrics[];
 }
 
-// ── transcript parsing ────────────────────────────────────────────────────
-
-/** `## <path>.md (<Type>)` — a full-body hit. Note bodies' own headings never end in `.md (X)`. */
+/** Note bodies' own headings never end in `.md (X)`. */
 const HIT_HEADING = /^## (\S.*?\.md) \([A-Za-z]+\)$/gm;
-/** `- <path>.md (<Type>): snippet` — a listed hit under "Also matched". */
 const LISTED_HIT = /^- (\S.*?\.md) \([A-Za-z]+\):/gm;
 
 function contentText(content: unknown): string {
@@ -172,12 +138,7 @@ function contentText(content: unknown): string {
     .join('\n');
 }
 
-/**
- * The note paths a `brain_search` returned, best first.
- *
- * The tool replies in markdown now; before that it replied with a JSON array.
- * Old transcripts carry the JSON form, so both are read.
- */
+/** Old transcripts carry the JSON-array form, so both are read. */
 export function parseSearchResultPaths(content: unknown): string[] {
   const text = contentText(content);
   if (text.trimStart().startsWith('[')) {
@@ -187,7 +148,7 @@ export function parseSearchResultPaths(content: unknown): string[] {
         return hits.map((h) => h.notePath).filter((p): p is string => typeof p === 'string');
       }
     } catch {
-      // Not JSON after all — fall through to the markdown form.
+      // Not JSON: fall through to the markdown form.
     }
   }
   const full = [...text.matchAll(HIT_HEADING)].map((m) => m[1]);
@@ -247,7 +208,6 @@ function brainTool(name: string): BrainTool | null {
   return tool === 'search' || tool === 'read' || tool === 'remember' ? tool : null;
 }
 
-/** One line per follow-up action: enough to judge, short enough to read 40 of. */
 function describeUse(name: string, input: Record<string, unknown>): string {
   const arg = ['file_path', 'path', 'command', 'query', 'pattern', 'description']
     .map((k) => input[k])
@@ -269,7 +229,6 @@ function followUp(events: readonly Event[], from: number): string {
   return out.join('\n').slice(0, AFTER_EXCERPT);
 }
 
-/** One transcript file (a session or one of its subagents), reduced to what the eval needs. */
 export function summarizeTranscript(records: readonly unknown[]): TranscriptSummary {
   let startedAt: string | null = null;
   let cwd: string | null = null;
@@ -319,9 +278,6 @@ export function summarizeTranscript(records: readonly unknown[]): TranscriptSumm
   return { startedAt, cwd, toolUses, wroteCode, calls };
 }
 
-// ── aggregation ───────────────────────────────────────────────────────────
-
-/** The user's own calendar date for an instant — what every window is in. */
 export function localDate(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -395,9 +351,6 @@ export function aggregateAccount(input: {
   };
 }
 
-// ── judging ───────────────────────────────────────────────────────────────
-
-/** FNV-1a: a stable, dependency-free ordering key. */
 function hash(s: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
@@ -407,13 +360,7 @@ function hash(s: string): number {
   return h;
 }
 
-/**
- * The searches to judge when there are more than the judge can read.
- *
- * Ordered by a hash of the tool-use id, so the same window yields the same
- * sample on every run, and a later run's sample is not biased toward the
- * most recent sessions.
- */
+/** Hash-ordered so a window yields the same, unbiased sample on every run. */
 export function judgeSample<T extends { toolUseId: string }>(cases: readonly T[], cap: number): T[] {
   return [...cases].sort((a, b) => hash(a.toolUseId) - hash(b.toolUseId)).slice(0, cap);
 }
@@ -449,8 +396,6 @@ export function tallyVerdicts(
   };
 }
 
-// ── comparison ────────────────────────────────────────────────────────────
-
 const COMPARED: readonly [string, (a: AccountMetrics) => number | null | undefined][] = [
   ['sessions', (a) => a.sessions?.total],
   ['invocation rate', (a) => a.sessions?.invocationRate],
@@ -470,7 +415,6 @@ const COMPARED: readonly [string, (a: AccountMetrics) => number | null | undefin
 export interface ComparisonRow {
   account: string;
   metric: string;
-  /** One per run, oldest first; null where a run lacks the metric. */
   values: (number | null)[];
 }
 

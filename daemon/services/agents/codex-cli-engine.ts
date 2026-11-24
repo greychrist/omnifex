@@ -16,21 +16,7 @@ export interface CreateCodexCliEngineParams {
   codexBinaryPath: string;
 }
 
-/**
- * CodexCliEngine drives `codex mcp` over JSON-RPC on stdio.
- *
- * Task 4 wires only the spawn lifecycle + initial `newConversation` /
- * `resumeConversation` handshake. The rest of the AgentEngine surface
- * (send, approvals, notifications, interrupt, lifecycle wiring) is filled
- * in by Tasks 5–9; those methods throw here so a stray call surfaces
- * loudly instead of silently no-op'ing.
- *
- * v1 does NOT set `CODEX_HOME` — the plan's Non-Goals explicitly excludes
- * multi-account routing for Codex. The spawn inherits the parent env
- * MINUS `CLAUDE_CONFIG_DIR` (Claude-specific noise that shouldn't leak
- * into Codex's environment) so Codex reads the user's single `~/.codex/`
- * directory without picking up Claude account state.
- */
+/** No CODEX_HOME: Codex reads a single ~/.codex. Unwired methods throw so a stray call is loud. */
 export function createCodexCliEngine(
   factory: CreateCodexCliEngineParams,
 ): AgentEngine {
@@ -107,8 +93,7 @@ export function createCodexCliEngine(
         payload: params,
       });
     } else {
-      // Unknown server-initiated method — respond with method-not-handled so
-      // the server doesn't hang waiting for a response.
+      // Answer unknown server methods, or the server hangs waiting.
       if (rpc !== null) {
         rpc.respondToServer(id, {
           error: { code: -32601, message: `Method not handled: ${method}` },
@@ -119,8 +104,7 @@ export function createCodexCliEngine(
 
   async function start(p: AgentStartParams): Promise<void> {
     if (child !== null) {
-      // Drain any pending requests on the prior rpc client with a clean
-      // rejection before killing the child — otherwise their promises leak.
+      // Reject pending requests before killing the child, or their promises leak.
       if (rpc) {
         rpc.close();
         rpc = null;
@@ -129,14 +113,9 @@ export function createCodexCliEngine(
       child = null;
     }
 
-    // Reset the stderr line buffer in case the engine is being restarted —
-    // any leftover partial line from the prior child belongs to that child.
     stderrBuf = '';
 
-    // Strip CLAUDE_CONFIG_DIR from inherited env — the daemon
-    // sets it to the current Claude account's config dir, and letting Codex
-    // see it is a silent coupling we don't want. Keep everything else (PATH,
-    // HOME, etc.) intact.
+    // Codex must not see the Claude account's CLAUDE_CONFIG_DIR.
     const env = { ...process.env };
     delete env.CLAUDE_CONFIG_DIR;
 
@@ -159,10 +138,6 @@ export function createCodexCliEngine(
       }
     });
 
-    // Surface each stderr line as an Error to onError subscribers. Mirrors
-    // the Claude engine's wireStderr — diagnostics from the Codex binary
-    // (config errors, panics, version skew) end up on stderr and need to
-    // reach the UI rather than being swallowed.
     wireStderr(spawned.stderr);
 
     await new Promise<void>((resolve, reject) => {
@@ -201,15 +176,12 @@ export function createCodexCliEngine(
         conversationId = result?.conversationId ?? null;
       }
     } catch (err) {
-      // Handshake failed — tear down rpc + child so the caller doesn't have
-      // to (and so we don't leak a child process with no handle to it).
       await close();
       throw err;
     }
   }
 
-  // Stubs — Tasks 5–9 fill these in. Throw rather than silently no-op so a
-  // missed wire-up surfaces loudly at the call site.
+  // Unwired: throw rather than no-op so a missed wire-up is loud.
   async function applyExtendedPermissionMode(_mode: string): Promise<void> {
     throw new Error('CodexCliEngine.applyExtendedPermissionMode: not yet wired');
   }
@@ -246,8 +218,6 @@ export function createCodexCliEngine(
       payload && typeof payload === 'object'
         ? (payload as Record<string, unknown>)
         : {};
-    // respondToServer is synchronous in the JSON-RPC client; the `async`
-    // here is just to match the AgentEngine interface signature.
     rpc.respondToServer(requestId, { result: { ...extra, decision } });
   }
   async function interrupt(): Promise<void> {
@@ -257,9 +227,7 @@ export function createCodexCliEngine(
   }
 
   async function close(): Promise<void> {
-    // Idempotent: a second close() (or kill() after close()) must be a no-op.
-    // Without the early-return the bodies happen to be safe today because rpc
-    // and child are nulled below, but locking it in makes the contract explicit.
+    // Idempotent: a second close() must be a no-op.
     if (rpc === null && child === null) return;
     if (rpc) {
       rpc.close();
@@ -288,9 +256,7 @@ export function createCodexCliEngine(
   }
 
   function getInitData(): InitData | null {
-    // Codex doesn't have a system:init payload like Claude — init data
-    // arrives via notifications. Task 7 wires the notification surface;
-    // Task 4 returns null.
+    // Codex has no system:init; its init data arrives via notifications, not wired yet.
     return null;
   }
 

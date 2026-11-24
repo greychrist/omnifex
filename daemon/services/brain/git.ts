@@ -5,8 +5,6 @@ import { gitBinary } from '../git-binary';
 
 const execFileAsync = promisify(execFile);
 
-/** Injectable git runner, resolving with the command's stdout. Matches the
- *  pattern in git-branches.ts / git-worktrees.ts. */
 export type ExecGit = (args: string[], cwd: string) => Promise<string>;
 
 const defaultExec: ExecGit = async (args, cwd) => {
@@ -14,14 +12,6 @@ const defaultExec: ExecGit = async (args, cwd) => {
   return stdout;
 };
 
-/**
- * Why this is a discriminated result and not a boolean: "nothing to commit" and
- * "the commit failed" are the same exit status from git, and collapsing them
- * means a vault whose `.git` is corrupt, unwritable or full looks exactly like
- * a vault where the user changed nothing. That silence is harmless while
- * nothing displays versioning state; it becomes a lie the moment the Brain tab
- * claims a vault is versioned.
- */
 export type CommitResult =
   | { ok: true }
   | { ok: false; reason: 'nothing-to-commit' }
@@ -34,8 +24,7 @@ export interface VaultGit {
 }
 
 export function createVaultGit(root: string, exec: ExecGit = defaultExec): VaultGit {
-  // Serialises every git invocation. Concurrent index runs must not interleave
-  // add/commit pairs, which would attribute one run's files to another's message.
+  // Serialize git calls: interleaved add/commit pairs misattribute files to another run's message.
   let lock: Promise<void> = Promise.resolve();
 
   function serialize<T>(fn: () => Promise<T>): Promise<T> {
@@ -57,16 +46,10 @@ export function createVaultGit(root: string, exec: ExecGit = defaultExec): Vault
     init(): Promise<void> {
       return serialize(async () => {
         try {
-          // `git init` is idempotent, and it correctly creates a NESTED repo
-          // when the vault sits inside another repository. Do not pre-check
-          // with `rev-parse --git-dir`: that walks UP the tree, so a vault
-          // placed inside an existing repo would look already-initialised, and
-          // every later `git add -A` would stage the OUTER repo's whole working
-          // tree — committing the user's unrelated work under a Brain message.
+          // No rev-parse pre-check: it walks UP, so a vault inside another repo would stage the outer repo.
           await exec(['init', '-q'], root);
         } catch {
-          // Versioning is a safety net, not a hard dependency. A missing git
-          // binary must not fail a write whose Markdown already landed.
+          // A missing git must not fail a write whose Markdown already landed.
         }
       });
     },
@@ -75,10 +58,7 @@ export function createVaultGit(root: string, exec: ExecGit = defaultExec): Vault
       return serialize(async () => {
         try {
           await exec(['add', '-A'], root);
-          // Ask git what is staged rather than inferring it from the exit
-          // status of `commit`. `commit` exits non-zero for an empty index AND
-          // for a genuine failure, so its status alone cannot distinguish the
-          // two — which is the whole point of this method's return type.
+          // `commit` exits non-zero for both an empty index and a real failure, so ask `status`.
           const status = await exec(['status', '--porcelain'], root);
           if (status.trim() === '') return { ok: false, reason: 'nothing-to-commit' };
           await exec(['commit', '-q', '-m', message], root);

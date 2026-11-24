@@ -1,13 +1,4 @@
-/**
- * Finding the git repositories inside a project folder, and naming each one.
- *
- * A repo's *identity* is its main checkout: every linked worktree of a repo
- * resolves to the same path, so per-repo settings (branch colors, watch
- * selections) follow the repo rather than whichever checkout opened it.
- *
- * Pure filesystem — no `git` spawn. Discovery runs when a session's git watch
- * starts and when the repos dialog opens, never on the status poll.
- */
+/** A repo's identity is its main checkout, so per-repo settings follow the repo. No `git` spawn; never on the status poll. */
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -17,15 +8,12 @@ export const MAX_SCAN_DEPTH = 5;
 export const DEFAULT_SCAN_DEPTH = 1;
 
 export interface DiscoveredRepo {
-  /** Realpath of the checkout directory. */
   path: string;
-  /** Path relative to the project folder, `/`-separated. */
   name: string;
 }
 
 export interface DiscoveryResult {
   rootIsRepo: boolean;
-  /** Repos below the project folder, the folder itself excluded. */
   repos: DiscoveredRepo[];
   truncated: boolean;
 }
@@ -38,7 +26,6 @@ function realpathOr(p: string): string {
   }
 }
 
-/** The repo's git dir for a checkout at `dir`, or null when `dir` is not one. */
 function gitdirOf(dir: string): string | null {
   const dotGit = path.join(dir, '.git');
   let stat: fs.Stats;
@@ -59,10 +46,6 @@ function gitdirOf(dir: string): string | null {
   }
 }
 
-/**
- * The main checkout of the repo whose checkout is `dir`, realpath-resolved.
- * Null when `dir` is not the top level of a checkout.
- */
 export function repoIdentity(dir: string): string | null {
   const gitdir = gitdirOf(dir);
   if (!gitdir) return null;
@@ -86,12 +69,6 @@ export function clampScanDepth(depth: number): number {
   return Math.min(MAX_SCAN_DEPTH, Math.max(MIN_SCAN_DEPTH, Math.round(depth)));
 }
 
-/**
- * Breadth-first walk from `projectPath` (depth 0) down to `depth`. The root
- * being a repo does not stop the walk; below it, a repo is reported and not
- * descended into. Hidden dirs, `node_modules` and symlinks are skipped. A
- * linked worktree of a repo already found is folded into that repo.
- */
 export async function discoverRepos(projectPath: string, depth: number): Promise<DiscoveryResult> {
   const root = realpathOr(projectPath);
   const rootIsRepo = isRepoDir(root);
@@ -122,11 +99,10 @@ export async function discoverRepos(projectPath: string, depth: number): Promise
     level = next;
   }
 
-  // One entry per repo identity, preferring the main checkout itself.
   const byIdentity = new Map<string, DiscoveredRepo>();
   for (const repo of found) {
     const id = repoIdentity(repo.path) ?? repo.path;
-    if (id === root && rootIsRepo) continue; // a worktree of the root repo
+    if (id === root && rootIsRepo) continue;
     const prev = byIdentity.get(id);
     if (!prev || (prev.path !== id && repo.path === id)) byIdentity.set(id, repo);
   }

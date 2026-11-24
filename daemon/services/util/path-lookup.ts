@@ -1,14 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-/**
- * The first executable `name` on `pathEnv`, or null — what `which` answers,
- * for the cost of a few stat calls instead of a shell and a `which` process.
- *
- * Resolve once and spawn by the absolute path it returns. A bare name makes
- * libuv on macOS posix_spawn once per PATH entry until one succeeds, and XNU
- * creates a process — assessed by syspolicyd — for every miss.
- */
+/** Spawn by the absolute path this returns: on macOS a bare name posix_spawns once per PATH miss. */
 export function findOnPath(name: string, pathEnv: string | undefined): string | null {
   for (const dir of (pathEnv ?? '').split(path.delimiter)) {
     if (!dir) continue;

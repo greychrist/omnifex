@@ -1,7 +1,3 @@
-// Claude service — handles project listing, session history, settings,
-// CLAUDE.md files, hooks config, and version checking.
-// This is a Node.js/Electron port of the Rust commands/claude.rs.
-
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,18 +13,7 @@ import { execFileText, probeBinaryVersion } from './util/exec-text';
 import { findOnPath } from './util/path-lookup';
 import { isSummaryScratchProject } from './sessions/internal-spend';
 
-/**
- * Thrown when an operation needs a Claude account for a project path but
- * `accounts.resolve(projectPath)` returns null. There is NO silent fallback
- * to a "default" account or to `~/.claude` — either a path rule / explicit
- * project override binds the project to an account, or this error is raised
- * so the renderer can surface a prominent "no account configured" banner
- * with a link to Account Settings.
- *
- * `code` is used by the IPC layer + renderer to recognize the error type
- * after structured-clone (Error message is preserved across IPC; subclass
- * identity is not).
- */
+/** No silent fallback to a default account or `~/.claude`. `code` survives IPC structured-clone; subclass identity does not. */
 export class NoAccountError extends Error {
   readonly code = 'NO_ACCOUNT_FOR_PROJECT';
   readonly projectPath: string | undefined;
@@ -55,25 +40,14 @@ function noAccountMessage(projectId: string, projectPath?: string): string {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Public interfaces
-// ---------------------------------------------------------------------------
-
 export interface Project {
   id: string;
   path: string;
   sessions: string[];
   created_at: number;
-  /** Newest Claude session JSONL mtime for this project, in Unix
-   *  seconds. Undefined when the project has no session JSONLs yet.
-   *  The Projects list surfaces this as "Last activity" — i.e. when
-   *  Claude last touched this project, not when files in the working
-   *  tree last changed. */
   most_recent_session?: number;
   account_id?: number;
   account_name?: string;
-  /** True when the user pinned this project to the top of the Projects list.
-   *  Stamped by listProjects from the project_pins table. */
   pinned: boolean;
 }
 
@@ -83,22 +57,13 @@ export interface Session {
   project_path: string;
   todo_data?: unknown;
   created_at: number;
-  /** The CLI's own name for the session, from its `ai-title` records. Absent
-   *  on older transcripts and on sessions the CLI never got around to naming. */
   ai_title?: string;
-  /**
-   * A rename, from the transcript's `custom-title` records — written by the
-   * status bar's pencil, `/rename`, or a claude.ai rename relayed down.
-   * Outranks `ai_title`; resolve the two with `pickSessionTitle`.
-   */
+  /** Outranks `ai_title`; resolve the two with `pickSessionTitle`. */
   custom_title?: string;
   first_timestamp?: string;
   last_timestamp?: string;
   /** @deprecated retained for renderer migration; use last_timestamp instead. */
   message_timestamp?: string;
-  /** Size of the session JSONL in bytes (from fs.stat). Used downstream by
-   *  the summary refresh affordance to decide whether anything has changed
-   *  since the last summary generation. */
   file_size_bytes?: number;
 }
 
@@ -109,30 +74,21 @@ export interface ClaudeVersionStatus {
 }
 
 export interface ClaudeSettingsOpts {
-  /** Account config dir to read/write. There is NO ~/.claude default — the
-   *  getters/setters throw on an empty configDir. The account is resolved
-   *  upstream; never hard-code a default here. */
+  /** No `~/.claude` default: the getters/setters throw on an empty configDir. */
   configDir?: string;
 }
 
 export interface ClaudeService {
   getHomeDirectory(): string;
-  /** Effective model for an "Account Default" session — env overrides included. */
   getDefaultModel(opts?: { configDir?: string }): {
     model: string | null;
     source: 'ANTHROPIC_MODEL' | 'ANTHROPIC_DEFAULT_MODEL' | 'settings' | 'none';
   };
 
   listProjects(): Promise<Project[]>;
-  /** Pin/unpin a project to the top of the Projects list. Idempotent. */
   setProjectPinned(args: { projectPath: string; pinned: boolean }): void;
   createProject(projectPath: string): Project;
   getProjectSessions(projectId: string, projectPath?: string): Promise<Session[]>;
-  /**
-   * Read every transcript in every account into the sessions page's persisted
-   * metadata cache, two files at a time. Run once after daemon start (see
-   * periodic-work.ts); afterwards only changed transcripts cost anything.
-   */
   warmSessionMetadata(): Promise<{ files: number }>;
 
   loadSessionHistory(
@@ -142,32 +98,12 @@ export interface ClaudeService {
   ): Promise<unknown[]>;
   loadAgentSessionHistory(sessionId: string): Promise<unknown[]>;
 
-  /**
-   * Delete a session JSONL plus its known ride-along files
-   * (`*.summary.json`, `*.todo.json`). Throws when the project's config
-   * dir cannot be resolved or when the JSONL file is missing — the
-   * caller should surface those as user-facing errors. Sidecar absence
-   * is silent (best-effort cascade).
-   */
   deleteSession(
     sessionId: string,
     projectId: string,
     projectPath?: string,
   ): Promise<void>;
 
-  /**
-   * Recursively delete `<configDir>/projects/<projectId>` for the account
-   * identified by `accountId`. Returns the absolute path that was removed
-   * (or attempted) so the caller can toast / log.
-   *
-   * Idempotent: a missing project directory resolves quietly. Throws when
-   * the account id is unknown or when `projectId` is not a single safe
-   * path segment (rejects `''`, `.`, `..`, anything containing `/`, `\`,
-   * or `\0`). The renderer is bound to per-row `account_id` so this
-   * intentionally does not consult path rules — deleting a project under
-   * a specific account must not bleed into a sibling account whose path
-   * rule happens to match.
-   */
   deleteProject(args: {
     accountId: number;
     projectId: string;
@@ -199,23 +135,10 @@ export interface ClaudeService {
   validateHookCommand(command: string): { valid: boolean; message: string };
   getMergedHooksConfig(projectPath: string, opts?: ClaudeSettingsOpts): Promise<Record<string, unknown>>;
 
-  /** Run `/usage` via the CLI and return the result text (Max accounts only). */
   getCliUsage(configDir?: string): Promise<string>;
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Parse all valid JSON lines from a file, skipping malformed lines and
- * request-replay records. Never throws: an unreadable file is [].
- *
- * Streamed a chunk at a time rather than read whole: transcripts reach tens of
- * MB and this runs on every tab open, on the one event loop that serves every
- * live session. Each chunk is parsed synchronously, and the loop gets a turn
- * between chunks.
- */
+/** Streamed in chunks: transcripts reach tens of MB, on the event loop that serves every live session. */
 async function readJsonlFile(filePath: string): Promise<unknown[]> {
   const results: unknown[] = [];
   const take = (line: string): void => {
@@ -228,11 +151,8 @@ async function readJsonlFile(filePath: string): Promise<unknown[]> {
     }
   };
   try {
-    // utf8 encoding on the stream carries a character split across a chunk
-    // edge over to the next chunk, so no line is decoded from half a byte run.
+    // utf8 stream encoding keeps a character split across chunks intact.
     const stream = fs.createReadStream(filePath, { encoding: 'utf8', highWaterMark: 256 * 1024 });
-    // The unterminated tail of the previous chunk(s), joined once a newline
-    // arrives — so a multi-MB line is not re-concatenated per chunk.
     let partial: string[] = [];
     for await (const chunk of stream as AsyncIterable<string>) {
       let start = 0;
@@ -252,7 +172,6 @@ async function readJsonlFile(filePath: string): Promise<unknown[]> {
   }
 }
 
-/** existsSync, through the thread pool. */
 async function pathExists(p: string): Promise<boolean> {
   try {
     await fs.promises.access(p);
@@ -262,12 +181,7 @@ async function pathExists(p: string): Promise<boolean> {
   }
 }
 
-/**
- * Distinct config dirs across all accounts. Used by listing/scanning paths
- * that legitimately span every account (e.g. listProjects, the agent-history
- * lookup that has no projectPath to anchor on). There is NO synthetic
- * `~/.claude` entry — only what's registered in the accounts table.
- */
+/** No synthetic `~/.claude` entry; only registered accounts. */
 function getConfigDirs(accounts: AccountsService): string[] {
   const dirs: string[] = [];
   const seen = new Set<string>();
@@ -282,45 +196,18 @@ function getConfigDirs(accounts: AccountsService): string[] {
   return dirs;
 }
 
-/**
- * Resolve the config dir that owns a given project, strictly via the accounts
- * service. Returns null when the project path cannot be resolved (no path rule
- * and no explicit override) — callers turn that into a NoAccountError.
- *
- * Important: this no longer scans the filesystem. A stray `projects/<id>/`
- * directory left under the wrong account's configDir (e.g. from a one-off run
- * under the wrong CLAUDE_CONFIG_DIR) MUST NOT change which account owns the
- * project. The bound account is the source of truth — see CLAUDE.md "Multi-
- * Account Rules" and the WIN-project bug regression in claude.test.ts.
- */
+/** Strictly via `accounts.resolve()`: a stray `projects/<id>/` under the wrong account must not change ownership. */
 function findProjectConfigDir(
   accounts: AccountsService,
   projectPath: string | undefined,
 ): string | null {
   if (!projectPath) return null;
-  // A legitimate "no account for this path" is signalled by resolve() returning
-  // a null Claude slot — it never throws for that case. So we do NOT catch here:
-  // an exception means a real failure (e.g. a SQL/schema error from a stale
-  // binary querying a column a migration dropped) and must surface as itself,
-  // not be silently flattened into NO_ACCOUNT_FOR_PROJECT. Masking it once cost
-  // hours of "add a path rule that already exists" debugging.
+  // Don't catch: resolve() returns null for "no account", so a throw is a real failure and must not become NO_ACCOUNT_FOR_PROJECT.
   const resolved = accounts.resolve(projectPath);
   return resolved.claude?.account.config_dir ?? null;
 }
 
-/**
- * Every project dir under `projectsDir` whose recovered path is `projectPath`.
- *
- * A project's identity is its recovered path — pins, account overrides and
- * account path rules all key on `project_path`. But Claude can leave several
- * encoded dirs resolving to one real folder (see recoverProjectPath's rename
- * note: it keeps writing the new cwd into the old encoded dir). So any caller
- * that means "the whole project" must union these dirs rather than trust a
- * single encoded id — otherwise the same folder lists twice, and sessions in
- * the non-primary dirs become unreachable.
- *
- * Usually returns exactly one dir; the multi-dir case is the leftover.
- */
+/** Several encoded dirs can recover to one folder; anything meaning "the whole project" must union them. */
 async function findProjectDirsForPath(projectsDir: string, projectPath: string): Promise<string[]> {
   let entries: fs.Dirent[];
   try {
@@ -328,7 +215,6 @@ async function findProjectDirsForPath(projectsDir: string, projectPath: string):
   } catch {
     return [];
   }
-  // Every project folder in the account is checked, so off the event loop.
   const dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
   const recovered = await Promise.all(
     dirs.map((name) => recoverProjectPathAsync(path.join(projectsDir, name), name)),
@@ -336,37 +222,12 @@ async function findProjectDirsForPath(projectsDir: string, projectPath: string):
   return dirs.filter((_, i) => recovered[i] === projectPath);
 }
 
-// encodeProjectId moved to ./project-id so accounts.ts can share it without
-// importing this module (which already depends on accounts.ts).
-
-/**
- * Last time Claude actually *worked* in a session file, as opposed to the last
- * time the inode was written.
- *
- * `mtime` alone conflates the two. The CLI rewrites a session file when it is
- * merely reopened or resumed, so a project the user only glanced at claimed
- * fresh "Last activity" and jumped to the top of the Projects list. Claude
- * Code fixed the same class of bug for `/resume` and the agents view in
- * 2.1.239; this is the local half.
- *
- * File size is the discriminator: a transcript is append-only, so real work
- * grows it and a touch does not. When the size is unchanged since we last
- * looked, we keep the mtime observed at the last size change instead of the
- * new one.
- *
- * Chosen over reading each transcript's last `timestamp` because
- * `listProjects` already stats every file for `birthtime` — this adds no IO at
- * all, where content timestamps would mean a tail read per session file on
- * every list. The cost is that the very first observation of a file has no
- * baseline and must trust its mtime; from then on the guard holds.
- */
+/** Activity, not mtime: the CLI rewrites a transcript on reopen, so a file whose size is unchanged keeps its earlier activity time. */
 const sessionActivity = new Map<string, { size: number; activityMs: number }>();
 
 function activityTimeFor(filePath: string, stat: fs.Stats): number {
   const seen = sessionActivity.get(filePath);
   if (seen?.size === stat.size) {
-    // Touched, not appended to. Keep the earlier reading — but never let it
-    // run ahead of mtime if the file was rewritten smaller/backdated.
     return Math.min(seen.activityMs, stat.mtimeMs) === seen.activityMs
       ? seen.activityMs
       : stat.mtimeMs;
@@ -375,46 +236,15 @@ function activityTimeFor(filePath: string, stat: fs.Stats): number {
   return stat.mtimeMs;
 }
 
-/** `claude` on PATH, what `which claude` answered — without the shell. */
 function claudeOnPath(): string | null {
   return findOnPath(process.platform === 'win32' ? 'claude.exe' : 'claude', process.env.PATH);
 }
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-
 export function createClaudeService(db: Database, accounts: AccountsService): ClaudeService {
-  // Pin state is stamped onto each Project by listProjects. Constructed here
-  // rather than injected so the service's existing two-arg shape holds.
   const pins = createProjectPinsService(db);
-  // Per-transcript metadata for the sessions page, read incrementally — see
-  // session-metadata-cache.ts.
-  // Backed by SQLite, so a daemon restart re-reads only what changed.
   const sessionMetadata = createSessionMetadataCache(createSqliteSessionMetadataStore(db));
 
-  // -------------------------------------------------------------------------
-  // getHomeDirectory
-  // -------------------------------------------------------------------------
-
-  /**
-   * The model an "Account Default" session actually starts on.
-   *
-   * OmniFex omits `--model` for the Default pick and lets the CLI resolve it,
-   * so this must resolve it the same way the CLI does. Claude Code 2.1.236
-   * added `ANTHROPIC_DEFAULT_MODEL`, which outranks the settings.json `model`
-   * key — and because every OmniFex spawn inherits `process.env` (see
-   * util/claude-env.ts), a value exported in the user's shell reaches the CLI
-   * whether or not anything in the UI mentions it.
-   *
-   * Precedence mirrors the CLI's own startup resolution:
-   *   `--model` (never set on this path) > ANTHROPIC_MODEL > ANTHROPIC_DEFAULT_MODEL > settings.json `model`
-   *
-   * `source` is returned so callers can say WHERE the value came from; a
-   * default that silently disagrees with settings.json is exactly the
-   * confusion that cost real time when a stale `model` pin made a picker
-   * selection look broken.
-   */
+  /** Must mirror the CLI's precedence: ANTHROPIC_MODEL > ANTHROPIC_DEFAULT_MODEL > settings.json `model` (every spawn inherits process.env). */
   function getDefaultModel(opts?: { configDir?: string }): {
     model: string | null;
     source: 'ANTHROPIC_MODEL' | 'ANTHROPIC_DEFAULT_MODEL' | 'settings' | 'none';
@@ -427,9 +257,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     if (envModel) return { model: envModel, source: 'ANTHROPIC_MODEL' };
     const envDefault = fromEnv('ANTHROPIC_DEFAULT_MODEL');
     if (envDefault) return { model: envDefault, source: 'ANTHROPIC_DEFAULT_MODEL' };
-    // Read settings.json directly rather than through the async
-    // `getClaudeSettings`: this resolver is synchronous, and the only field it
-    // needs is `model`.
     try {
       if (opts?.configDir) {
         const raw = fs.readFileSync(path.join(opts.configDir, 'settings.json'), 'utf-8');
@@ -438,8 +265,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
         if (typeof m === 'string' && m.trim()) return { model: m.trim(), source: 'settings' };
       }
     } catch {
-      // Missing, unreadable, or malformed settings.json is a "no pin" answer,
-      // not an error — the CLI falls through to the tier default too.
+      // No pin: the CLI falls through to the tier default too.
     }
     return { model: null, source: 'none' };
   }
@@ -448,15 +274,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     return os.homedir();
   }
 
-  // -------------------------------------------------------------------------
-  // createProject
-  // -------------------------------------------------------------------------
-
   function createProject(projectPath: string): Project {
     const projectId = encodeProjectId(projectPath);
 
-    // Resolve which account's config dir to use. createProject is Claude-side,
-    // so it reads the Claude slot.
     const resolved = accounts.resolve(projectPath);
     const account = resolved.claude?.account ?? null;
     if (!account) {
@@ -464,7 +284,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     }
     const configDir = account.config_dir;
 
-    // Ensure the project directory exists
     const projectDir = path.join(configDir, 'projects', projectId);
     fs.mkdirSync(projectDir, { recursive: true });
 
@@ -475,28 +294,15 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       created_at: Math.floor(Date.now() / 1000),
       account_id: account?.id,
       account_name: account?.name,
-      // A freshly created project is never pinned. (deleteProject drops any
-      // stale pin for the path, so this can't inherit one either.)
       pinned: false,
     };
   }
 
-  // -------------------------------------------------------------------------
-  // listProjects
-  // -------------------------------------------------------------------------
-
   async function listProjects(): Promise<Project[]> {
-    // Keyed by recovered path, not by encoded dir name: the path is the
-    // project's identity everywhere else (pins, overrides, path rules), and
-    // several encoded dirs can resolve to one folder. Keying by id listed such
-    // a project once per dir — visually identical rows that pins, which key on
-    // path, could not tell apart. See findProjectDirsForPath.
+    // Keyed by recovered path, not encoded dir: several dirs can resolve to one folder.
     const byPath = new Map<string, Project>();
     const seenIds = new Set<string>();
 
-    // Read pins once per listing, not once per project — the renderer gets
-    // pin state stamped into the payload it already fetches, so there's no
-    // second round trip and no client-side merge to drift.
     const pinnedPaths = new Set(pins.list());
 
     const accountList = accounts.listAccounts();
@@ -515,8 +321,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         const projectId = entry.name;
-        // OmniFex's own one-shot runs, not a user project — and one with no
-        // account binding, so listing it only offered a row that failed to open.
         if (isSummaryScratchProject(projectId)) continue;
         if (seenIds.has(projectId)) continue;
         seenIds.add(projectId);
@@ -572,9 +376,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
           continue;
         }
 
-        // Same folder, another encoded dir. Union the sessions so none become
-        // unreachable, take the earliest creation, and let the most recently
-        // active dir be the primary — its id and account represent the row.
         existing.sessions = [...new Set([...existing.sessions, ...sessions])];
         existing.created_at = Math.min(existing.created_at, createdSec);
         if ((recentSec ?? 0) > (existing.most_recent_session ?? 0)) {
@@ -588,7 +389,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
     const projects = [...byPath.values()];
 
-    // Sort by most_recent_session DESC (undefined last)
     projects.sort((a, b) => {
       const aTime = a.most_recent_session ?? 0;
       const bTime = b.most_recent_session ?? 0;
@@ -598,17 +398,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     return projects;
   }
 
-  // -------------------------------------------------------------------------
-  // setProjectPinned
-  // -------------------------------------------------------------------------
-
   function setProjectPinned(args: { projectPath: string; pinned: boolean }): void {
     pins.setPinned(args.projectPath, args.pinned);
   }
-
-  // -------------------------------------------------------------------------
-  // getProjectSessions
-  // -------------------------------------------------------------------------
 
   async function warmSessionMetadata(): Promise<{ files: number }> {
     let files = 0;
@@ -631,8 +423,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
         } catch {
           continue;
         }
-        // Two at a time: background work, so it leaves the thread pool to
-        // whatever a user is waiting on.
         await mapLimit(names, 2, async (name) => {
           const filePath = path.join(projectDir, name);
           try {
@@ -661,15 +451,10 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     }
 
     const projectsDir = path.join(configDir, 'projects');
-    // One folder can span several encoded dirs, and listProjects merges them
-    // into a single row listing all their sessions — so read every one of
-    // them here too. Reading only `projectId` would list 19 sessions and then
-    // fail to produce the ones living in the non-primary dir.
+    // Read every encoded dir: listProjects merges them into one row.
     const resolvedPath =
       projectPath ?? (await recoverProjectPathAsync(path.join(projectsDir, projectId), projectId));
     const dirNames = await findProjectDirsForPath(projectsDir, resolvedPath);
-    // Nothing resolved (e.g. a fresh project dir with no JSONL yet) — fall
-    // back to exactly the id we were asked for.
     const projectDirs = dirNames.length > 0 ? dirNames : [projectId];
 
     const sessions: Session[] = [];
@@ -680,14 +465,11 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       try {
         entries = await fs.promises.readdir(projectDir, { withFileTypes: true });
       } catch {
-        // Missing (account exists, no sessions yet — a legitimate empty
-        // state) or unreadable.
         continue;
       }
 
       const files = entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl')).map((e) => e.name);
-      // Off the event loop: a cold project is hundreds of MB, and reading it
-      // inline froze every live session's streaming until it finished.
+      // Off the event loop: a cold project is hundreds of MB.
       const rows = await mapLimit(files, 8, async (name): Promise<Session> => {
         const filePath = path.join(projectDir, name);
         let createdAt = Date.now();
@@ -706,8 +488,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
         const { aiTitle, customTitle, firstTimestamp, lastTimestamp } = metadata;
         return {
           id: name.replace(/\.jsonl$/, ''),
-          // The row's primary id, even for sessions read out of a secondary
-          // dir — loadSessionHistory resolves the real dir by searching.
+          // The primary id even for secondary dirs; loadSessionHistory searches the siblings.
           project_id: projectId,
           project_path: resolvedPath,
           created_at: Math.floor(createdAt / 1000),
@@ -721,17 +502,10 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
         };
       });
       sessions.push(...rows);
-      // Deleted transcripts leave the cache with the folder listing.
       sessionMetadata.prune(projectDir, new Set(files.map((name) => path.join(projectDir, name))));
     }
 
-    // Dedup by session id. The CLI can write the same session into more than
-    // one contributing dir (e.g. a `.claude/worktrees/<name>` dir and the
-    // project-root dir both resolve to this path — see
-    // findProjectDirsForPath), so the loop above can push two rows sharing an
-    // id. Keep the one whose transcript is most current: newest
-    // last_timestamp wins, ties broken by larger
-    // file_size_bytes, then by later created_at.
+    // Dedupe: the CLI can write one session into several contributing dirs.
     const byId = new Map<string, Session>();
     for (const session of sessions) {
       const existing = byId.get(session.id);
@@ -740,7 +514,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
         continue;
       }
 
-      // Every row above sets message_timestamp and last_timestamp to the same value.
       const existingTs = existing.last_timestamp;
       const candidateTs = session.last_timestamp;
       const existingTime = existingTs ? Date.parse(existingTs) : NaN;
@@ -761,8 +534,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     }
     const deduped = [...byId.values()];
 
-    // Sort by last activity DESC, so a resumed old session rises to the top.
-    // created_at (file birthtime) only stands in when no timestamp parses.
     const lastActivityMs = (s: Session): number => {
       const ts = s.last_timestamp;
       const parsed = ts ? Date.parse(ts) : NaN;
@@ -771,10 +542,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     deduped.sort((a, b) => lastActivityMs(b) - lastActivityMs(a));
     return deduped;
   }
-
-  // -------------------------------------------------------------------------
-  // loadSessionHistory
-  // -------------------------------------------------------------------------
 
   async function loadSessionHistory(
     sessionId: string,
@@ -794,10 +561,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     const filePath = path.join(projectsDir, projectId, `${sessionId}.jsonl`);
     if (await pathExists(filePath)) return readJsonlFile(filePath);
 
-    // Not under the primary dir. A merged row lists sessions from every
-    // encoded dir resolving to the same folder (see findProjectDirsForPath),
-    // and they all carry the primary's project_id — so look in the siblings
-    // before giving up, or those conversations would open empty.
     const resolvedPath =
       projectPath ?? (await recoverProjectPathAsync(path.join(projectsDir, projectId), projectId));
     for (const dirName of await findProjectDirsForPath(projectsDir, resolvedPath)) {
@@ -809,14 +572,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     return [];
   }
 
-  // -------------------------------------------------------------------------
-  // loadAgentSessionHistory
-  // -------------------------------------------------------------------------
-
   async function loadAgentSessionHistory(sessionId: string): Promise<unknown[]> {
-    // Search all config dirs for any project dir containing this session file.
-    // Async with bounded fan-out: this spans every project dir in every
-    // account, and existsSync across all of them blocked the event loop.
     for (const dir of getConfigDirs(accounts)) {
       const projectsDir = path.join(dir, 'projects');
 
@@ -824,7 +580,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       try {
         projectEntries = await fs.promises.readdir(projectsDir, { withFileTypes: true });
       } catch {
-        continue; // missing or unreadable projects dir
+        continue;
       }
 
       const candidates = projectEntries
@@ -837,10 +593,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
     return [];
   }
-
-  // -------------------------------------------------------------------------
-  // deleteSession
-  // -------------------------------------------------------------------------
 
   async function deleteSession(
     sessionId: string,
@@ -864,10 +616,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       );
     }
 
-    // Hard delete the JSONL first — that's the user's source-of-truth
-    // signal that the session is gone. Ride-along sidecars are
-    // best-effort: if any of them is missing or unlinkable for an
-    // unrelated reason we don't want to half-delete the session.
     fs.unlinkSync(jsonlPath);
 
     const sidecarPath = path.join(projectDir, `${sessionId}.summary.json`);
@@ -878,25 +626,13 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       } catch (e) {
         const err = e as NodeJS.ErrnoException;
         if (err.code !== 'ENOENT') {
-          // Surface anything other than "file wasn't there anyway" so
-          // we don't silently leak corrupt sidecar state — but the JSONL
-          // is already gone at this point, so we just log rather than
-          // re-throw and leave the row half-deleted.
           console.warn(`[claude] deleteSession: failed to remove ${ridePath}:`, err);
         }
       }
     }
   }
 
-  // -------------------------------------------------------------------------
-  // deleteProject
-  // -------------------------------------------------------------------------
-
-  // A safe project ID is a single non-empty path segment with no separators
-  // and no traversal sneakiness. Claude's encoded project IDs look like
-  // "-Users-gregorychristie-Repos-foo" — leading dash, then dashes for
-  // every internal slash. Anything else is rejected so a malformed renderer
-  // call cannot rm-rf a sibling directory.
+  // A single path segment only, so a malformed call cannot rm -rf a sibling.
   function assertSafeProjectId(projectId: string): void {
     if (typeof projectId !== 'string') {
       throw new Error('deleteProject: projectId must be a string');
@@ -920,9 +656,7 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     const { accountId, projectId } = args;
     assertSafeProjectId(projectId);
 
-    // Bind via id, not path resolution — the renderer row already knows
-    // which account this project lives under, and using accounts.resolve()
-    // would silently jump to a different account whose path rule wins.
+    // By id, never accounts.resolve(): a path rule could jump to another account.
     const account = accounts.listAccounts().find((a) => a.id === accountId);
     if (!account) {
       throw new Error(`deleteProject: unknown account id ${accountId}`);
@@ -930,27 +664,19 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
 
     const projectsDir = path.join(account.config_dir, 'projects');
     const projectDir = path.join(projectsDir, projectId);
-    // Resolve the path (and so the sibling dirs) BEFORE deleting anything —
-    // recoverProjectPath reads the JSONLs inside these dirs.
+    // Resolve before deleting: recoverProjectPath reads the JSONLs inside.
     const resolvedPath = await recoverProjectPathAsync(projectDir, projectId);
-    // Delete every dir that resolves to this folder, not just the primary:
-    // the row represents the merged project, so leaving a sibling behind
-    // would resurrect it as a duplicate row on the next listing.
+    // Delete every sibling dir, or one resurrects as a duplicate row.
     const dirNames = await findProjectDirsForPath(projectsDir, resolvedPath);
     const targets = dirNames.length > 0 ? dirNames : [projectId];
 
-    // Drop the pin first, while the path is still resolvable. Otherwise a
-    // later project at the same path would be silently born pinned.
+    // Unpin first, or a later project at this path is born pinned.
     pins.setPinned(resolvedPath, false);
     for (const dirName of targets) {
       fs.rmSync(path.join(projectsDir, dirName), { recursive: true, force: true });
     }
     return { deletedPath: projectDir };
   }
-
-  // -------------------------------------------------------------------------
-  // getClaudeSettings / saveClaudeSettings
-  // -------------------------------------------------------------------------
 
   async function getClaudeSettings(
     opts?: ClaudeSettingsOpts,
@@ -993,10 +719,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     }
   }
 
-  // -------------------------------------------------------------------------
-  // getSystemPrompt / saveSystemPrompt
-  // -------------------------------------------------------------------------
-
   async function getSystemPrompt(opts?: ClaudeSettingsOpts): Promise<string> {
     if (!opts?.configDir) {
       throw new Error('configDir is required for getSystemPrompt');
@@ -1013,10 +735,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     return saveClaudeMdFile(filePath, content);
   }
 
-  // -------------------------------------------------------------------------
-  // checkClaudeVersion
-  // -------------------------------------------------------------------------
-
   async function checkClaudeVersion(): Promise<ClaudeVersionStatus> {
     const binaryPath = claudeOnPath();
 
@@ -1024,14 +742,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       return { installed: false, version: null, path: null };
     }
 
-    // null when the binary was found but --version failed (unusual).
     return { installed: true, version: await probeBinaryVersion(binaryPath), path: binaryPath };
   }
 
-
-  // -------------------------------------------------------------------------
-  // readClaudeMdFile / saveClaudeMdFile
-  // -------------------------------------------------------------------------
 
   async function readClaudeMdFile(filePath: string): Promise<string> {
     try {
@@ -1051,21 +764,15 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     }
   }
 
-  // -------------------------------------------------------------------------
-  // getHooksConfig / updateHooksConfig
-  // -------------------------------------------------------------------------
-
   async function getHooksConfig(
     scope: 'user' | 'project',
     opts?: ClaudeSettingsOpts & { projectPath?: string },
   ): Promise<Record<string, unknown>> {
-    // Require configDir for the user scope so we never silently read ~/.claude.
-    // Project scope doesn't need it — it reads <projectPath>/.claude/settings.json.
+    // configDir is required for user scope: never silently read ~/.claude.
     if (scope === 'user' && !opts?.configDir) {
       throw new Error('configDir is required for getHooksConfig(user)');
     }
     if (scope === 'project' && opts?.projectPath) {
-      // Read from project .claude/settings.json
       const settingsPath = path.join(opts.projectPath, '.claude', 'settings.json');
       if (!fs.existsSync(settingsPath)) return {};
       try {
@@ -1080,7 +787,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       }
     }
 
-    // user scope
     const settings = await getClaudeSettings(opts);
     return (settings.hooks as Record<string, unknown>) ?? {};
   }
@@ -1123,14 +829,9 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       return;
     }
 
-    // user scope
     const settings = await getClaudeSettings(opts);
     await saveClaudeSettings({ ...settings, hooks }, opts);
   }
-
-  // -------------------------------------------------------------------------
-  // validateHookCommand
-  // -------------------------------------------------------------------------
 
   function validateHookCommand(command: string): { valid: boolean; message: string } {
     if (!command?.trim()) {
@@ -1138,10 +839,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     }
     return { valid: true, message: 'OK' };
   }
-
-  // -------------------------------------------------------------------------
-  // getMergedHooksConfig
-  // -------------------------------------------------------------------------
 
   async function getMergedHooksConfig(
     projectPath: string,
@@ -1153,23 +850,14 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
     const userHooks = await getHooksConfig('user', opts);
     const projectHooks = await getHooksConfig('project', { ...opts, projectPath });
 
-    // Shallow merge: project hooks override user hooks per key
     return { ...userHooks, ...projectHooks };
   }
 
-  // -------------------------------------------------------------------------
-  // CLI usage
-  // -------------------------------------------------------------------------
-
   async function getCliUsage(configDir?: string): Promise<string> {
-    // Locate the binary the same way checkClaudeVersion does.
     const binary = claudeOnPath();
     if (!binary) return 'Claude CLI not found';
 
-    // Previously fell back to process.env's CLAUDE_CONFIG_DIR when configDir
-    // was missing — that silently leaks to ~/.claude when OmniFex is launched
-    // outside a shell that sets it. Refuse instead so a renderer regression
-    // surfaces as a visible error rather than invisible state-corruption.
+    // Refuse without configDir: falling back to process.env leaks to ~/.claude.
     let env: NodeJS.ProcessEnv;
     try {
       env = buildClaudeEnv(configDir);
@@ -1193,10 +881,6 @@ export function createClaudeService(db: Database, accounts: AccountsService): Cl
       return `Failed to fetch usage: ${message ?? 'unknown error'}`;
     }
   }
-
-  // -------------------------------------------------------------------------
-  // Return service
-  // -------------------------------------------------------------------------
 
   return {
     getHomeDirectory,

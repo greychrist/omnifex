@@ -1,34 +1,10 @@
-/**
- * Which IPC channels `rpc.invoke` may reach.
- *
- * The client can hide admin UI; that is not a boundary. This list is. It
- * starts from the renderer's own invoke allow-list (`INVOKE_CHANNELS`) and
- * removes three groups:
- *
- *  1. Native-only channels — dialogs, Finder, window chrome, the updater,
- *     PDF printing, notifications. The Mac app serves them; they need a
- *     display and have no meaning in a headless daemon.
- *  2. Session lifecycle channels that have a typed protocol method. Letting
- *     `session_start` through as an rpc would accept a raw path from the
- *     network and bypass the project registry, which exists precisely so
- *     that cannot happen.
- *  3. Raw database writes. `storage_execute_sql` is dev-only even in the
- *     desktop app; the row editors are one bad tap from data loss and have no
- *     place on an iPad.
- *
- * `~/.omnifex/server.json` can widen (`rpcAllow`) or narrow (`rpcDeny`) this
- * per machine — the config is the user's, and so is the risk.
- */
+// Hiding admin UI in the client is not a boundary; this list is. It subtracts from INVOKE_CHANNELS, so a new
+// channel is reachable unless denied. Typed session channels stay out: as rpc they would bypass the project registry.
 
 import { NATIVE_INVOKE_CHANNELS } from '../../src/lib/remote/nativeChannels';
 
-/**
- * Shared with the renderer shim (`src/lib/remote/nativeChannels.ts`) so the
- * daemon's deny list and the client's native-routing list are one list.
- */
 export const NATIVE_ONLY_CHANNELS: readonly string[] = NATIVE_INVOKE_CHANNELS;
 
-/** Reached through `session.*` / `turn.*` / `permission.*` instead. */
 export const TYPED_SESSION_CHANNELS: readonly string[] = [
   'session_start',
   'session_rebind',
@@ -65,8 +41,6 @@ export function buildRpcAllowlist(
   ]);
   const out = new Set<string>();
   for (const ch of invokeChannels) if (!denied.has(ch)) out.add(ch);
-  // Explicit allows win over the built-in denies but not over the user's own
-  // `rpcDeny`: a channel named in both lists stays out.
   for (const ch of overrides.allow ?? []) {
     if (!(overrides.deny ?? []).includes(ch)) out.add(ch);
   }

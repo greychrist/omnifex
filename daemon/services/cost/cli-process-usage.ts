@@ -1,45 +1,24 @@
-// Cost module — the CLI's own running token totals, per CLI process.
-//
-// The transcript is not the whole bill. The CLI runs some model calls with
-// `skipTranscript` — side questions (`/btw`), session-title generation — and
-// none of them reach a JSONL, so the transcript-derived Cost Report never saw
-// them. The CLI does count them: every `result` carries `modelUsage`, its
-// running per-model totals for the process, and `get_usage` returns the same
-// figures on demand.
-//
-// A process's totals are not guaranteed to start at zero. `--resume` restores
-// the totals an earlier process saved in its `cost-state` record — when that
-// record exists. So each process records a BASELINE before it spends anything
-// and then its LATEST figure; latest − baseline is exactly what the process
-// spent, whichever way the restore went. `unlogged-spend.ts` turns that into
-// cost rows. See docs/superpowers/specs/2026-09-25-side-chat-design.md, "Cost".
+// `--resume` restores earlier totals, so record a baseline before any spend: latest − baseline is what the process spent.
 
 import type { Database } from '../database';
 
-/** One model's running totals, as the CLI reports them (camelCase on the wire). */
 export interface CliModelTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
-  /** The part of cacheCreationInputTokens written with a 1-hour TTL. CLI >=
-   *  2.1.311; absent from older CLIs, and counts only turns a recording
-   *  version ran. */
+  /** Absent from older CLIs; counts only turns a recording version ran. */
   cacheCreationEphemeral1hInputTokens?: number;
 }
 
-/** Keyed by the CLI's model id, e.g. `claude-opus-5-5[1m]`. */
 export type CliModelUsage = Record<string, CliModelTotals>;
 
 export interface CliUsageEvent {
-  /** The CLI session id — the transcript's file name. */
   sessionId: string;
-  /** One CLI process. A restart or resume is a new process. */
+  /** A restart or resume is a new process. */
   processId: string;
-  /** ISO. When the process was spawned; its transcript window starts here. */
   startedAt: string;
   phase: 'baseline' | 'latest';
-  /** ISO. When the figure was read. */
   at: string;
   modelUsage: CliModelUsage;
 }
@@ -56,7 +35,6 @@ export interface CliProcessUsage {
 
 export interface CliProcessUsageStore {
   record(event: CliUsageEvent): void;
-  /** Every recorded process, grouped by session, oldest first. */
   listBySession(): Map<string, CliProcessUsage[]>;
 }
 

@@ -11,16 +11,9 @@ import type { VaultStats } from '../services/brain/stats';
 
 type Params = Record<string, unknown>;
 
-/** Matches the existing HandlerFn shape in handlers.ts:270. */
 type HandlerFn = (event: unknown, params?: Params) => Promise<unknown>;
 
-/**
- * accountId is always required. Defaulting it would risk reading or writing the
- * wrong account's vault, which is a confidentiality failure rather than a UX
- * annoyance — so this throws instead of falling back.
- *
- * Both camelCase and snake_case are accepted, matching the repo convention.
- */
+// Never default accountId: the wrong account's vault is a confidentiality failure.
 function requireAccountId(params: Params): number {
   const raw = params.accountId ?? params.account_id;
   const id = typeof raw === 'string' ? Number(raw) : raw;
@@ -36,22 +29,13 @@ function requireString(params: Params, camel: string, snake: string): string {
   return value;
 }
 
-/**
- * A note body may legitimately be the empty string — clearing a note is an
- * edit, not a missing parameter — so this does not reuse `requireString`,
- * which rejects `''` on purpose for names and paths.
- */
+/** `''` is a valid body (clearing a note), unlike names and paths. */
 function requireBody(params: Params): string {
   const value = params.body;
   if (typeof value !== 'string') throw new Error('body is required');
   return value;
 }
 
-/**
- * What `status()` would return for an account with no vault. Used when the
- * service failed to construct: the Brain tab must still render something
- * truthful rather than an error, since the Brain is auxiliary.
- */
 function unconfiguredStatus(accountId: number): VaultStatus {
   return {
     accountId,
@@ -68,14 +52,7 @@ function unconfiguredStatus(accountId: number): VaultStatus {
   };
 }
 
-/**
- * What `stats()` would report for an account with no vault.
- *
- * Hand-mirrors `computeVaultStats([], …)` rather than importing the service:
- * this layer must render something truthful even when the service failed to
- * construct, which is exactly when it cannot be called. `brain-ipc.test.ts` is
- * what keeps the two shapes honest.
- */
+/** Hand-mirrors computeVaultStats([]): it must work when the service failed to construct. */
 function emptyStats(): VaultStats {
   return {
     noteCount: 0,
@@ -97,52 +74,14 @@ function emptyStats(): VaultStats {
   };
 }
 
-/**
- * `brain` is optional so the app still boots if the service failed to
- * construct — the Brain is auxiliary and must never break IPC registration.
- *
- * Every handler here is `async`, so a synchronous throw anywhere in its body
- * (accountId validation, or a throw from the registry itself) becomes a
- * rejected Promise rather than an exception escaping the handler map — the
- * binding constraint is that no Brain failure may break a session, block the
- * UI, or crash the main process.
- *
- * The registry (Task 7) throws from several places, and not uniformly:
- *  - `setVaultPath` / `open` / `writeNote` fail closed (throw) by design —
- *    they are explicit user actions, or would otherwise hand out access to
- *    the wrong account's vault, so a silent empty result would be worse than
- *    an error message.
- *  - `search` already self-degrades to `[]` inside the registry when `open`
- *    reports a `VaultConflictError`, because a conflict on ANOTHER account's
- *    vault must not start throwing at an account whose configuration never
- *    changed.
- *  - `brain_list_notes` is a read path with the same shape as `search`, so it
- *    applies the identical degrade-to-`[]` rule here at the IPC boundary
- *    (the registry doesn't do it for `open()` itself, since `open()` is also
- *    what `writeNote`/`brain_read_note` rely on to fail closed).
- *
- * `brain` being `undefined` (service failed to construct) is handled per
- * handler, not uniformly: read handlers keep `brain?.` and degrade to `[]` /
- * `null`, matching the "Brain is auxiliary" rule above. `brain_set_vault_path`
- * and `brain_clear_vault_path` are writes — reporting success via `null` while
- * `brain` is undefined would be a write that silently never happened — so they
- * throw instead.
- */
-/**
- * What the three `brain_mcp_*` handlers need: the registration itself, and the
- * one account lookup that turns an accountId into the config dir it writes to.
- *
- * Deliberately not the accounts service. These handlers need a config dir and
- * nothing else, and a wider dependency is one a future edit can reach into.
- */
 export interface BrainMcpHandlerDeps {
   isRegistered(configDir: string): boolean;
   register(configDir: string, vaultRoot: string): void;
   unregister(configDir: string): void;
-  /** The account's config dir, or null when there is no such account. */
   configDirFor(accountId: number): string | null;
 }
 
+/** `brain` may be undefined (the Brain is auxiliary): reads degrade to empty, writes and token-spending calls throw rather than report work that never happened. */
 export function createBrainHandlers(
   brain?: BrainService,
   brainMcp?: BrainMcpHandlerDeps,
@@ -153,22 +92,10 @@ export function createBrainHandlers(
     },
 
     async brain_set_vault_path(_event, params = {}) {
-      // Unlike the read handlers, this is a write: `brain?.` here would report
-      // success while doing nothing when the service failed to construct. A
-      // write path must not claim to have performed a write it did not do.
       if (!brain) throw new Error('brain service unavailable');
       const accountId = requireAccountId(params);
-      // Tilde expansion is the UI layer's job; the registry rejects a path
-      // whose first segment is `~` and that rejection message is surfaced
-      // as-is below, not special-cased.
       brain.setVaultPath(accountId, requireString(params, 'path', 'path'));
-      // The persistent registration bakes the vault path into
-      // <configDir>/.claude.json as OMNIFEX_VAULT. Moving the vault without
-      // rewriting it leaves every session started outside OmniFex pointed at
-      // a directory that no longer exists — which is exactly what happened
-      // when the default moved out of ~/Documents. Only an account that opted
-      // in is touched; the spawn-time config is rewritten on every launch and
-      // needs nothing here.
+      // An opted-in persistent registration bakes OMNIFEX_VAULT into .claude.json, so rewrite it.
       const configDir = brainMcp?.configDirFor(accountId);
       const vaultRoot = brain.vaultPath(accountId);
       if (brainMcp && configDir && vaultRoot && brainMcp.isRegistered(configDir)) {
@@ -178,13 +105,10 @@ export function createBrainHandlers(
     },
 
     async brain_clear_vault_path(_event, params = {}) {
-      // Same reasoning as brain_set_vault_path above: a silent no-op here
-      // would look like a successful clear when nothing was cleared.
       if (!brain) throw new Error('brain service unavailable');
       const accountId = requireAccountId(params);
       brain.clearVaultPath(accountId);
-      // A registration with no vault behind it fails on every tool call and
-      // keeps the toggle reading "on" for a Brain that no longer exists.
+      // A registration with no vault behind it would fail every tool call.
       const configDir = brainMcp?.configDirFor(accountId);
       if (brainMcp && configDir && brainMcp.isRegistered(configDir)) {
         brainMcp.unregister(configDir);
@@ -200,22 +124,11 @@ export function createBrainHandlers(
 
     async brain_default_vault_path(_event, params = {}) {
       const name = requireString(params, 'accountName', 'account_name');
-      // The name becomes a directory name, so it must not be able to steer the
-      // suggestion out of the Brain folder. This is only a SUGGESTION — the
-      // registry validates whatever is actually submitted — but a suggestion
-      // pre-filled into a text box is one click away from being submitted.
+      // The name becomes a directory: it must not steer the suggestion out of the Brain folder.
       if (name.includes('/') || name.includes('\\') || name.includes('\0')) {
         throw new Error(`account name is not usable as a folder name: ${name}`);
       }
-      // The home root, NOT ~/Documents. A vault must be openable in Obsidian,
-      // backed up, and deletable without touching OmniFex, which rules out
-      // userData — but ~/Documents and ~/Desktop are exactly the two folders
-      // iCloud Drive claims when "Desktop & Documents Folders" is on, and
-      // Dropbox/OneDrive/Drive claim their own named folders. Under a file
-      // provider with Optimize Mac Storage, note and git-object contents get
-      // evicted to dataless stubs that cost ~0.6s each to fault back in, which
-      // turns one `git add -A` over the vault into minutes of apparent hang.
-      // The home root is claimed by no provider and keeps all three properties.
+      // Home root, never ~/Documents or ~/Desktop: file providers evict contents to stubs and git hangs for minutes.
       return join(homedir(), 'OmniFex Brain', name);
     },
 
@@ -246,9 +159,6 @@ export function createBrainHandlers(
     },
 
     async brain_set_excluded_projects(_event, params = {}) {
-      // A write. Reporting success while the service is missing would claim an
-      // exclusion that does not exist — and the user would then trust that a
-      // temp project is being kept out of the vault when it is not.
       if (!brain) throw new Error('brain service unavailable');
       const raw = params.decisions;
       if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -264,9 +174,6 @@ export function createBrainHandlers(
 
     async brain_list_sources(_event, params = {}) {
       const accountId = requireAccountId(params);
-      // A read path, so it degrades to [] when the service failed to
-      // construct — matching brain_list_notes and the "Brain is auxiliary"
-      // rule in this file's module doc.
       if (!brain) return [];
       const includeExcluded = params.includeExcluded === true || params.include_excluded === true;
       return brain.listSources(accountId, { includeExcluded });
@@ -278,48 +185,30 @@ export function createBrainHandlers(
       return brain.previewSource(accountId, requireString(params, 'itemKey', 'item_key'));
     },
 
-    /**
-     * The only channel that indexes. A single-item `brain_index_source` used
-     * to sit beside it, but it spent tokens without creating a run record —
-     * so any caller reaching for it lost progress the moment the pane
-     * unmounted. One item is a selection of one.
-     *
-     * Neither a read nor an ordinary write: this spends tokens, so it throws
-     * rather than returning null and reporting a run that never happened.
-     */
     async brain_index_selection(_event, params = {}) {
       if (!brain) throw new Error('brain service unavailable');
       const raw = params.itemKeys ?? params.item_keys;
       if (!Array.isArray(raw) || raw.some((k) => typeof k !== 'string')) {
         throw new Error('itemKeys must be an array of strings');
       }
-      // `force` reaches here only from an explicit press on a ticked row, and
-      // it is what lets a short session be indexed at all. Absent means the
-      // admission gate applies, which is what every unattended path wants.
+      // `force` only from an explicit press; absent, the admission gate applies.
       return brain.indexSelection(requireAccountId(params), raw as string[], {
         force: params.force === true,
       });
     },
 
     async brain_active_run() {
-      // No accountId: the app-wide indicator asks whether anything is indexing
-      // at all, and cannot name the account in order to ask about it. The run
-      // it gets back carries its own, so the vault is still labelled.
       if (!brain) return null;
       return brain.activeRun();
     },
 
     async brain_current_run(_event, params = {}) {
       const accountId = requireAccountId(params);
-      // A read: with no service there is no run, which is the truthful answer
-      // and lets the pane mount without an error banner.
       if (!brain) return null;
       return brain.currentRun(accountId);
     },
 
     async brain_curate_note(_event, params = {}) {
-      // Spends tokens, like brain_index_source: a null result while the
-      // service is missing would report a curation that never happened.
       if (!brain) throw new Error('brain service unavailable');
       return brain.curateNote(
         requireAccountId(params),
@@ -328,23 +217,18 @@ export function createBrainHandlers(
     },
 
     async brain_enqueue_curation(_event, params = {}) {
-      // A write that queues token-spending work, like brain_backfill.
       if (!brain) throw new Error('brain service unavailable');
       return brain.enqueueCuration(requireAccountId(params));
     },
 
     async brain_stats(_event, params = {}) {
       const accountId = requireAccountId(params);
-      // A read: degrades so the stats panel renders truthful zeroes rather
-      // than an error when the service failed to construct.
       if (!brain) return emptyStats();
       return brain.stats(accountId);
     },
 
     async brain_queue_counts(_event, params = {}) {
       const accountId = requireAccountId(params);
-      // A read: degrades so the Brain tab renders truthful zeroes rather than
-      // an error when the service failed to construct.
       if (!brain) return { pending: 0, running: 0, done: 0, failed: 0 };
       return brain.queueCounts(accountId);
     },
@@ -357,16 +241,11 @@ export function createBrainHandlers(
     },
 
     async brain_backfill(_event, params = {}) {
-      // A write that queues token-spending work. Reporting a count while the
-      // service is missing would claim a backfill that never happened.
       if (!brain) throw new Error('brain service unavailable');
       return brain.backfill(requireAccountId(params));
     },
 
     async brain_enqueue_project_sources(_event, params = {}) {
-      // A write that queues token-spending work, like brain_backfill: a count
-      // returned while the service is missing would claim an enqueue that
-      // never happened.
       if (!brain) throw new Error('brain service unavailable');
       return brain.enqueueProjectSources(
         requireAccountId(params),
@@ -396,26 +275,13 @@ export function createBrainHandlers(
       try {
         handle = brain.open(accountId);
       } catch (err) {
-        // A read path: a conflict detected against another account's vault
-        // must not break listing for THIS account. See the module doc above
-        // and registry.ts's own `search()`, which applies the same rule for
-        // the same reason. Anything that hands out write access (open/
-        // writeNote) or is an explicit read action (brain_read_note) still
-        // fails closed.
+        // A conflict on another account's vault must not break listing for this one; write paths still fail closed.
         if (err instanceof VaultConflictError) return [];
         throw err;
       }
       return handle ? handle.vault.listNotes() : [];
     },
 
-    /**
-     * The same listing, with each note's frontmatter — what the Notes table
-     * sorts and filters on.
-     *
-     * Degrades to `[]` on a vault conflict for the same reason
-     * `brain_list_notes` does: another account's claim on a directory must not
-     * stop THIS account's pane from rendering.
-     */
     async brain_list_note_meta(_event, params = {}) {
       const accountId = requireAccountId(params);
       if (!brain) return [];
@@ -427,11 +293,6 @@ export function createBrainHandlers(
       }
     },
 
-    /**
-     * Whether this account's Brain is exposed to sessions started OUTSIDE
-     * OmniFex, and whether it could be. A read, so it degrades to a truthful
-     * "no, and not available" rather than throwing — a Brain tab must render.
-     */
     async brain_mcp_status(_event, params = {}) {
       const accountId = requireAccountId(params);
       const configDir = brainMcp?.configDirFor(accountId);
@@ -443,16 +304,11 @@ export function createBrainHandlers(
     },
 
     async brain_mcp_register(_event, params = {}) {
-      // A write into a real Claude config dir. Reporting success while the
-      // service is missing would claim residue that was never created — and
-      // the toggle would then show a state that does not exist.
       if (!brainMcp || !brain) throw new Error('brain service unavailable');
       const accountId = requireAccountId(params);
       const configDir = brainMcp.configDirFor(accountId);
       if (!configDir) throw new Error('no such account');
       const vaultRoot = brain.vaultPath(accountId);
-      // Registering a vault-less account would point the CLI at a server that
-      // has nothing to serve, and the tools would fail on every call.
       if (!vaultRoot) throw new Error('no vault configured for this account');
       brainMcp.register(configDir, vaultRoot);
       return null;
@@ -473,7 +329,6 @@ export function createBrainHandlers(
       try {
         return handle.vault.readNote(notePath);
       } catch (err) {
-        // Surface a corrupt note as a readable message rather than a stack.
         if (err instanceof NoteParseError) throw new Error(`cannot read note: ${err.message}`);
         throw err;
       }

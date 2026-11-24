@@ -5,10 +5,6 @@ import type { Database } from './database';
 import { discoverConfigDirs, nameFromConfigDir } from './first-run-discovery';
 import { encodeProjectId } from './project-paths';
 
-// ---------------------------------------------------------------------------
-// Public interfaces
-// ---------------------------------------------------------------------------
-
 export type AccountEngine = 'claude' | 'codex';
 
 export interface SessionDefaults {
@@ -21,55 +17,40 @@ export interface Account {
   id: number;
   name: string;
   config_dir: string;
-  // Which CLI engine this account drives. Immutable post-create (see spec §3).
+  // Immutable after create.
   engine: AccountEngine;
-  // No is_default field. There is no "default" account — resolution is
-  // strictly via path rules and explicit project overrides. See migration
-  // v8 in database.ts and CLAUDE.md "Multi-Account Rules".
-  //
-  // Free-text subscription tier label (e.g. 'Max', 'Pro', 'Plus'). Replaces
-  // the old enum-ish `account_type`. `has_cost` decouples billing from the
-  // label since 'Max' used to implicitly mean "free".
+  // No is_default: there is no default account.
   subscription_label: string;
   has_cost: boolean;
   color: string | null;
   icon: string | null;
   session_defaults?: SessionDefaults;
   cli_path: string | null;
-  /**
-   * The email the user asserts this config dir should be authenticated as.
-   * Null means "don't check" — the session-start verification is skipped
-   * entirely and does no I/O. Set from Settings, prefilled by discovery.
-   * See docs/superpowers/specs/2026-07-27-account-email-verification-design.md
-   */
+  /** Null means "don't check": verification is skipped with no I/O. */
   expected_email: string | null;
   created_at: string;
   updated_at: string;
-  /** Whether per-session summaries auto-generate on tab close. */
   summarizeOnClose?: boolean;
-  /** Model id (e.g. 'claude-haiku-4-5') used for summarization. Null
-   *  when toggle is off or no model has been selected. */
   summaryModel?: string | null;
 }
 
 export interface CreateAccountOptions {
   name: string;
   configDir: string;
-  engine?: AccountEngine; // default 'claude'
-  subscriptionLabel?: string; // default ''
-  hasCost?: boolean; // default true
+  engine?: AccountEngine;
+  subscriptionLabel?: string;
+  hasCost?: boolean;
   color?: string;
   icon?: string;
   sessionDefaults?: SessionDefaults;
   cliPath?: string | null;
-  /** Expected login email. Omit or pass null for "don't check". */
   expectedEmail?: string | null;
 }
 
 export interface UpdateAccountOptions {
   name: string;
   configDir: string;
-  // engine intentionally omitted — immutable post-create (see spec §3).
+  // engine omitted: immutable after create.
   subscriptionLabel?: string;
   hasCost?: boolean;
   color?: string;
@@ -102,33 +83,16 @@ export interface ResolutionExplanation {
   match_detail: string | null;
 }
 
-/**
- * How a project path was bound to an account.
- *
- * `on_disk` is evidence rather than configuration: the project's
- * `projects/<encoded>` directory physically exists under exactly one account's
- * config dir, so that account demonstrably owns the sessions. It is NOT a
- * default — see `resolveOnDisk`.
- */
+/** `on_disk` is evidence, not a default: the project dir exists under exactly one account. */
 export type ResolveMatchType = 'override' | 'path_rule' | 'on_disk';
 
-/**
- * A single resolved routing target for one engine. `matchDetail` is the project
- * path (override), the matched prefix (path rule), or the config dir the
- * project was found under (on disk).
- */
 export interface ResolveSlot {
   account: Account;
   matchType: ResolveMatchType;
   matchDetail: string;
 }
 
-/**
- * Result of resolving a project path. Each engine resolves independently:
- * explicit override → longest-prefix path rule → unambiguous on-disk ownership
- * → null. A `null` slot means none of those bound the project — callers MUST
- * treat an all-null pair as an error condition, not a default-account fallback.
- */
+/** An all-null pair is an error, never a default-account fallback. */
 export interface ResolvePair {
   claude: ResolveSlot | null;
   codex: ResolveSlot | null;
@@ -136,18 +100,10 @@ export interface ResolvePair {
 
 export interface AccountsService {
   listAccounts(): Account[];
-  /**
-   * Look up the account that owns a config dir, comparing normalized paths so
-   * a trailing slash or `~` doesn't miss. Null when no account claims it.
-   * Note this is a reverse lookup, NOT resolution — it never participates in
-   * the override → path rule → null chain.
-   */
+  /** Reverse lookup only; never part of resolution. */
   getAccountByConfigDir(configDir: string): Account | null;
   createAccount(opts: CreateAccountOptions): Account;
   updateAccount(id: number, opts: UpdateAccountOptions): void;
-  /** Update the per-session summarization opt-in for an account. Pass
-   *  `summaryModel: null` to clear the model (which also disables the
-   *  toggle, since both fields are required for generation). */
   updateSummarySettings(
     id: number,
     summarizeOnClose: boolean,
@@ -165,27 +121,14 @@ export interface AccountsService {
   explainResolution(projectPath: string, engine?: AccountEngine): ResolutionExplanation | null;
 
   discoverAccounts(): Promise<DiscoveredConfigDirTuple[]>;
-  /**
-   * Scans `$HOME` for `.claude*`/`.codex*` config dirs and creates an Account
-   * row for each one not already represented by an existing account's
-   * `configDir`. Returns the newly-created accounts. Engine + name are derived
-   * from the directory. Resolution semantics are unchanged — no path rules are
-   * created. Intended for the Settings escape hatch when a user adds a new
-   * config dir after first launch.
-   */
   scanForNewAccounts(): Promise<Account[]>;
 }
 
-/** Engine-tagged discovery result re-exported for handler/renderer typing. */
 export interface DiscoveredConfigDirTuple {
   dirName: string;
   configDir: string;
   engine: AccountEngine;
 }
-
-// ---------------------------------------------------------------------------
-// Row types returned from SQLite
-// ---------------------------------------------------------------------------
 
 interface AccountRow {
   id: number;
@@ -193,7 +136,7 @@ interface AccountRow {
   config_dir: string;
   engine: AccountEngine;
   subscription_label: string;
-  has_cost: number; // SQLite stores 0/1
+  has_cost: number;
   color: string | null;
   icon: string | null;
   session_defaults: string | null;
@@ -201,7 +144,7 @@ interface AccountRow {
   expected_email: string | null;
   created_at: string;
   updated_at: string;
-  summarizeOnClose: number; // SQLite stores 0/1
+  summarizeOnClose: number;
   summaryModel: string | null;
 }
 
@@ -213,10 +156,6 @@ interface PathRuleRow {
   path_prefix: string;
   priority: number;
 }
-
-// ---------------------------------------------------------------------------
-// Helper: map a raw SQLite row to the public Account shape
-// ---------------------------------------------------------------------------
 
 function rowToAccount(row: AccountRow): Account {
   return {
@@ -240,11 +179,6 @@ function rowToAccount(row: AccountRow): Account {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Helper: normalize paths so ~/foo and /Users/x/foo match.
-// Uses path.resolve() to handle relative segments, symlinks, and trailing slashes.
-// ---------------------------------------------------------------------------
-
 function normalizePath(p: string): string {
   let expanded = p;
   if (p.startsWith('~/') || p === '~') {
@@ -253,21 +187,12 @@ function normalizePath(p: string): string {
   return path.resolve(expanded);
 }
 
-/** True if `child` is `parent` or a descendant of `parent`. */
 function isPathInside(child: string, parent: string): boolean {
   const rel = path.relative(parent, child);
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-
 export interface AccountsServiceDeps {
-  /**
-   * Existence check used by on-disk ownership resolution. Injected so tests can
-   * describe a filesystem without creating one.
-   */
   existsSync?: (p: string) => boolean;
 }
 
@@ -321,15 +246,10 @@ export function createAccountsService(
   }
 
   function updateAccount(id: number, opts: UpdateAccountOptions): void {
-    // subscription_label / has_cost are preserved when omitted (COALESCE),
-    // matching the prior account_type behavior. session_defaults: undefined
-    // preserves, null clears, object sets.
     const hasCostValue =
       opts.hasCost === undefined ? null : opts.hasCost ? 1 : 0;
 
-    // expected_email needs three-way semantics (set / preserve / clear), and
-    // COALESCE can't express them: "clear it" and "leave it" both arrive as
-    // SQL NULL. The explicit flag column distinguishes them.
+    // COALESCE can't tell "clear" from "preserve" (both arrive as NULL); the flag column does.
     const setExpectedEmail = opts.expectedEmail === undefined ? 0 : 1;
     const expectedEmailValue = opts.expectedEmail ?? null;
 
@@ -403,10 +323,6 @@ export function createAccountsService(
     raw.prepare('DELETE FROM accounts WHERE id = ?').run(id);
   }
 
-  // -------------------------------------------------------------------------
-  // Path rules
-  // -------------------------------------------------------------------------
-
   function listPathRules(): PathRule[] {
     return raw
       .prepare(
@@ -447,19 +363,12 @@ export function createAccountsService(
     raw.prepare('DELETE FROM account_path_rules WHERE id = ?').run(ruleId);
   }
 
-  // -------------------------------------------------------------------------
-  // Project overrides
-  // -------------------------------------------------------------------------
-
   function setProjectOverride(projectPath: string, accountId: number): void {
     const acct = raw
       .prepare('SELECT engine FROM accounts WHERE id = ?')
       .get(accountId) as { engine: AccountEngine } | undefined;
     if (!acct) throw new Error(`Account ${accountId} not found`);
-    // Normalize before storing: resolve() looks up by the normalized project
-    // path, so an override written in any other form (trailing slash, ~, ..)
-    // would be stored under a key no reader can ever match — the override would
-    // silently never take effect.
+    // Normalize before storing: resolve() looks up the normalized path, so any other form never matches.
     raw
       .prepare(
         `INSERT INTO project_account_overrides (project_path, engine, account_id) VALUES (?, ?, ?)
@@ -478,10 +387,6 @@ export function createAccountsService(
       )
       .all() as ProjectOverride[];
   }
-
-  // -------------------------------------------------------------------------
-  // Resolution
-  // -------------------------------------------------------------------------
 
   function resolve(projectPath: string): ResolvePair {
     const normalizedProject = normalizePath(projectPath);
@@ -505,7 +410,7 @@ export function createAccountsService(
       else result.claude = slot;
     }
 
-    // 2. Path rules per engine — only for slots not already filled by override.
+    // 2. Path rules, only for slots not filled by an override.
     if (!result.claude || !result.codex) {
       const rules = raw
         .prepare(
@@ -534,33 +439,15 @@ export function createAccountsService(
       }
     }
 
-    // 3. On-disk ownership, Claude slot only — see resolveOnDisk.
+    // 3. On-disk ownership, Claude slot only.
     result.claude ??= resolveOnDisk(normalizedProject);
 
     return result;
   }
 
   /**
-   * Bind a project to the account whose config dir already holds its sessions.
-   *
-   * `listProjects` has always attributed projects this way — it reads each
-   * account's `projects/` directory and stamps `account_id` from wherever it
-   * found the project. Resolution ignoring that produced the contradiction
-   * where the Projects list showed a project as Work's while opening it threw
-   * NO_ACCOUNT_FOR_PROJECT. The same principle already governs Brain sources
-   * ("ownership comes from the source's location, never from resolve()").
-   *
-   * This is emphatically not a default-account fallback:
-   *
-   *  - It only fires when the directory exists under EXACTLY ONE account.
-   *    Two matches (one repo opened under personal and work) is genuine
-   *    ambiguity and returns null so the account picker asks.
-   *  - It never invents `~/.claude`, and never picks "the first account".
-   *  - Overrides and path rules both still win, so any explicit user intent
-   *    beats the inference.
-   *
-   * Claude-only: Codex reads a single `~/.codex` and has no per-account
-   * `projects/<encoded>` layout, so there is no equivalent evidence to read.
+   * Not a default: fires only when the dir exists under exactly one account, and never invents `~/.claude`.
+   * Claude-only: Codex reads a single `~/.codex` with no per-account `projects/` layout.
    */
   function resolveOnDisk(normalizedProject: string): ResolveSlot | null {
     const encoded = encodeProjectId(normalizedProject);
@@ -573,9 +460,7 @@ export function createAccountsService(
       existsSync(path.join(normalizePath(row.config_dir), 'projects', encoded)),
     );
 
-    // Zero owners: nothing on disk to go on. More than one: ambiguous, and
-    // guessing here is exactly the failure mode the no-default rule exists to
-    // prevent.
+    // More than one owner is ambiguous: null, so the picker asks.
     if (owners.length !== 1) return null;
 
     return {
@@ -585,21 +470,11 @@ export function createAccountsService(
     };
   }
 
-  // -------------------------------------------------------------------------
-  // Explain resolution (Claude-centric UI helper; returns the longest-prefix
-  // match across engines, preferring an explicit override).
-  // -------------------------------------------------------------------------
-
   function explainResolution(
     projectPath: string,
     engine?: AccountEngine,
   ): ResolutionExplanation | null {
-    // Engine-scoped explanation: the session header knows which engine it is
-    // running, so it must see the account that routes for THAT engine. Reuse
-    // the per-engine partitioning in resolve() rather than picking whichever
-    // engine happens to own the longest-prefix rule — otherwise a Claude
-    // session on a path that also matches a Codex rule/override shows the
-    // Codex account.
+    // Per engine: a Claude session on a path that also matches a Codex rule must not show the Codex account.
     if (engine) {
       const slot = resolve(projectPath)[engine];
       if (!slot) return null;
@@ -651,10 +526,6 @@ export function createAccountsService(
     return null;
   }
 
-  // -------------------------------------------------------------------------
-  // Discovery
-  // -------------------------------------------------------------------------
-
   async function discoverAccounts(): Promise<DiscoveredConfigDirTuple[]> {
     return discoverConfigDirs(os.homedir());
   }
@@ -672,10 +543,6 @@ export function createAccountsService(
     }
     return created;
   }
-
-  // -------------------------------------------------------------------------
-  // Return service object
-  // -------------------------------------------------------------------------
 
   return {
     listAccounts,

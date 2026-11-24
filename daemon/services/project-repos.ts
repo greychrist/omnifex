@@ -1,12 +1,3 @@
-/**
- * Which git repos a project's sessions watch.
- *
- * A project folder may be a repo, contain repos, or both. Discovery
- * (`git-repos.ts`) finds them; this service remembers the user's choices —
- * scan depth and the repos they turned on — per project, so every session in
- * the project shows the same repos. Nothing is watched until the user says so,
- * except the project folder itself when it is a repo.
- */
 import type { Database } from './database';
 import {
   clampScanDepth,
@@ -20,17 +11,14 @@ import path from 'node:path';
 
 export interface ProjectRepo {
   path: string;
-  /** Relative to the project folder, `/`-separated. */
   name: string;
   watched: boolean;
-  /** Saved as watched but no longer a repo on disk. */
   missing: boolean;
 }
 
 export interface ProjectRepos {
   scanDepth: number;
   rootIsRepo: boolean;
-  /** Realpath of the project folder. */
   rootPath: string;
   repos: ProjectRepo[];
   truncated: boolean;
@@ -38,7 +26,6 @@ export interface ProjectRepos {
 
 export interface WatchedRepo {
   path: string;
-  /** '' for the project folder itself. */
   name: string;
 }
 
@@ -47,9 +34,7 @@ export interface ProjectReposService {
   setWatched(projectPath: string, repoPath: string, watched: boolean): void;
   setScanDepth(projectPath: string, depth: number): void;
   remove(projectPath: string, repoPath: string): void;
-  /** DB only, no discovery: the root first when it is a repo, then watched repos still on disk. */
   watchedRepos(projectPath: string): WatchedRepo[];
-  /** Discovered repos not watched. */
   foundCount(projectPath: string): Promise<number>;
   onChange(listener: (projectPath: string) => void): () => void;
 }
@@ -87,8 +72,7 @@ export function createProjectReposService(deps: ProjectReposDeps): ProjectReposS
   );
   const removeStmt = raw.prepare('DELETE FROM project_git_repos WHERE project_path = ? AND repo_path = ?');
 
-  // Projects are keyed by the path the caller uses (the same key every other
-  // per-project table uses); repo paths are realpaths.
+  // Projects are keyed by the caller's path, like every per-project table; repo paths are realpaths.
   const scanDepth = (projectPath: string): number => {
     const row = depthStmt.get(projectPath) as { scan_depth: number } | undefined;
     return row ? clampScanDepth(row.scan_depth) : DEFAULT_SCAN_DEPTH;

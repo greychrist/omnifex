@@ -5,10 +5,6 @@ import type { Database } from './database';
 import { findOnPath } from './util/path-lookup';
 import { probeBinaryVersion } from './util/exec-text';
 
-// ---------------------------------------------------------------------------
-// Public interfaces
-// ---------------------------------------------------------------------------
-
 export interface ClaudeInstallation {
   path: string;
   version: string | null;
@@ -22,21 +18,14 @@ export interface ClaudeBinaryService {
   findBestBinary(): string | null;
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/** `claude` on PATH, found in-process rather than by shelling out to `which`. */
 function tryWhich(): string | null {
   return findOnPath(process.platform === 'win32' ? 'claude.exe' : 'claude', process.env.PATH);
 }
 
-/** Find claude binaries in NVM-managed node versions. */
 function findNvmInstallations(): string[] {
   const results: string[] = [];
   const home = os.homedir();
 
-  // Check NVM_BIN env var first
   const nvmBin = process.env.NVM_BIN;
   if (nvmBin) {
     const candidate = path.join(nvmBin, 'claude');
@@ -45,7 +34,6 @@ function findNvmInstallations(): string[] {
     }
   }
 
-  // Scan $HOME/.nvm/versions/node/*/bin/claude
   const nvmVersionsDir = path.join(home, '.nvm', 'versions', 'node');
   try {
     const entries = fs.readdirSync(nvmVersionsDir, { withFileTypes: true });
@@ -63,7 +51,6 @@ function findNvmInstallations(): string[] {
   return results;
 }
 
-/** Check a list of well-known standard install paths. */
 function findStandardInstallations(): string[] {
   const home = os.homedir();
 
@@ -82,7 +69,6 @@ function findStandardInstallations(): string[] {
     path.join(home, '.config', 'yarn', 'global', 'node_modules', '.bin', 'claude'),
   ];
 
-  // VS Code extensions: $HOME/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude
   const vscodeExtDir = path.join(home, '.vscode', 'extensions');
   try {
     const entries = fs.readdirSync(vscodeExtDir, { withFileTypes: true });
@@ -105,23 +91,12 @@ function findStandardInstallations(): string[] {
   return candidates.filter((p) => fs.existsSync(p));
 }
 
-// ---------------------------------------------------------------------------
-// SDK-bundled per-platform binary lookup
-// ---------------------------------------------------------------------------
-
 export interface FindBundledSdkBinaryOptions {
   platform: NodeJS.Platform;
   arch: string;
-  /** node_modules directories to search, in priority order. */
   roots: string[];
 }
 
-/**
- * Locate the per-platform Claude Code binary that ships with
- * @anthropic-ai/claude-agent-sdk (since v0.2.113). Pure function — caller
- * supplies the candidate node_modules roots so this works in dev (project
- * node_modules) and in packaged builds (app.asar.unpacked/node_modules).
- */
 export function findBundledSdkBinary(opts: FindBundledSdkBinaryOptions): string | null {
   const ext = opts.platform === 'win32' ? '.exe' : '';
   const pkgs =
@@ -141,21 +116,12 @@ export function findBundledSdkBinary(opts: FindBundledSdkBinaryOptions): string 
   return null;
 }
 
-/**
- * Resolve the SDK-bundled binary using the running process's platform/arch
- * and the standard candidate roots: app.asar.unpacked/node_modules in packaged
- * builds, then the project's local node_modules in dev.
- */
 export function findBundledSdkBinaryAuto(): string | null {
   const roots: string[] = [];
-  // Packaged Electron build: forge.config.ts copies the per-platform subpackage
-  // into the app and asarUnpack lifts it out to app.asar.unpacked.
-  // (process.resourcesPath is an Electron-augmented field; not in @types/node.)
   const resourcesPath = (process as { resourcesPath?: string }).resourcesPath;
   if (resourcesPath) {
     roots.push(path.join(resourcesPath, 'app.asar.unpacked', 'node_modules'));
   }
-  // Dev / unit-test runs.
   roots.push(path.resolve('node_modules'));
 
   return findBundledSdkBinary({
@@ -165,14 +131,7 @@ export function findBundledSdkBinaryAuto(): string | null {
   });
 }
 
-/**
- * Find an installed claude binary without consulting the Settings pick:
- * which → nvm → standard install paths → the SDK-bundled binary.
- *
- * Anything that launches the CLI wants `ClaudeBinaryService.findBestBinary()`
- * instead, which tries the Settings pick first. This is the half of that rule
- * that needs no database.
- */
+/** Launchers want `ClaudeBinaryService.findBestBinary()`, which tries the Settings pick first. */
 export function discoverClaudeBinary(): string | null {
   const whichResult = tryWhich();
   if (whichResult) return whichResult;
@@ -183,13 +142,8 @@ export function discoverClaudeBinary(): string | null {
   const standardPaths = findStandardInstallations();
   if (standardPaths.length > 0) return standardPaths[0];
 
-  // Final fallback — used when the user has no system Claude Code install.
   return findBundledSdkBinaryAuto();
 }
-
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
 
 export function createClaudeBinaryService(db: Database): ClaudeBinaryService {
   const SETTING_KEY = 'claude_binary_path';
@@ -230,15 +184,13 @@ export function createClaudeBinaryService(db: Database): ClaudeBinaryService {
       add(custom, 'custom');
     }
 
-    // One `--version` per installation, all at once: each can take up to its
-    // 5 s timeout, and they used to run serially and synchronously.
+    // All at once: each can take up to its 5 s timeout.
     return Promise.all(
       found.map(async ({ path: p, source }) => ({ path: p, source, version: await probeBinaryVersion(p) })),
     );
   }
 
   function findBestBinary(): string | null {
-    // The binary picked in Settings — only if it actually exists on disk
     const custom = getPath();
     if (custom && fs.existsSync(custom)) {
       return custom;

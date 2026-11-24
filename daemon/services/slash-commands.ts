@@ -1,10 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// ---------------------------------------------------------------------------
-// Public interfaces
-// ---------------------------------------------------------------------------
-
 export interface SlashCommand {
   id: string;
   name: string;
@@ -35,42 +31,20 @@ export interface SlashCommandsService {
   delete(commandId: string, projectPath?: string, configDir?: string): string;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 interface ParsedCommand {
   description: string;
   allowed_tools: string;
-  /**
-   * Frontmatter lines for keys this service does not model, verbatim and in
-   * their original order, so `save` can put them back. See `renderFrontmatter`.
-   */
   otherFrontmatter: string[];
   content: string;
 }
 
-/**
- * Frontmatter keys this service parses into its own fields and re-emits from
- * them. Everything else is preserved untouched.
- *
- * `allowed-tools` is the spelling Claude Code reads; `allowed_tools` is what
- * OmniFex used to write and is still accepted on the way in so existing files
- * keep working. Both are owned, so a file carrying the legacy key is rewritten
- * to the hyphenated one rather than ending up with both.
- */
+/** The CLI reads `allowed-tools`; legacy `allowed_tools` is accepted on read and rewritten hyphenated. */
 const OWNED_KEYS = new Set(['description', 'allowed-tools', 'allowed_tools']);
 
-/** A `key:` line at the top level of a YAML block (not an indented child). */
 const FRONTMATTER_KEY_RE = /^([A-Za-z0-9_-]+):[ \t]*(.*)$/;
 
 function parseFrontmatter(input: string): ParsedCommand {
-  // Strip a leading UTF-8 BOM before anchoring on `---`. Editors add one
-  // routinely and it is invisible, so without this the file falls down the
-  // no-frontmatter path: empty description, and the raw `---` block leaking
-  // into the body. Claude Code fixed the same bug on its side in 2.1.239, so a
-  // file the CLI now honours has to read the same way here. Written as an
-  // escape rather than a literal BOM so it stays visible in the source.
+  // Strip a BOM first, or the file falls to the no-frontmatter path (the CLI strips it too). Escaped so it stays visible.
   const raw = input.replace(/^\uFEFF/, '');
   const frontmatterMatch = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
   if (!frontmatterMatch) {
@@ -85,10 +59,7 @@ function parseFrontmatter(input: string): ParsedCommand {
   let sawHyphenatedTools = false;
   const otherFrontmatter: string[] = [];
 
-  // A top-level `key:` line opens a key; anything indented or blank after it
-  // belongs to that key's value. Tracking which key is open is what lets a
-  // nested block (`hooks:` with children) survive intact while a dropped
-  // key takes its continuation lines with it.
+  // Track the open key so nested blocks survive and a dropped key takes its continuation lines.
   let inOwnedKey = false;
 
   for (const line of yamlBlock.split('\n')) {
@@ -105,31 +76,17 @@ function parseFrontmatter(input: string): ParsedCommand {
         allowed_tools = value;
         sawHyphenatedTools = true;
       } else if (!sawHyphenatedTools) {
-        // Legacy `allowed_tools`. The hyphenated key wins if the file has both.
         allowed_tools = value;
       }
       continue;
     }
-    // Continuation of whatever key is open (or stray text before the first).
     if (!inOwnedKey) otherFrontmatter.push(line);
   }
 
   return { description, allowed_tools, otherFrontmatter, content: body };
 }
 
-/**
- * Write a command file back out, keeping frontmatter this service doesn't model.
- *
- * Claude Code reads far more keys than the two the editor exposes — `model`,
- * `effort`, `argument-hint`, `arguments`, `disable-model-invocation`,
- * `user-invocable`, `shell`, `when_to_use`, `hooks`, `agent` and more. Saving
- * used to rebuild the block from `description` + tools alone, silently deleting
- * every one of them. `model:` in particular stopped being harmless to drop in
- * CLI 2.1.259, which began honouring it in interactive sessions: losing it
- * changes the model the command runs on.
- *
- * The owned keys lead so the file still reads the way the editor presents it.
- */
+/** Preserves unmodelled keys: the CLI reads many more, and dropping `model:` changes the model a command runs on. */
 function renderFrontmatter(params: {
   description: string;
   allowed_tools: string;
@@ -173,12 +130,7 @@ function commandFromFile(
   };
 }
 
-/**
- * A `Dirent` reports what the entry itself is, so a symlink is neither a file
- * nor a directory — and skills/commands installed as links into a repo
- * (`<configDir>/skills/mac-health → ~/Repos/...`) were silently dropped.
- * Follow the link; a broken one is skipped.
- */
+/** A Dirent describes the link itself: follow symlinks, or linked skills/commands vanish. Broken links are skipped. */
 function entryIs(dir: string, entry: fs.Dirent, kind: 'file' | 'directory'): boolean {
   if (kind === 'file' ? entry.isFile() : entry.isDirectory()) return true;
   if (!entry.isSymbolicLink()) return false;
@@ -216,17 +168,7 @@ function scanDirectory(
   return commands;
 }
 
-/**
- * Scan a `.claude/skills/` directory. Skills are folders, each containing a
- * `SKILL.md` with frontmatter (`name`, `description`). The CLI exposes them
- * alongside built-in slash commands, but its `SlashCommand` shape
- * (`name` / `description` / `argumentHint`) carries no source info, so the
- * renderer can't tell project skills apart from CLI defaults.
- *
- * Emitting them here as project- or user-scoped pseudo-commands lets the
- * picker's dedup (custom commands win over CLI defaults) re-tag them with
- * the correct scope.
- */
+/** Emitted as scoped pseudo-commands: the CLI's SlashCommand carries no source, so the picker's dedup re-tags them. */
 function scanSkillsDirectory(
   dir: string,
   scope: string,
@@ -245,10 +187,7 @@ function scanSkillsDirectory(
     if (!entryIs(dir, entry, 'directory')) continue;
     const manifestPath = path.join(dir, entry.name, 'SKILL.md');
     if (!fs.existsSync(manifestPath)) continue;
-    // Reuse commandFromFile so frontmatter parsing stays in one place. The
-    // `name` (and thus `full_command`) is taken from the folder name —
-    // matching how the CLI reports the skill — not from the manifest's
-    // basename ("SKILL").
+    // Name from the folder, as the CLI reports it, not the manifest's basename.
     const cmd = commandFromFile(manifestPath, scope, namespace);
     if (cmd) {
       commands.push({
@@ -263,14 +202,8 @@ function scanSkillsDirectory(
   return commands;
 }
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-
 export function createSlashCommandsService(): SlashCommandsService {
-  // configDir is required for every operation that scans user-scoped commands
-  // / skills. There is no default-account fallback to ~/.claude — the caller
-  // must pass the resolved account's config_dir explicitly.
+  // No default-account fallback to ~/.claude: the caller passes the resolved config_dir.
   function getCommandsDir(configDir?: string): string {
     if (!configDir) {
       throw new Error(
@@ -284,25 +217,17 @@ export function createSlashCommandsService(): SlashCommandsService {
   function list(projectPath?: string, configDir?: string): SlashCommand[] {
     const commands: SlashCommand[] = [];
 
-    // Global (user) commands — only attempted when the caller resolved a
-    // configDir. Without one we can't list user-scoped commands at all
-    // (no default-account fallback). Project-local commands below are
-    // always scanned because they're on the project path itself.
     if (configDir) {
       commands.push(...scanDirectory(getCommandsDir(configDir), 'user', 'user'));
 
-      // Global (user) skills — emitted as user-scoped so the picker's dedup
-      // can re-tag CLI-reported skills out of the "default" bucket.
       const userSkillsDir = path.join(configDir, 'skills');
       commands.push(...scanSkillsDirectory(userSkillsDir, 'user', 'user'));
     }
 
-    // Project-local commands
     if (projectPath) {
       const projectCommandsDir = path.join(projectPath, '.claude', 'commands');
       commands.push(...scanDirectory(projectCommandsDir, 'project', 'project'));
 
-      // Project-local skills
       const projectSkillsDir = path.join(projectPath, '.claude', 'skills');
       commands.push(...scanSkillsDirectory(projectSkillsDir, 'project', 'project'));
     }
@@ -311,16 +236,12 @@ export function createSlashCommandsService(): SlashCommandsService {
   }
 
   function get(commandId: string, configDir?: string): SlashCommand {
-    // commandId format: scope:namespace:name
     const parts = commandId.split(':');
     if (parts.length < 3) {
       throw new Error(`Invalid command id: ${commandId}`);
     }
     const [scope, namespace, name] = parts;
 
-    // For user-scoped commands use the (possibly per-call) commands dir.
-    // For project-scoped commands we don't have the project path in the id,
-    // so we fall through to the same dir as a best-effort lookup.
     const dir = getCommandsDir(configDir);
 
     const filePath = path.join(dir, `${name}.md`);
@@ -346,9 +267,7 @@ export function createSlashCommandsService(): SlashCommandsService {
 
     const filePath = path.join(dir, `${name}.md`);
 
-    // Re-read the file being overwritten so keys the editor doesn't model
-    // survive the round trip. Missing file (a new command) means nothing to
-    // preserve.
+    // Re-read the file so unmodelled keys survive the round trip.
     let otherFrontmatter: string[] = [];
     try {
       otherFrontmatter = parseFrontmatter(fs.readFileSync(filePath, 'utf-8')).otherFrontmatter;
@@ -380,7 +299,6 @@ export function createSlashCommandsService(): SlashCommandsService {
   }
 
   function deleteCommand(commandId: string, projectPath?: string, configDir?: string): string {
-    // commandId format: scope:namespace:name
     const parts = commandId.split(':');
     if (parts.length < 3) {
       throw new Error(`Invalid command id: ${commandId}`);

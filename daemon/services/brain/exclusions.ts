@@ -1,53 +1,20 @@
-/**
- * Which projects the Brain is allowed to touch.
- *
- * Pure: no database, no discovery, no clock. The registry enforces this at
- * every point that can reach the model, and keeping the decision here is what
- * makes "every point uses the same rule" checkable rather than aspirational.
- */
-
-/** A recorded choice per project path. `true` excludes. Absent means "default". */
+/** `true` excludes; absent means default. */
 export type ProjectDecisions = Record<string, boolean>;
 
-/**
- * Path prefixes that are scratch space, not work.
- *
- * `/private/` covers both macOS temp roots, since `/tmp` and `/var` are
- * symlinks into it and the CLI records the resolved form; the unresolved
- * spellings are listed too because a `cwd` can arrive either way.
- */
+/** Unresolved spellings too: a cwd can arrive as either form. */
 const TEMP_ROOTS = ['/private/', '/tmp/', '/var/folders/'];
 
-/**
- * True for a project living in temp space.
- *
- * Prefix match, deliberately — a repo merely NAMED `tmp-ideas` or
- * `private-notes` is someone's actual work and must not be swept up.
- */
+/** Prefix match, deliberately: a repo merely named `tmp-ideas` is real work. */
 export function isTempProject(path: string): boolean {
   return TEMP_ROOTS.some((root) => path.startsWith(root));
 }
 
-/**
- * The single exclusion predicate.
- *
- * Temp projects are excluded by DEFAULT rather than by rule: sessions run in
- * `/private/tmp` are throwaway probes and summarisation scratch, and indexing
- * them spends tokens writing notes about the Brain watching itself. A recorded
- * decision always wins, in either direction — a default nobody can override is
- * not a default.
- */
+/** A recorded decision always wins over the temp default, in either direction. */
 export function isExcludedProject(path: string, decisions: ProjectDecisions): boolean {
   return decisions[path] ?? isTempProject(path);
 }
 
-/**
- * Read the stored decisions, tolerating anything.
- *
- * Fails OPEN: a mangled value reads as "no decisions recorded", so the
- * defaults apply and ordinary projects stay indexable. Failing closed would
- * index nothing and be indistinguishable from the Brain being broken.
- */
+/** Fails open: failing closed would index nothing and look like a broken Brain. */
 export function parseDecisions(raw: string | null): ProjectDecisions {
   if (raw === null) return {};
   let parsed: unknown;

@@ -1,22 +1,7 @@
-/**
- * When each account's stored claude.ai sign-in ends.
- *
- * CLI 2.1.318 began reporting it (`loginExpiresAt` in `claude auth status`,
- * `credential_expires_at` on `claude -p` results). Before that, a lapsed
- * sign-in was only detected after a session had already stranded on it
- * (sessionAuthFailure). Knowing the date lets the status bar warn ahead.
- *
- * The answer costs a CLI spawn (~1s), and it changes only when someone signs
- * in, so it is cached per config dir for TTL_MS. A failed probe is not cached
- * and answers null: "could not tell" is not "this sign-in has no end".
- * `invalidate` is for a sign-in the daemon learns of (the identity watcher);
- * `refresh` is for one the client just performed.
- */
+/** A failed probe is not cached and answers null: "could not tell" is not "this sign-in has no end". */
 
 export interface LoginExpiry {
-  /** ISO time the stored sign-in ends; null when the CLI reports none. */
   expiresAt: string | null;
-  /** ISO time the CLI was asked. */
   checkedAt: string;
 }
 

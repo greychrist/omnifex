@@ -1,20 +1,13 @@
 import type { Database } from './database';
 import { repoIdentity } from './git-repos';
 
-/**
- * A short display name per repo, shown on the git bar in place of its folder
- * name. Keyed by the repo's main checkout (`repoIdentity`), like branch
- * colors, so a repo reads the same in every project, session and worktree.
- */
+/** Keyed by the repo's main checkout (`repoIdentity`), so a repo reads the same everywhere. */
 export interface RepoAliasesService {
-  /** Aliases for the paths asked for, keyed by those paths; repos without one are absent. */
   list(repoPaths: string[]): Record<string, string>;
-  /** Set a repo's alias; blank clears it. Any checkout path of the repo works. */
   set(repoPath: string, alias: string): void;
 }
 
 export interface RepoAliasesDeps {
-  /** Announces `repo-aliases-changed` `{ repoPath }` after every write. */
   sendToRenderer?: (channel: string, ...args: unknown[]) => void;
 }
 

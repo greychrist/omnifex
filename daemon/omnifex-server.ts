@@ -1,12 +1,4 @@
-/**
- * Process entry for `omnifex-server`.
- *
- * Built with brain-mcp.js by `node scripts/build-daemon.mjs`. Run on Node 26:
- * in the app that is the bundled `Contents/MacOS/omnifexd` — the executable's
- * own name is what names the process — and in a checkout it is the system
- * `node`, which `scripts/omnifex-server` finds. One Node major everywhere, so
- * `better-sqlite3` and `node-pty` have a single ABI.
- */
+// The process is named by the bundled `omnifexd` executable; never set `process.title`.
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -30,8 +22,6 @@ import { createIdleWatch, IDLE_CHECK_MS } from './remote/idle-watch';
 
 
 function readVersion(): string {
-  // Beside the bundle in a packaged app (app.asar/package.json) and two
-  // levels up from .vite/build in the repo.
   for (const candidate of [join(__dirname, '..', '..', 'package.json'), join(__dirname, '..', 'package.json')]) {
     try {
       const v = (JSON.parse(readFileSync(candidate, 'utf8')) as { version?: string }).version;
@@ -43,12 +33,6 @@ function readVersion(): string {
   return '0.0.0';
 }
 
-/**
- * This bundle's mtime. In a dev checkout the version never moves between
- * builds, so `ensure --app-build` compares this instead to know the daemon
- * on the port is stale. Packaged builds pass no `--app-build`, so it is not
- * compared there.
- */
 function readBuildStamp(): string | undefined {
   try {
     return String(Math.floor(statSync(__filename).mtimeMs));
@@ -57,7 +41,6 @@ function readBuildStamp(): string | undefined {
   }
 }
 
-/** One line per event, JSON-ish, to stdout — `ensure` points it at the log file. */
 function createLogger(level: 'debug' | 'info'): RemoteServerLogger {
   const line = (lvl: string, message: string, meta?: Record<string, unknown>) => {
     const out = `${new Date().toISOString()} ${lvl.padEnd(5)} ${message}${meta ? ' ' + JSON.stringify(meta) : ''}\n`;
@@ -85,10 +68,7 @@ async function main(argv: string[]): Promise<number> {
   const config = loadServerConfig();
   const dev = args.flags.dev === true;
 
-  /**
-   * ensure / restart / stop act on an instance: the real one, or with `--dev`
-   * the dev one. Their log goes to stderr so stdout carries only the answer.
-   */
+  // Lifecycle logs go to stderr so stdout carries only the answer.
   const lifecycle = () => {
     const env = lifecycleEnv(process.env, { dev });
     const instanceConfig = () => loadServerConfig({ env });
@@ -169,10 +149,6 @@ async function main(argv: string[]): Promise<number> {
       process.on('SIGTERM', () => shutdown('SIGTERM'));
       process.on('SIGINT', () => shutdown('SIGINT'));
 
-      // Every daemon belongs to the app that spawned it. The app stops it on
-      // quit; this is the backstop for the app being killed outright or
-      // crashing, so a leftover never holds the port, an old build, or the
-      // permissions macOS granted before it started. See remote/idle-watch.ts.
       const startedAt = Date.now();
       const idle = createIdleWatch({
         clients: () => daemon.status().clients,
@@ -184,7 +160,6 @@ async function main(argv: string[]): Promise<number> {
         if (idle.check(Date.now())) shutdown('idle');
       }, IDLE_CHECK_MS);
       timer.unref?.();
-      // Foreground until the app stops it or the idle watch fires.
       return new Promise<number>(() => {});
     }
   }

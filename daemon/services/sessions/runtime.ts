@@ -1,13 +1,3 @@
-// Sessions module — engine stream runtime
-//
-// Drives the per-session message stream by subscribing to an AgentEngine's
-// event callbacks. Owns: status transitions, stream-error recovery (engine
-// restart with --resume), JSONL-tail wiring, and the StrictMode
-// identity-replace guard.
-//
-// The tail is the transcript source, not a supplement to stream-json. See
-// ensureJsonlTail and ./stream-forward.ts for the split and why it exists.
-
 import path from 'node:path';
 import type {
   SessionHandle,
@@ -37,53 +27,16 @@ import { beginCliProcess, recordResultUsage, type CliUsageSink } from './cli-usa
 export interface RuntimeDeps {
   sendToRenderer: SendToRenderer;
   rateLimitHook: RateLimitHook | null;
-  /**
-   * Live session map. Runtime uses identity-checks
-   * (sessions.get(tabId) !== handle) to skip cleanup when start() has
-   * already replaced the handle (StrictMode double-mount, explicit
-   * re-start), and the deletion to drop dead sessions on clean close.
-   */
+  // Identity-checked (`sessions.get(tabId) !== handle`) to skip cleanup once start() has replaced the handle.
   sessions: Map<string, SessionHandle>;
-  /**
-   * Optional app_logs sink. Engine errors are written here at level=error
-   * so the renderer toast (wired in remote/daemon.ts via the LoggingService onError
-   * observer) fires for every CLI stderr line we surface. Distinct from
-   * `sendToRenderer('agent-error:…')`, which is a console-level diagnostic
-   * stream the renderer's `LogService` already routes to app_logs as a
-   * `frontend`-source entry. Both are kept: backend-source rows attribute
-   * the error to the session runtime, frontend-source rows attribute it
-   * to the renderer code path that observed it.
-   */
   logging?: LoggingService | null;
-  /**
-   * Optional write-through: persists the CLI init-time model catalog for
-   * this session's configDir (models service `upsertCatalog`) so the
-   * pre-session pickers stay warm without an ephemeral engine spawn.
-   */
   modelCatalogSink?: ((configDir: string, models: unknown[]) => void) | null;
-  /**
-   * Optional identity re-check against the CLI's own init payload. Called with
-   * (configDir, observedEmail) on `system:init`. Returns a mismatch to report,
-   * or null. Stronger evidence than the pre-flight `.claude.json` read in
-   * lifecycle.start(): this is the identity of the process actually running
-   * the session, so it catches a stale credential file. See
-   * docs/superpowers/specs/2026-07-27-account-email-verification-design.md
-   */
+  // The running process's identity: catches a stale `.claude.json` the pre-flight check believed.
   accountMismatchSink?:
     | ((configDir: string, observedEmail: string | null) => AccountMismatch | null)
     | null;
-  /**
-   * Optional recorder for the CLI's own running token totals (a baseline per
-   * process, then every result). Both roots wire it to
-   * `createCliProcessUsageStore(db).record`. See sessions/cli-usage.ts.
-   */
   cliUsageSink?: CliUsageSink | null;
-  /**
-   * Whether mods' `$.ui.notify` notifications are raised (Settings ›
-   * Notifications). Asked per frame, so a change reaches running sessions.
-   * Unset means on. Cancels pass regardless, so turning it off never
-   * strands a booked notification that its mod tries to take back.
-   */
+  // Cancels pass regardless, so turning it off never strands a booked notification.
   modNotificationsEnabled?: (() => boolean) | null;
 }
 
@@ -109,20 +62,11 @@ function ensureJsonlTail(
   );
   state.tail = createJsonlTail({
     jsonlPath,
-    // The tail is the transcript source in rich mode, not a supplement to
-    // it. stream-json strips `isMeta`, `turnCompanion` and `sourceToolUseID`
-    // from the records it carries, and classifiers that needed those fields
-    // were reduced to inferring a record's role from its neighbours — which
-    // broke the moment the CLI emitted two skill companions instead of one.
-    // Reading the file instead means the fields are simply present.
+    // The tail is the transcript source: stream-json strips `isMeta`, `turnCompanion` and `sourceToolUseID`.
     filter: 'all',
-    // EnterWorktree moves the transcript into the worktree's project
-    // directory mid-session; the session's projectPath never changes.
+    // EnterWorktree moves the transcript mid-session; projectPath never changes.
     locate: () => findSessionJsonlInAccount(handle.configDir, sessionId, handle.projectPath),
     onMessage: (msg) => {
-      // Closure carriers stay on their own channel so that subscription
-      // keeps its narrow contract; everything else joins the normal
-      // transcript pipeline.
       if (isClosureCarrier(msg)) {
         sendToRenderer(`claude-output-extra:${tabId}`, msg);
         return;
@@ -145,25 +89,6 @@ function teardownJsonlTail(state: JsonlTailState): void {
   state.tail = null;
 }
 
-/**
- * Subscribe to the session's engine and drive the FSM. Returns a Promise
- * that resolves when the engine exits (cleanly or via error). Caller fires
- * and forgets — the promise just lets the listener loop be awaited if
- * needed.
- *
- * Status transitions (sessionStatus axis only — conversationStatus is now
- * derived by the renderer from JSONL content):
- *  - engine stderr line → NO status change. A non-empty stderr line is surfaced
- *    (toast + app_log) but is NOT treated as session-ending — most CLI stderr is
- *    benign noise (MCP-auth notices, deprecation warnings). The session stays
- *    live. See the engine.onError handler below for the full rationale.
- *  - engine exit    → sessionStatus='stopped' + session removed from the map.
- *    The renderer's next prompt does a fresh start (full --resume) since the
- *    handle is gone.
- *  - sessionStatus='error' is reached only by a failed engine.start()/restart
- *    (a spawn that rejects). While a handle sits in 'error', the next send calls
- *    ensureLiveEngine → restartQuery to transparently respawn it.
- */
 export function listenToMessages(
   tabId: string,
   handle: SessionHandle,
@@ -177,17 +102,8 @@ export function listenToMessages(
   let exitResolve: (() => void) | null = null;
   const done = new Promise<void>((resolve) => { exitResolve = resolve; });
 
-  // Attach the JSONL tail immediately — sessionId is pinned at spawn
-  // (lifecycle minted it before calling us), so the tail path is known.
-  // This is the transcript source: every committed row reaches the renderer
-  // from here, and stream-json contributes only what the CLI never writes to
-  // disk.
   ensureJsonlTail(handle, tabId, jsonlState, sendToRenderer);
 
-  // Pairs each background task's `task_started` with the `task_notification`
-  // that ends it, which is the only way to know an AGENT (not a shell) just
-  // finished and what it was called. Per-listener, so it dies with the
-  // session; losing it costs at most one notification.
   const backgroundTasks = createBackgroundTaskTracker();
   handle.openBackgroundTasks = () => backgroundTasks.openCount();
 
@@ -204,10 +120,7 @@ export function listenToMessages(
 
       switch (event.kind) {
         case 'init': {
-          // The CLI emits `system:init` mid-turn AFTER the first user
-          // message, NOT on spawn. By the time this fires, lifecycle has
-          // already flipped sessionStatus to 'started'. Only capture catalog
-          // data (commands/models/agents/account) that arrives in this payload:
+          // `system:init` arrives mid-first-turn, not on spawn.
           if (!handle.initData) handle.initData = engine.getInitData();
           const initModels = handle.initData?.models;
           if (deps.modelCatalogSink && Array.isArray(initModels) && initModels.length > 0) {
@@ -244,21 +157,11 @@ export function listenToMessages(
         case 'streamEvent':
           break;
         case 'hook':
-          // CLI hook lifecycle (hook_started / hook_progress /
-          // hook_response / user_prompt_submit). Forward to the renderer
-          // for display. No session-status event is emitted — conversationStatus
-          // is now derived by the renderer from JSONL content, not from FSM
-          // transitions in main.
           break;
         case 'taskStarted':
           backgroundTasks.started(event);
           break;
         case 'taskNotification': {
-          // A backgrounded agent finishes long after the `result`
-          // notification for the turn that launched it — since CLI
-          // >=2.1.232 that turn ends seconds after the launch ACK. Without
-          // this the user's only notification arrives while the real work
-          // is still running. Shells resolve to null and stay silent.
           backgroundTasks.finished(event.taskId);
           const agent = backgroundTasks.resolveAgent(event.taskId);
           if (agent) {
@@ -285,19 +188,12 @@ export function listenToMessages(
           );
           break;
         case 'result':
-          // status flip after notification dispatch below
           if (deps.cliUsageSink) recordResultUsage(handle, message, deps.cliUsageSink);
           break;
       }
 
-      // Transcript inversion: committed rows reach the renderer from the
-      // JSONL tail, which carries the fields stream-json strips (`isMeta`,
-      // `turnCompanion`, `sourceToolUseID`). Relaying the stream's copy too
-      // would render every row twice, so the stream keeps only the shapes
-      // the CLI never writes to disk. Note this gates FORWARDING only — the
-      // switch above has already acted on the event, and must keep doing so
-      // for messages that are not relayed (init's model catalog, the compact
-      // hint). See services/sessions/stream-forward.ts.
+      // Committed rows come from the JSONL tail; relaying the stream's copy would render each twice.
+      // Gates forwarding only: the switch above still acts on every event.
       if (shouldForwardStreamMessage(message)) {
         sendToRenderer(`agent-output:${tabId}`, message);
       }
@@ -309,33 +205,14 @@ export function listenToMessages(
           event,
           sendToRenderer,
         });
-        // The CLI's result row is the turn-closer while the process lives.
         setTurn(handle, 'idle', tabId, sendToRenderer);
       } else {
         handle.activityObserver?.();
       }
     }),
 
-    // engine.onError fires for every non-empty stderr line from the CLI
-    // (claude-cli-engine.ts:wireStderr). That includes benign noise like
-    // MCP-auth notices and deprecation warnings — NOT a "session over"
-    // signal. The only authoritative terminal event is engine.onExit
-    // (CLI subprocess actually exited).
-    //
-    // So: surface the error so the user sees it (toast via the LoggingService
-    // onError observer wired in remote/daemon.ts) and keep going. We do NOT:
-    //   - emit claude-complete (the renderer treats that as "tear down all
-    //     IPC listeners for this session" — see useSessionLifecycle.ts);
-    //   - flip sessionStatus to 'error' (next message would still arrive
-    //     under a live session, but the badge would lie);
-    //   - inject a synthetic 'Session Error' card into the message stream
-    //     (it presents as a session-ending result and confuses the user
-    //     when the session is in fact still alive).
-    //
-    // `agent-error:<tabId>` is still emitted so the renderer's LogService
-    // captures the stderr line as a frontend-source app_log entry — that's
-    // separate from the backend-source app_log we write below, and both
-    // serve different attribution lookups in the Log tab.
+    // A stderr line is not session-ending (most is benign noise): surface it, but never flip to 'error',
+    // emit claude-complete, or inject an error card. Only onExit ends the session.
     engine.onError((err: Error) => {
       if (sessions.get(tabId) !== handle) return;
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -356,8 +233,6 @@ export function listenToMessages(
     }),
 
     engine.onExit(() => {
-      // start() replaced the handle (StrictMode / explicit re-start)?
-      // Suppress all renderer-facing events.
       if (sessions.get(tabId) !== handle) {
         teardownJsonlTail(jsonlState);
         for (const s of subscriptions) s.dispose();
@@ -366,7 +241,6 @@ export function listenToMessages(
       }
       setStatus(handle, { sessionStatus: 'stopped' }, tabId, sendToRenderer);
       sendToRenderer(`agent-complete:${tabId}`);
-      // The side chat lives exactly as long as the engine.
       endSideChat(handle.sideChat, tabId, sendToRenderer);
       sessions.delete(tabId);
       teardownJsonlTail(jsonlState);
@@ -378,16 +252,7 @@ export function listenToMessages(
   return done;
 }
 
-/**
- * Restart a dead engine (after stream error) so the session resumes.
- * Engine.start is re-entrant; calling it tears down any prior child and
- * spawns a fresh one against the captured sessionId — `--resume` when the
- * CLI has already written a JSONL for it, `--session-id` when it hasn't.
- *
- * The JSONL check exists because the CLI exits with "No conversation found
- * with session ID …" if `--resume <id>` is passed against a non-existent
- * transcript — a session whose user never sent a message has none.
- */
+// `--resume` only when the JSONL exists: the CLI exits on an id with no transcript.
 export function restartQuery(
   tabId: string,
   handle: SessionHandle,
@@ -412,7 +277,6 @@ export function restartQuery(
     resume,
   }).then(() => {
     setStatus(handle, { sessionStatus: 'started' }, tabId, deps.sendToRenderer);
-    // A restart is a new CLI process, with totals of its own.
     if (deps.cliUsageSink) beginCliProcess(handle, deps.cliUsageSink);
   }).catch((err: unknown) => {
     console.error(`[sessions] engine.start (restart) failed for tab ${tabId}:`, err);

@@ -5,12 +5,6 @@ import type { LoggingService } from './logging';
 import { isRequestReplayLine } from './util/request-replay';
 import { computeMessageCost } from '../../src/lib/pricing';
 
-// ---------------------------------------------------------------------------
-// Logging helpers — piped in from the factory so we can log, not swallow, IO
-// failures during usage scans. All log helpers are no-ops when the logger is
-// unavailable (tests that don't care about logging can omit the parameter).
-// ---------------------------------------------------------------------------
-
 function logWarn(
   logging: LoggingService | null | undefined,
   message: string,
@@ -57,10 +51,6 @@ function errString(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
 }
-
-// ---------------------------------------------------------------------------
-// Public interfaces
-// ---------------------------------------------------------------------------
 
 export interface UsageStats {
   total_cost: number;
@@ -120,10 +110,6 @@ export interface UsageService {
   getStatsByAccount(startDate?: string, endDate?: string): AccountUsageStats[];
 }
 
-// ---------------------------------------------------------------------------
-// Internal types
-// ---------------------------------------------------------------------------
-
 interface RawMessage {
   type: string;
   requestId?: string;
@@ -143,12 +129,6 @@ interface RawMessage {
     model?: string;
   };
   timestamp?: string;
-  /**
-   * Working directory at the time the session entry was written. Claude
-   * Code stamps this onto user / assistant / tool-use entries; we use it
-   * to recover paths with literal dashes that the lossy `/` → `-` dir
-   * encoding can't round-trip.
-   */
   cwd?: string;
 }
 
@@ -167,25 +147,13 @@ interface ParsedUsage {
   account_type: string;
 }
 
-// ---------------------------------------------------------------------------
-// Project path decoding
-//
-// Claude Code's `/` → `-` dir-name encoding is lossy: `pi-tuitive-fe` and
-// `pi/tuitive/fe` collide. The authoritative recovery source is the `cwd`
-// field on JSONL entries, so we prefer that and fall back to the naive
-// dash-to-slash swap only when no JSONL is available or none carries cwd.
-// ---------------------------------------------------------------------------
+// The dir-name encoding is lossy (`pi-tuitive-fe` vs `pi/tuitive/fe`): prefer `cwd`, the naive swap only as a fallback.
 
 function decodeProjectPathNaive(dirName: string): string {
-  // dirName starts with '-', e.g. '-Users-greg-myproject'
-  // Replace all '-' with '/' to get '/Users/greg/myproject'
   return dirName.replace(/-/g, '/');
 }
 
 function recoverProjectPathFromMessages(messages: RawMessage[]): string | null {
-  // Cap to keep cold-cache cost bounded on very long sessions; `cwd`
-  // appears on essentially every user/assistant entry so the first
-  // handful suffices in practice.
   const cap = Math.min(messages.length, 50);
   for (let i = 0; i < cap; i++) {
     const cwd = messages[i]?.cwd;
@@ -195,10 +163,6 @@ function recoverProjectPathFromMessages(messages: RawMessage[]): string | null {
   }
   return null;
 }
-
-// ---------------------------------------------------------------------------
-// JSONL parsing helpers
-// ---------------------------------------------------------------------------
 
 function parseJsonlLine(line: string): RawMessage | null {
   const trimmed = line.trim();
@@ -229,17 +193,7 @@ function readJsonlFile(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Core scanning logic
-// ---------------------------------------------------------------------------
-
-/** Per-session parse cache. Keyed by absolute JSONL path; invalidated when the
- *  file's mtime changes. Holds only the extracted usage rows (one per
- *  assistant-with-usage message) plus the recovered cwd — far smaller than the
- *  raw messages, and it means an unchanged session file is never re-read or
- *  re-parsed on the next Usage-tab query. project_path is intentionally NOT
- *  cached here: it's recovered per-project at scan time so a project rename is
- *  reflected immediately. */
+/** project_path is not cached: it is recovered per scan so a project rename shows at once. */
 type UsageRow = Omit<ParsedUsage, 'project_path'>;
 interface SessionCacheEntry {
   mtimeMs: number;
@@ -254,9 +208,7 @@ function extractUsageRows(
   accountName: string,
   accountType: string,
 ): UsageRow[] {
-  // One row per billed API request: the CLI writes one line per content
-  // block, sharing requestId/message.id with identical usage — summing raw
-  // lines double-counts. Last occurrence wins.
+  // The CLI writes one line per content block with identical usage; summing raw lines double-counts.
   const byKey = new Map<string, UsageRow>();
   let idx = 0;
   for (const msg of messages) {
@@ -332,12 +284,7 @@ function scanConfigDir(
       continue;
     }
 
-    // Order JSONLs newest first so the most recent `cwd` wins when
-    // recovering the project path. Critical for renamed projects:
-    // Claude keeps writing to the same encoded project-id dir under
-    // the new cwd, but the old JSONLs still carry the pre-rename one.
-    // Without mtime ordering, a stale name can stick around indefinitely
-    // since session filenames are random UUIDs.
+    // Newest first so the latest `cwd` wins: a renamed project's old JSONLs carry the old cwd.
     const orderedJsonl: { name: string; mtimeMs: number }[] = [];
     for (const sessionEntry of sessionFiles) {
       if (!sessionEntry.isFile() || !sessionEntry.name.endsWith('.jsonl')) continue;
@@ -351,16 +298,12 @@ function scanConfigDir(
     }
     orderedJsonl.sort((a, b) => b.mtimeMs - a.mtimeMs);
 
-    // Recover the true project path by sampling `cwd` from each JSONL we
-    // read until one yields it. Stays null until then so we know to use
-    // the naive fallback if every file is empty / cwd-less / corrupt.
     let recoveredProjectPath: string | null = null;
 
     for (const { name: sessionEntryName, mtimeMs } of orderedJsonl) {
       const sessionFile = path.join(projectDir, sessionEntryName);
       const sessionId = path.basename(sessionEntryName, '.jsonl');
 
-      // Cache hit when the file's mtime is unchanged: skip the read + parse.
       let entry = cache?.get(sessionFile);
       if (entry?.mtimeMs !== mtimeMs) {
         const messages = readJsonlFile(sessionFile, logging);
@@ -387,10 +330,6 @@ function scanConfigDir(
   return results;
 }
 
-// ---------------------------------------------------------------------------
-// Aggregation helpers
-// ---------------------------------------------------------------------------
-
 function emptyStats(): UsageStats {
   return {
     total_cost: 0,
@@ -411,10 +350,8 @@ function aggregateEntries(entries: ParsedUsage[]): UsageStats {
 
   const stats = emptyStats();
 
-  // Accumulators
   const byModel = new Map<string, ModelUsage>();
   const byDate = new Map<string, DailyUsage>();
-  // Track unique sessions per project: projectPath → Set<sessionId>
   const sessionsByProject = new Map<string, Set<string>>();
   const byProject = new Map<string, ProjectUsage>();
 
@@ -426,7 +363,6 @@ function aggregateEntries(entries: ParsedUsage[]): UsageStats {
     stats.total_tokens += entry.input_tokens + entry.output_tokens;
     stats.total_cost += entry.cost;
 
-    // By model
     const modelEntry = byModel.get(entry.model) ?? {
       model: entry.model,
       input_tokens: 0,
@@ -438,7 +374,6 @@ function aggregateEntries(entries: ParsedUsage[]): UsageStats {
     modelEntry.cost += entry.cost;
     byModel.set(entry.model, modelEntry);
 
-    // By date
     if (entry.date) {
       const dateEntry = byDate.get(entry.date) ?? {
         date: entry.date,
@@ -452,7 +387,6 @@ function aggregateEntries(entries: ParsedUsage[]): UsageStats {
       byDate.set(entry.date, dateEntry);
     }
 
-    // By project
     const projEntry = byProject.get(entry.project_path) ?? {
       project_path: entry.project_path,
       total_tokens: 0,
@@ -463,13 +397,11 @@ function aggregateEntries(entries: ParsedUsage[]): UsageStats {
     projEntry.total_cost += entry.cost;
     byProject.set(entry.project_path, projEntry);
 
-    // Track unique sessions per project
     const sessions = sessionsByProject.get(entry.project_path) ?? new Set<string>();
     sessions.add(entry.session_id);
     sessionsByProject.set(entry.project_path, sessions);
   }
 
-  // Resolve session counts and total_sessions
   let totalSessions = 0;
   for (const [projectPath, sessionSet] of sessionsByProject) {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- projectPath came from sessionsByProject keys; byProject mirrors them.
@@ -486,13 +418,7 @@ function aggregateEntries(entries: ParsedUsage[]): UsageStats {
   return stats;
 }
 
-// ---------------------------------------------------------------------------
-// Date range filter helpers
-// ---------------------------------------------------------------------------
-
 function makeDateRangeFilter(startDate: string, endDate: string): (timestamp: string) => boolean {
-  // startDate and endDate are 'YYYY-MM-DD' strings
-  // timestamp is ISO string like '2026-04-09T12:00:00Z'
   return (timestamp: string) => {
     const date = timestamp.substring(0, 10);
     return date >= startDate && date <= endDate;
@@ -513,16 +439,10 @@ function makeUntilFilter(until: string): (timestamp: string) => boolean {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-
 export function createUsageService(
   accounts: AccountsService,
   logging?: LoggingService | null,
 ): UsageService {
-  // Per-session parse cache shared across every query on this service instance.
-  // Bounds repeated Usage-tab queries to re-reading only files whose mtime moved.
   const scanCache: UsageScanCache = new Map();
 
   function collectEntries(filter?: (timestamp: string) => boolean): ParsedUsage[] {
@@ -536,9 +456,7 @@ export function createUsageService(
         logging,
         scanCache,
       );
-      // NB: do not log the full `entries` array — for a heavy history that's a
-      // large JSON blob written to app_logs on every Usage-tab query. The count
-      // is enough for diagnostics.
+      // Never log `entries`: a large blob into app_logs on every query.
       logInfo(logging, `usage scrape: account "${account.name}" — ${entries.length} entries`, {
         account_name: account.name,
         config_dir: account.config_dir,
@@ -601,7 +519,6 @@ export function createUsageService(
 
     const entries = collectEntries(filter);
 
-    // Group entries by account name
     const byAccount = new Map<string, { account_type: string; entries: ParsedUsage[] }>();
     for (const entry of entries) {
       const existing = byAccount.get(entry.account_name);

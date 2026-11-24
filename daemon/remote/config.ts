@@ -1,12 +1,4 @@
-/**
- * Daemon configuration: `~/.omnifex/server.json` plus derived paths.
- *
- * Bind address policy, in order: what the file says; else the Tailscale
- * interface if one is up; else loopback. Never `0.0.0.0` unless written into
- * the file by hand — this daemon has no authentication beyond "you are on my
- * tailnet", and a default that listened on every interface would turn a
- * coffee-shop Wi-Fi into a session console.
- */
+// Never default to `0.0.0.0`: there is no authentication beyond the tailnet.
 import { readFileSync } from 'node:fs';
 import { homedir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
@@ -14,17 +6,12 @@ import { z } from 'zod';
 
 export const DEFAULT_PORT = 47700;
 
-/** The slice of `os.networkInterfaces()` this module reads; injectable for tests. */
 export type NetworkInterfaces = Record<
   string,
   { address: string; family: string | number; internal: boolean }[] | undefined
 >;
 
-/**
- * Tailscale hands every node an IPv4 in 100.64.0.0/10 (the CGNAT range),
- * which nothing else on a Mac uses. Match the range, not the interface name:
- * it is `utunN` on macOS with N varying, `tailscale0` on Linux.
- */
+/** Match the CGNAT range, not the interface name: `utunN` varies. */
 export function detectTailscaleIp(interfaces: NetworkInterfaces): string | null {
   for (const addrs of Object.values(interfaces)) {
     for (const a of addrs ?? []) {
@@ -42,21 +29,13 @@ const FileSchema = z.looseObject({
   port: z.number().int().min(1).max(65535).optional(),
   webRoot: z.string().nullable().optional(),
   ringSize: z.number().int().positive().optional(),
-  /** Milliseconds before an unanswered permission is denied; null = never. */
   permissionTimeoutMs: z.number().int().positive().nullable().optional(),
-  /** Extra `rpc.invoke` channels to allow beyond the built-in list. */
   rpcAllow: z.array(z.string()).optional(),
-  /** Channels to remove from the built-in allowlist. */
   rpcDeny: z.array(z.string()).optional(),
 });
 
 export interface ServerConfig {
   host: string;
-  /**
-   * Loopback only because Tailscale was not up yet — not chosen by
-   * server.json. The daemon then watches for the tailnet address
-   * (`tailnet-watch.ts`).
-   */
   hostIsFallback?: boolean;
   port: number;
   webRoot: string | null;
@@ -64,24 +43,14 @@ export interface ServerConfig {
   permissionTimeoutMs: number | null;
   rpcAllow: string[];
   rpcDeny: string[];
-  /** `~/.omnifex` — the daemon's own state. */
   stateDir: string;
   sessionsDir: string;
   projectsFile: string;
-  /** Where greychrist.db lives: Electron's userData, shared with the app. */
   userDataDir: string;
-  /** Where this config was read from. */
   file: string;
 }
 
-/**
- * `OMNIFEX_PORT`, when it is a usable port. The dev instance moves its daemon
- * off 47700 this way (see remote/dev-instance.ts) — the app and the daemon it
- * spawns read the same variable, so they cannot disagree about where it is.
- * Anything unparseable is ignored rather than fatal: an env var is not a
- * config file, and a typo in a shell profile must not stop the daemon coming
- * up on its normal port.
- */
+/** Unparseable is ignored, not fatal: a shell-profile typo must not stop the daemon. */
 function portFromEnv(env: Record<string, string | undefined>): number | null {
   const n = Number(env.OMNIFEX_PORT);
   return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : null;
@@ -93,18 +62,12 @@ export interface LoadServerConfigOptions {
   env?: Record<string, string | undefined>;
 }
 
-/** Loopback by name or address: what a page may treat as a secure context. */
 export function isLoopbackHost(host: string): boolean {
   const h = host.replace(/^\[|\]$/g, '').toLowerCase();
   return h === 'localhost' || h === '::1' || /^127\.\d+\.\d+\.\d+$/.test(h);
 }
 
-/**
- * Addresses to listen on besides `host`. A daemon on the tailnet (or any
- * specific address) also takes loopback, because that is where the Mac app
- * loads from — see `localUrl` in launcher.ts for why. A wildcard bind already
- * covers it.
- */
+/** Loopback too, where the Mac app loads from (see `localUrl`); a wildcard bind already covers it. */
 export function extraListenHosts(host: string): string[] {
   if (isLoopbackHost(host) || host === '0.0.0.0' || host === '::') return [];
   return ['127.0.0.1'];
@@ -123,9 +86,7 @@ export function loadServerConfig(opts: LoadServerConfigOptions = {}): ServerConf
   try {
     raw = JSON.parse(readFileSync(file, 'utf8'));
   } catch (err) {
-    // Absent is fine — defaults. Present-but-broken is not: a daemon that
-    // shrugged and bound loopback on the default port would present from the
-    // iPad as a network fault, which is the wrong place to go looking.
+    // Present-but-broken must fail loudly, never fall back to defaults.
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       throw new Error(`server.json at ${file} is not valid JSON: ${(err as Error).message}`);
     }

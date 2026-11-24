@@ -1,14 +1,4 @@
-// Cost module — live per-session cost watcher.
-//
-// One watcher per watched session, ticking every pollMs. Each tick stats the
-// main JSONL and every subagent transcript at any depth under `subagents/`,
-// reads only what each grew by (transcript-usage.ts), and when anything
-// changed re-prices the folded rows, pushes the snapshot on
-// `session-cost:<sessionId>` and upserts history.
-//
-// It used to re-read and re-parse the whole session synchronously whenever a
-// file changed — every second while a turn streamed, up to 59 MB per read,
-// per open tab — on the event loop every session's streaming shares.
+// Read only what each transcript grew by: whole-file synchronous re-reads stalled every session's streaming.
 
 import path from 'node:path';
 import { encodeProjectId } from '../project-paths';
@@ -49,11 +39,9 @@ interface SessionCostDeps {
   pollMs?: number;
 }
 
-/** What a session's transcripts have been folded to so far. */
 interface SessionUsageState {
   mainPath: string | null;
   main: FileUsageState | null;
-  /** By absolute path. */
   subagents: Map<string, FileUsageState>;
 }
 
@@ -63,7 +51,6 @@ interface Watcher {
   args: SessionCostArgs;
   state: SessionUsageState;
   timer: NodeJS.Timeout | null;
-  /** The refresh under way, if any: a tick that finds one skips. */
   busy: Promise<unknown> | null;
   stopped: boolean;
 }
@@ -73,16 +60,11 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
   const stat = deps.stat ?? ((p: string) => fsDeps.stat(p));
   const pollMs = deps.pollMs ?? 1000;
   const watchers = new Map<string, Watcher>();
-  // Sessions launched with a cwd inside a CLI worktree (.claude/worktrees/<name>)
-  // get encoded into a *different* projects/ subdirectory than the app's own
-  // project path would predict. Once we've located the real directory for a
-  // sessionId (by scanning projects/'s siblings), remember it so each tick
-  // doesn't rescan every subdirectory.
+  // Worktree sessions encode into a different projects/ dir; cache the located one.
   const resolvedDirs = new Map<string, string>();
 
   async function resolveProjectDir(args: SessionCostArgs): Promise<string> {
-    // Re-checked every call: EnterWorktree moves a live session's transcript
-    // into the worktree's directory, leaving the cached one empty.
+    // Re-checked every call: EnterWorktree moves a live transcript and leaves the cached dir empty.
     const cached = resolvedDirs.get(args.sessionId);
     if (cached && (await stat(path.join(cached, `${args.sessionId}.jsonl`)))) return cached;
 
@@ -105,16 +87,9 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
       }
     }
 
-    // Not found anywhere — fall back to the primary dir so callers keep the
-    // existing "missing file -> zero snapshot" behavior instead of erroring.
     return primaryDir;
   }
 
-  /**
-   * Bring `state` up to date with the session's files. True when anything
-   * folded changed. A file that vanished drops out; one that failed to read is
-   * forgotten, so the next refresh reads it from the start.
-   */
   async function refresh(args: SessionCostArgs, state: SessionUsageState): Promise<boolean> {
     const projectDir = await resolveProjectDir(args);
     const sessionFile = path.join(projectDir, `${args.sessionId}.jsonl`);
@@ -159,8 +134,6 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
     return changed;
   }
 
-  /** Price what `state` holds and upsert history. Pure CPU over the folded
-   *  rows — no reads. */
   function price(args: SessionCostArgs, state: SessionUsageState): SessionCostSnapshot {
     const subagents = [...state.subagents]
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -181,7 +154,6 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
     return snapshot;
   }
 
-  /** Run `fn` as the watcher's one refresh, after any already under way. */
   async function exclusive<T>(w: Watcher, fn: () => Promise<T>): Promise<T> {
     while (w.busy) await w.busy.catch(() => undefined);
     const run = fn();
@@ -194,8 +166,6 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
   }
 
   async function get(args: SessionCostArgs): Promise<SessionCostSnapshot> {
-    // A watched session already holds its folded state: catch it up rather
-    // than reading every file again.
     const w = watchers.get(args.sessionId);
     if (w) return exclusive(w, async () => { await refresh(w.args, w.state); return price(w.args, w.state); });
     const state = emptyState();
@@ -210,15 +180,13 @@ export function createSessionCostService(deps: SessionCostDeps): SessionCostServ
     const initial = await exclusive(w, async () => { await refresh(args, w.state); return price(args, w.state); });
     if (w.stopped) return initial;
     w.timer = setInterval(() => {
-      // Skip, don't queue: a tick that lands mid-read would only re-stat
-      // what the running read is about to catch up on.
+      // Skip, don't queue: the running read will catch up.
       if (w.busy || w.stopped) return;
       void exclusive(w, async () => {
         if (!(await refresh(args, w.state)) || w.stopped) return;
         const snapshot = price(args, w.state);
         if (!w.stopped) deps.sendToRenderer(`session-cost:${args.sessionId}`, snapshot);
       }).catch((err: unknown) => {
-        // Forget everything so the next tick starts clean.
         w.state = emptyState();
         console.warn('[session-cost] refresh failed:', err);
       });

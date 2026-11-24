@@ -49,12 +49,7 @@ import type { AccountsService } from '../accounts';
 import { mapLimit } from '../util/map-limit';
 import type { ParsedNote } from './types';
 
-/**
- * Thrown when a vault's storage is not structurally isolated: its root overlaps
- * another account's vault, or its index database is not its own — either
- * resolving outside its root, or being literally the same file as another
- * account's index.
- */
+/** A vault root must not overlap another account's, and its index must be its own. */
 export class VaultConflictError extends Error {
   constructor(message: string) {
     super(message);
@@ -62,43 +57,24 @@ export class VaultConflictError extends Error {
   }
 }
 
-/** app_settings key holding one account's vault root. */
 export function vaultSettingKey(accountId: number): string {
   return `brain.vault.${accountId}`;
 }
 
-/** Only `brain.vault.<digits>` keys are vault paths. Task 8 may add other
- *  settings under this prefix; they must not be mistaken for vault paths. */
+/** Only `brain.vault.<digits>` keys are vault paths; other settings share the prefix. */
 const VAULT_KEY_RE = /^brain\.vault\.\d+$/;
 
-/**
- * app_settings key holding one account's project include/exclude decisions.
- *
- * A settings key rather than a table: this is a handful of strings per
- * account, and it matches how the vault path is already stored. The value is
- * a JSON map of absolute project path → excluded, and an ABSENT entry is not
- * "included" — it means no decision has been recorded, so the default rule in
- * `exclusions.ts` applies. That distinction is what lets scratch projects be
- * excluded out of the box while staying re-includable.
- */
+/** An absent entry means no decision (the exclusions.ts default applies), never "included". */
 export function excludedProjectsKey(accountId: number): string {
   return `brain.excludedProjects.${String(accountId)}`;
 }
 
-/** The derived search index, inside the vault it indexes. Gitignored by the
- *  layout vault.ts scaffolds, and rebuildable from the Markdown. */
 const INDEX_DIR = '.omnifex';
 const INDEX_FILE = 'index.db';
 
-/** Git's own directory name inside a repository working tree. */
 const GIT_DIR = '.git';
 
-/**
- * accountId identifies which account's data is touched, so a malformed one is a
- * confidentiality risk, not a UX annoyance. It also has to agree with
- * vaultSettingKey's string coercion, or the same account can hold two handles
- * on one database file.
- */
+/** A malformed accountId is a confidentiality risk, and it must agree with vaultSettingKey's coercion or one DB gets two handles. */
 function requireAccountId(accountId: number): number {
   if (!Number.isSafeInteger(accountId) || accountId < 1) {
     throw new Error(`invalid accountId: ${String(accountId)}`);
@@ -106,12 +82,10 @@ function requireAccountId(accountId: number): number {
   return accountId;
 }
 
-/** Today in the ISO date form the frontmatter schema requires. */
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** The date a distilled item should stamp on the notes it produces. */
 function provenanceDate(metadata: ItemMetadata): string {
   switch (metadata.kind) {
     case 'capture':
@@ -129,97 +103,43 @@ export interface VaultHandle {
   readonly vault: Vault;
   readonly index: VaultIndex;
   readonly git: VaultGit;
-  /**
-   * Resolves when this handle's `git init` has settled — successfully or not.
-   *
-   * `open()` cannot await it: opening a vault stays synchronous, and
-   * versioning is auxiliary anyway. But an untracked child process still
-   * writing into `.git` is observable to anyone who deletes the vault
-   * directory afterwards — test cleanup hit exactly this, as ENOTEMPTY under
-   * full-suite load. Retaining the promise makes the init joinable by whoever
-   * needs it to be, without making anyone wait who does not.
-   *
-   * Never rejects: a rejection here would surface as an unhandled rejection in
-   * every call site that stores a handle without awaiting.
-   */
+  /** Joinable `git init`; never rejects, or every unawaited handle raises an unhandled rejection. */
   readonly gitReady: Promise<void>;
 }
 
-/**
- * A vault's condition, answerable WITHOUT creating it.
- *
- * `open()` cannot serve this purpose: it lazily scaffolds the layout, which is
- * correct for first use and useless for a UI that has to tell "never
- * configured" apart from "configured, but the directory is gone". Every field
- * here is derived by looking, never by materialising.
- */
+/** Answerable without creating the vault: never materialize to look. */
 export interface VaultStatus {
   accountId: number;
   configured: boolean;
-  /** The stored path, exactly as it was set. Null when unconfigured. */
   path: string | null;
-  /** The directory exists on disk. */
   exists: boolean;
-  /** The scaffolded layout is present (config/notes.json). */
   initialized: boolean;
-  /** Markdown notes on disk. 0 when the vault does not exist. */
   noteCount: number;
-  /** Rows in the FTS index, or null when there is no readable index. */
   indexedCount: number | null;
   gitAvailable: boolean;
   lastGitError: string | null;
-  /** Why this vault cannot be opened, when it cannot be. */
   conflict: string | null;
-  /**
-   * Files a macOS file provider has evicted to contentless stubs, or null when
-   * that could not be determined (off Darwin, or the vault is not on disk).
-   *
-   * Null is not zero. A vault under iCloud Drive, Dropbox, OneDrive or Drive
-   * with storage optimisation on reads at roughly 0.6s per stub, which makes
-   * every `git add -A` over it take minutes and the app look hung. See
-   * offloaded.ts.
-   */
+  /** Null is "not determined", never zero. */
   offloadedCount: number | null;
 }
 
-/** One discovered item, with the gate's verdict and its recorded state. */
 export interface SourceSummary {
   accountId: number;
   sourceId: string;
   itemKey: string;
-  /**
-   * What to call this row: a session's id, or a file-backed item's file name.
-   *
-   * Computed here rather than in the renderer because the rule is per source
-   * kind, and the adapters own kind. Never a full path — the project column
-   * already carries the folder, and repeating it in every row buried the one
-   * part that identifies the item.
-   */
+  /** Never a full path: the project column already carries the folder. */
   name: string;
-  /**
-   * True when this row is a session that is open in OmniFex right now. Such a
-   * transcript is still being written, so indexing it would distil half a
-   * conversation and record it as done.
-   */
+  /** An open session is still being written; indexing it would record half a conversation as done. */
   inUse: boolean;
-  /** The project folder, absolute. Grouping and exclusion key. */
   label: string;
   mtimeMs: number;
-  /** Bytes on disk. Without it a 21MB session looks like a 40KB one, and size
-   *  is the best single predictor of what indexing it will cost. */
   size: number;
   admitted: boolean;
   reason: string;
-  /** Recorded state, or null when this item has never been through indexing. */
   status: SourceStatus | null;
   changed: boolean;
-  /** True when this item's project is on the account's exclusion list. Only
-   *  ever true when the caller asked to see excluded rows. */
   excluded: boolean;
-  /**
-   * What the last model-backed run on this item cost, as the CLI reported it.
-   * Null means nothing has ever been spent here — not that a run was free.
-   */
+  /** Null means nothing was ever spent, not that a run was free. */
   costUsd: number | null;
   inputTokens: number | null;
   outputTokens: number | null;
@@ -227,29 +147,13 @@ export interface SourceSummary {
   cacheCreationTokens: number | null;
 }
 
-/** What one indexing run did. */
 export interface IndexResult {
   itemKey: string;
-  /** Vault-relative paths written, in the order they were written. */
   notesWritten: string[];
-  /** True when nothing was indexed — gate rejection or a recorded failure. */
   skipped: boolean;
   reason: string;
 }
 
-/**
- * An indexing run in flight, as any window can read it back.
- *
- * This lives in the main process on purpose. It used to be React state inside
- * BrainSources.tsx, so it died with the component — and the pane unmounts
- * whenever the Brain tab's sub-tab changes, leaving a run that was still
- * spending tokens with nothing on screen to say so.
- *
- * Note it is NOT persisted. It does not need to be: `indexSource` records
- * every item's outcome through `sourceState` before it returns, so an app quit
- * mid-run loses this summary and nothing else — the next listing reads the
- * truth off the rows themselves.
- */
 export type BrainRunPhase =
   | 'preparing'
   | 'distilling'
@@ -258,101 +162,45 @@ export type BrainRunPhase =
   | 'curating';
 
 export interface BrainRun {
-  /** The account whose vault this run is writing into. */
   accountId: number;
-  /** Items the run was asked to do. */
   total: number;
-  /** Items taken to a terminal state so far — finished, NOT started. */
+  /** Terminal so far: finished, not started. */
   completed: number;
-  /** The item being worked on right now: the `completed + 1`-th. */
   item: string;
-  /**
-   * What a person would call `item`.
-   *
-   * A session's key is a UUID, which is the right identity and the wrong name:
-   * the pill that reports indexing from outside the Brain tab could say only
-   * "Indexing Personal vault", because the one detail it had was unreadable.
-   * Falls back to the key for a source with nothing better.
-   */
   label: string;
-  /**
-   * Which stage of the current item is running.
-   *
-   * The unit of work is one item and an item takes minutes behind a single
-   * await, so without this a slow model call and a wedged one look identical
-   * from outside.
-   */
   phase: BrainRunPhase;
-  /**
-   * When the CURRENT ITEM started, epoch ms. Restamped per item on purpose: a
-   * 40-item backfill that has been running for an hour says nothing about
-   * whether the item on screen is stuck.
-   */
+  /** Restamped per item: a long backfill's start says nothing about whether this item is stuck. */
   startedAt: number;
-  /** Items that produced at least one note. */
   written: number;
-  /** Items that were skipped or failed. Both are completed units of work. */
   skipped: number;
 }
 
-/** What a whole selection cost, once every item reached a terminal state. */
 export interface RunResult {
-  /** Items that produced at least one note. */
   written: number;
-  /** Items skipped or failed. Both are completed units of work. */
   skipped: number;
-  /**
-   * One entry per item, in the order given — including items that threw, which
-   * are recorded as skips carrying the thrown message as their reason.
-   *
-   * Kept per-item rather than collapsed to counts because a one-item run has
-   * to be able to say WHY: "Not indexed: session is still open in OmniFex" is
-   * the whole answer, and "indexed 0, skipped 1" is none of it.
-   *
-   * Note this reports only per-ITEM outcomes. Something that stops the whole
-   * run — no vault, a run already in flight — rejects the call instead, so the
-   * pane can tell "nothing ran" apart from "it ran and declined".
-   */
+  /** Per item, including throws as skips. Whole-run failures (no vault, run in flight) reject instead. */
   results: IndexResult[];
 }
 
-/** What one curation run did to one note. */
 export interface CurateResult {
   notePath: string;
-  /** True when nothing was spent: the note vanished, or stopped qualifying. */
   skipped: boolean;
   reason: string;
 }
 
-/**
- * The view of one item, for inspection before any token is spent.
- *
- * `metadata` is null for a translating source: there is no distillation behind
- * it and therefore no distillation metadata. What it produces is the preview,
- * so `notePaths` names the notes it would write and `prose` carries their
- * bodies. Reporting a fabricated metadata shape instead would be the same
- * mistake the ItemMetadata discriminant exists to prevent.
- */
+/** `metadata` is null for a translating source; never fabricate one. */
 export interface SourcePreview {
   itemKey: string;
   prose: string;
   metadata: ItemMetadata | null;
-  /** Notes a translating source would write. Empty for a distilled item. */
   notePaths: string[];
   truncated: boolean;
   admitted: boolean;
   reason: string;
 }
 
-/** Options for `backfill`, which serves both the button and the timed sweep. */
 export interface BackfillOptions {
-  /**
-   * Ignore items whose transcript is older than this epoch-ms floor.
-   *
-   * Omitted by the Backfill button, which means everything. Supplied by the
-   * periodic sweep, which must not turn the auto-index opt-in into an
-   * unattended full backfill on its first tick.
-   */
+  /** Omitted by the Backfill button; the periodic sweep must supply it. */
   sinceMs?: number;
 }
 
@@ -360,187 +208,62 @@ export interface BrainService {
   vaultPath(accountId: number): string | null;
   setVaultPath(accountId: number, path: string): void;
   clearVaultPath(accountId: number): void;
-  /** Opens (and lazily creates) the account's vault. Null when unconfigured. */
   open(accountId: number): VaultHandle | null;
-  /** Describes the vault without creating it. Never throws for a broken one. */
+  /** Never creates the vault, never throws for a broken one. */
   status(accountId: number): Promise<VaultStatus>;
   search(accountId: number, query: string, opts?: SearchOptions): SearchHit[];
-  /** Note paths whose bodies wikilink to `relPath`. Empty when unconfigured. */
   backlinks(accountId: number, relPath: string): string[];
   writeNote(accountId: number, relPath: string, note: ParsedNote, commitMessage: string): void;
-  /** Reindex the whole vault from disk. Returns the number of notes indexed. */
   rebuild(accountId: number): number;
   deleteNote(accountId: number, relPath: string): void;
-  /** Replace a note's body, preserving its frontmatter. Returns the new note. */
   updateNoteBody(accountId: number, relPath: string, body: string): ParsedNote;
-  /**
-   * Discovered items for ONE account, with each item's gate verdict and
-   * whether it has changed since it was last recorded.
-   *
-   * Filtering happens after discovery rather than by asking adapters for one
-   * account's items: ownership is derived from where an item lives, so an
-   * adapter that accepted an accountId would be letting the caller assert
-   * ownership instead. Discovery is a directory walk, not a model call —
-   * doing it whole and filtering after costs nothing worth protecting.
-   */
+  /** Filtered after discovery: adapters derive ownership, so they never accept an accountId. */
   listSources(accountId: number, opts?: { includeExcluded?: boolean }): Promise<SourceSummary[]>;
-  /**
-   * Record which project folders this account may index.
-   *
-   * A complete map of the decisions being made, not a list of exclusions: an
-   * absent key means "no decision", which leaves the scratch-path default in
-   * force, so sending only the excluded paths would silently re-exclude every
-   * temp project the user had deliberately re-included.
-   *
-   * Excluded projects drop out of discovery entirely — they never list, never
-   * enqueue, and never index on session close, which is the only thing that
-   * keeps a temp project out of the vault while Auto-index is on.
-   */
+  /** A complete map, not a list of exclusions: an absent key re-applies the temp default. */
   setExcludedProjects(accountId: number, decisions: ProjectDecisions): void;
-  /** Distilled preview of one item, or null when it is not this account's. */
   previewSource(accountId: number, itemKey: string): Promise<SourcePreview | null>;
-  /**
-   * Extract one item and merge the result into this account's vault.
-   *
-   * The only method here that spends tokens. It resolves rather than rejecting
-   * for a gate rejection or a failed extraction — both are recorded outcomes,
-   * and the Brain is auxiliary — but it throws for the caller's own mistakes:
-   * an unknown item, an unconfigured vault, or a service built without an
-   * extractor.
-   */
+  /** Resolves for gate rejections and failed extractions (recorded outcomes); throws for caller mistakes. */
   indexSource(
     accountId: number,
     itemKey: string,
     opts?: { force?: boolean },
   ): Promise<IndexResult>;
-  /**
-   * Index a whole selection, one item at a time, tracking progress that
-   * outlives any window.
-   *
-   * Deliberately a sequential loop over exactly `itemKeys` rather than a queue
-   * drain: draining processes everything pending, which is how "Drain now"
-   * once ran 158 sessions when the user had ticked one. Nothing here can reach
-   * an item the caller did not name.
-   *
-   * Concurrency 1, like the queue worker, for the same reason — the rate limit
-   * is shared, and two runs would pay twice for an item in both selections. A
-   * second call while one is in flight throws.
-   *
-   * Per-item failures are collected, never thrown: one bad item must not
-   * abandon the rest of a selection the user explicitly ticked.
-   */
-  /**
-   * `force` bypasses the admission gate and change detection for every item in
-   * the selection — the semantics of a person deliberately ticking a row.
-   */
+  /** Exactly `itemKeys`, never a queue drain; concurrency 1; per-item failures collected, never thrown. */
   indexSelection(
     accountId: number,
     itemKeys: string[],
     opts?: { force?: boolean },
   ): Promise<RunResult>;
-  /**
-   * The run in flight for this account, or null. Account-scoped so a run
-   * cannot be reported under another account's header.
-   *
-   * A fresh mount calls this to rebuild its progress banner, the same way
-   * SessionList calls `summary_generating_now` for work that started before it
-   * could subscribe.
-   */
   currentRun(accountId: number): BrainRun | null;
-  /**
-   * The run in flight for ANY account, for the app-wide indicator. Carries its
-   * own `accountId` so the caller can name the vault rather than guess it.
-   */
   activeRun(): BrainRun | null;
-  /**
-   * Compress one note's accumulated Timeline. The second method here that
-   * spends tokens.
-   *
-   * Re-checks `qualifies` BEFORE spending: a note can change between enqueue
-   * and claim, and Plan 4a's most expensive bug was `indexSource` ignoring
-   * exactly this class of check while every unit test passed.
-   *
-   * Resolves with `skipped` for a note that vanished or stopped qualifying —
-   * both are completed units of work. Rejects when the model reply is
-   * unusable, so the queue records a failure and the note is left untouched.
-   */
+  /** Re-checks `qualifies` before spending: a note can change between enqueue and claim. */
   curateNote(accountId: number, relPath: string): Promise<CurateResult>;
-  /**
-   * Queue the notes most worth compressing, most collapsible bullets first
-   * across `Timeline` and `Decisions` together, capped at `MAX_NOTES_PER_RUN`.
-   * Returns how many were queued.
-   *
-   * Synchronous, unlike `backfill`: reading a vault is, and `discover()` is
-   * what makes that one async.
-   */
   enqueueCuration(accountId: number): number;
-  /** Queue one item this account owns. Throws for an item it does not. */
   enqueueSource(accountId: number, itemKey: string): Promise<void>;
-  /**
-   * Queue every NON-session item this account owns that belongs to
-   * `projectPath` — its auto-memory notes and its repo instruction files.
-   * Returns how many were queued.
-   *
-   * Matched on each item's own key rather than on keys reconstructed by the
-   * caller: the key formats belong to the adapters, and a second spelling in
-   * a composition root would go quietly stale the moment one changed.
-   */
+  /** Matches on each item's own key: key formats belong to the adapters. */
   enqueueProjectSources(accountId: number, projectPath: string): Promise<number>;
-  /**
-   * Queue every admitted item this account owns that is not already indexed
-   * and unchanged. Returns how many were queued.
-   */
   backfill(accountId: number, opts?: BackfillOptions): Promise<number>;
-  /**
-   * Vault size, context cost and Timeline distribution. Zeroes when
-   * unconfigured — a stats panel must render rather than throw.
-   */
+  /** Zeroes when unconfigured, never a throw. */
   stats(accountId: number): VaultStats;
-  /**
-   * Every note's frontmatter, reduced to what the Notes table sorts on.
-   *
-   * A sibling of `stats()` rather than a widening of `listNotes()`: the search
-   * index and the wikilink resolver both want paths and nothing more, and
-   * making them pay to parse 338 files of frontmatter would be a tax on two
-   * hot paths for one pane's benefit. Empty when unconfigured — a browsing
-   * pane must render rather than throw.
-   */
+  /** A sibling of stats(), not a widening of listNotes(): the hot paths want paths only. */
   listNoteMeta(accountId: number): NoteMeta[];
   queueCounts(accountId?: number): QueueCounts;
   queueList(accountId: number, limit?: number): QueueEntry[];
   clearFinishedQueue(accountId: number): void;
-  /**
-   * Drain the queue, yielding to interactive sessions. Never throws.
-   *
-   * Returns what it actually did, so a caller can tell "indexed 158" from
-   * "yielded instantly because a session was open" — the Brain tab reported
-   * both as success until this returned something.
-   */
+  /** Never throws. */
   drainQueue(): Promise<DrainOutcome>;
-  /** The entry being indexed right now, for the operational pane. */
   queueCurrent(): QueueEntry | null;
   closeAll(): void;
 }
 
-/**
- * A cached handle together with the on-disk identity of what it is bound to.
- * The identity is what makes the entry reusable: without it the cache is keyed
- * on a name, and a name can come to mean a different file or directory.
- */
+/** Keyed on on-disk identity, not the name: a name can come to mean a different file. */
 interface CachedHandle {
   readonly handle: VaultHandle;
-  /** Never null: an entry whose identity could not be read is not cached, so a
-   *  missing object can never compare equal to another missing object. */
+  /** Never null: an unreadable identity is not cached, so two missing objects never compare equal. */
   readonly identity: string;
 }
 
-/**
- * The two on-disk objects a handle is bound to: the vault root its `Vault`
- * writes Markdown into, and the index database its `VaultIndex` holds open.
- * Null when either is missing — which is a cache miss, not a match, so a
- * deleted index rebuilds instead of being written to through a stale
- * descriptor pointing at an unlinked inode.
- */
+/** Null when either object is missing: a miss, so a deleted index rebuilds rather than writing to an unlinked inode. */
 function handleIdentity(root: string, indexFile: string): string | null {
   const rootId = fsIdentity(root);
   const indexId = fsIdentity(indexFile);
@@ -548,42 +271,9 @@ function handleIdentity(root: string, indexFile: string): string | null {
 }
 
 /**
- * Materialise the vault's index directory and return the index database path,
- * refusing an index that is not this vault's own.
- *
- * `vault.ts` routes every NOTE path through its own realpath discipline, but
- * the index is addressed here, by the registry, so nothing else guards it — and
- * the FTS5 table stores full note bodies (it is declared without `content=`),
- * so reaching another account's index is the confidentiality defect in full, in
- * both directions.
- *
- * The directory is judged, not a list of filenames. `index.db` is only one of
- * the files the connection owns: WAL mode gives it `index.db-wal` and
- * `index.db-shm`, and a hard-linked `-wal` leaks just as completely as a
- * hard-linked `index.db` — SQLite replays the shared WAL's frames over the
- * other database on open, so the victim's bodies appear AND the reader's own
- * notes disappear. Enumerating the directory is what makes this survive a
- * change of `journal_mode`, or a future SQLite sidecar nobody here has heard of.
- *
- * Two properties disqualify an entry:
- *
- *   - it is a SYMLINK. `mkdirSync` and better-sqlite3 both follow them, and a
- *     dangling one is worse than a live one: better-sqlite3 CREATES the target,
- *     inside the other vault. That is why the test is `lstat`-based rather than
- *     "resolve it and check where it lands" — a check that only fires when the
- *     target already exists is the round-1 failure again.
- *   - it is a file with more than one NAME (`nlink > 1`), i.e. a hard link. No
- *     path-based check can see one: both names are legitimately inside their
- *     own vault. `nlink` is O(1), needs no cross-account scan, and catches a
- *     link to anywhere rather than only to another configured account.
- *     Directories are exempt because '.' and '..' make `nlink > 1` normal for
- *     them; APFS/Time Machine clones use copy-on-write `clonefile`, which does
- *     not raise `nlink`, so ordinary backups do not trip this.
- *
- * The directory is CREATED here rather than tested for existence, for the same
- * reason as above — `createVaultIndex` would create it moments later anyway.
- * The index is derived, gitignored and rebuildable, so no entry under it has
- * any business being a link.
+ * Refuses an index directory containing any symlink or hard link (nlink > 1) — every entry, not just
+ * index.db: a linked WAL sidecar leaks another vault's bodies just as completely. lstat-based, because
+ * better-sqlite3 creates a dangling link's target inside the other vault.
  */
 function ensureVaultIndexPath(root: string): string {
   const dir = join(root, INDEX_DIR);
@@ -599,8 +289,6 @@ function ensureVaultIndexPath(root: string): string {
 
   for (const entry of readdirSync(dir)) {
     const abs = join(dir, entry);
-    // Sidecars come and go with the connection, so an entry can vanish between
-    // the readdir and the lstat. One that no longer exists cannot alias anything.
     const stat = lstatSync(abs, { throwIfNoEntry: false });
     if (!stat) continue;
     if (stat.isSymbolicLink()) {
@@ -614,21 +302,7 @@ function ensureVaultIndexPath(root: string): string {
   return join(dir, INDEX_FILE);
 }
 
-/**
- * Refuse a `.git` that is anything other than this vault's own directory.
- *
- * Git resolves the repository from the working tree's `.git` entry, and that
- * entry has two redirecting forms. A SYMLINK points the object database at
- * another directory; a "gitfile" (a regular file containing `gitdir: <path>`)
- * does the same thing without a symlink. Under either, `commitAll` from this
- * vault appends this vault's note bodies into ANOTHER account's git history —
- * durable, cumulative, and invisible from either vault's directory listing,
- * because the working trees stay separate and only the history converges.
- *
- * Unlike the index database, `.git` is not created here. `git init` creates it
- * on a vault that has none, and the ordinary case is that it does not exist
- * yet — which is why absence is accepted rather than materialised.
- */
+/** A symlinked `.git` or a gitfile would commit this vault's notes into another account's history. Absence is fine. */
 function assertOwnGitDir(root: string): void {
   const gitPath = join(root, GIT_DIR);
   const stat = lstatSync(gitPath, { throwIfNoEntry: false });
@@ -640,13 +314,6 @@ function assertOwnGitDir(root: string): void {
   }
 }
 
-/**
- * Titles and aliases of every note currently in a vault.
- *
- * A note that cannot be parsed is skipped rather than failing the read: the
- * spec's error table isolates a broken note to that note, and a single
- * hand-mangled file must not stop the whole vault from being resolvable.
- */
 function readExistingNotes(handle: VaultHandle): ExistingNote[] {
   const out: ExistingNote[] = [];
   for (const path of handle.vault.listNotes()) {
@@ -658,133 +325,55 @@ function readExistingNotes(handle: VaultHandle): ExistingNote[] {
         aliases: note.frontmatter.aliases,
       });
     } catch {
-      // Unparseable frontmatter — surfaced elsewhere, ignored here.
+      // Unparseable frontmatter is surfaced elsewhere.
     }
   }
   return out;
 }
 
-/**
- * Per-account vault registry.
- *
- * The isolation guarantee rests on one structural rule: `open()` is the ONLY
- * place a VaultHandle is produced, and no handle leaves it without a fresh
- * overlap check against the live filesystem and the live settings table. The
- * handle cache is a memo, not an authority — it may skip CONSTRUCTION, never
- * VALIDATION. Every previous shape of this file made the guard conditional on
- * something (the directory already existing, mkdir succeeding, the handle being
- * cold), and every one of those conditions turned out to be reachable.
- */
+/** `open()` is the only producer of a VaultHandle, and it always re-validates overlap: the cache may skip construction, never validation. */
 export interface BrainServiceOptions {
-  /**
-   * Git runner for every vault this service opens. Production passes nothing
-   * and gets the real `git` binary. Tests pass a stub so no child process is
-   * spawned — which is what makes vault cleanup deterministic rather than a
-   * race against an untracked `git init`.
-   */
   execGit?: ExecGit;
-  /**
-   * Source adapters this service can enumerate. Injected rather than
-   * constructed here so the registry stays free of any knowledge of where
-   * transcripts live — and so tests can supply a fake source without needing
-   * a config dir on disk.
-   */
   sources?: BrainSource[];
-  /**
-   * Account lookup, needed only by `indexSource`: an item's owning account
-   * supplies the `CLAUDE_CONFIG_DIR` its extraction runs under (spec §8).
-   * Optional so every existing construction site keeps working, but
-   * `indexSource` fails loudly without it rather than becoming a silent no-op.
-   */
+  /** Required by `indexSource`, which fails loudly without it. */
   accounts?: AccountsService;
-  /** Turns distilled prose into entities. Absent means indexing is unavailable. */
+  /** Absent means indexing is unavailable. */
   extractor?: Extractor;
-  /**
-   * Compresses an accumulated note. Absent means curation is unavailable —
-   * `curateNote` throws rather than silently no-opping, the same rule
-   * `extractor` follows.
-   */
+  /** Absent: `curateNote` throws rather than silently no-opping. */
   curator?: Curator;
-  /** True while the user has paused the queue from the Brain tab. */
   isQueuePaused?: () => boolean;
-  /**
-   * Session UUIDs open in OmniFex right now — `SessionsService`'s
-   * `listActiveSessionIds()`, injected so the Brain keeps no dependency on the
-   * sessions layer.
-   *
-   * Since Plan 8 removed the global "is the user working?" gate, this is the
-   * ONLY session-awareness the indexer has, and the only one it needed: WHICH
-   * transcripts are still being written, and therefore must not be distilled
-   * and recorded as finished.
-   *
-   * Defaults to "nothing is open", correct for tests and for any construction
-   * without a sessions dependency.
-   */
+  /** The indexer's only session-awareness: which transcripts are still being written. */
   liveSessionIds?: () => Iterable<string>;
-  /**
-   * How long a transcript must be untouched before its still-open session
-   * stops counting as live, in milliseconds.
-   *
-   * A getter rather than a value, matching `isQueuePaused`: it reads a user
-   * setting, and a captured number would need a restart to take effect while
-   * every other Brain switch does not.
-   */
+  /** A getter, so a setting change applies without a restart. */
   idleMs?: () => number;
-  /** Injectable clock, so the idle threshold is testable without waiting. */
   now?: () => number;
-  /**
-   * Called on every change to the run in flight, and once with `null` when it
-   * ends. The daemon forwards this to its clients; tests record the sequence.
-   *
-   * The terminating `null` is load-bearing: without it a live pane would hang
-   * on the last frame forever, showing a bar for a run that had finished.
-   */
+  /** The terminating `null` is load-bearing: without it a pane hangs on the last frame. */
   onRunProgress?: (run: BrainRun | null) => void;
-  /** Injectable eviction probe; see offloaded.ts. Defaults to the real one. */
   countOffloaded?: (root: string) => Promise<number | null>;
 }
 
-/**
- * Items checked at once while listing sources. Each check may read a file
- * through libuv's thread pool (four workers by default); a few in flight keeps
- * the pane quick without queueing every other fs call in the daemon behind it.
- */
+/** Bounded: each check may use libuv's four-worker thread pool. */
 const LIST_CONCURRENCY = 4;
 
 export function createBrainService(
   db: Database,
   opts: BrainServiceOptions = {},
 ): BrainService {
-  // One handle per account. Keyed by accountId, invalidated when its path moves
-  // or when the directory that path names is no longer the same directory.
+  // Invalidated when the path moves or names a different directory.
   const handles = new Map<number, CachedHandle>();
 
-  // Last real git failure per account, surfaced by status(). A vault whose
-  // versioning is broken must be able to say so; see git.ts's CommitResult.
   const lastGitError = new Map<number, string>();
 
-  // Source adapters and their bookkeeping. Empty by default: a service with no
-  // sources answers "nothing discovered", which is the correct answer for a
-  // caller that never wired any up.
   const sources = opts.sources ?? [];
   const clock = opts.now ?? Date.now;
-  // Defaults to the shipped threshold rather than to zero: a construction that
-  // wires no setting reader should behave like the product, not like a service
-  // with the idle gate switched off.
+  // The shipped threshold, never zero: an unwired reader must behave like the product.
   const idleMs = opts.idleMs ?? (() => DEFAULT_IDLE_MINUTES * 60_000);
   const countOffloaded = opts.countOffloaded ?? countOffloadedFiles;
   const sourceState = createSourceStateStore(db);
   const queueStore = createBrainQueueStore(db);
   const spendStore = createBrainSpendStore(db);
 
-  /**
-   * Append one model-backed run to the ledger.
-   *
-   * Swallows its own failure on purpose: losing an accounting row must never
-   * lose the note the money already bought, and this runs after the write that
-   * matters. The `run` guard is what keeps a gate rejection or a translating
-   * source — neither of which reaches a model — from inventing a payment.
-   */
+  /** Swallows its own failure: a lost ledger row must never lose the note. The `run` guard stops non-model paths inventing a payment. */
   function recordSpend(
     accountId: number,
     kind: SpendKind,
@@ -794,8 +383,7 @@ export function createBrainService(
     run: RunCost | undefined,
   ): void {
     if (!run) return;
-    // What billed, not the alias asked for: `sonnet` names a different model
-    // after every release, and the ledger has to stay attributable.
+    // What billed, not the alias asked for: the ledger must stay attributable.
     const model = run.model ?? requestedModel;
     try {
       const at = new Date();
@@ -817,17 +405,10 @@ export function createBrainService(
     }
   }
 
-  // The run in flight, or null. One at a time across all accounts, matching
-  // the queue worker's concurrency-1 contract with the shared rate limit.
+  // One run at a time across all accounts: the rate limit is shared.
   let activeRun: BrainRun | null = null;
 
-  /**
-   * Push the current run to whoever is listening.
-   *
-   * Wrapped so a throwing subscriber cannot take the run down with it: the
-   * subscriber is `webContents.send` on a window that may have closed
-   * mid-run, and losing the display must never abort work already paid for.
-   */
+  /** A throwing subscriber (a closed window) must never abort paid-for work. */
   function publishRun(): void {
     if (!opts.onRunProgress) return;
     try {
@@ -837,69 +418,27 @@ export function createBrainService(
     }
   }
 
-  /**
-   * Move the run in flight to a new stage, and optionally name its item.
-   *
-   * Guarded on the item key rather than applied unconditionally: `indexSource`
-   * is also callable on its own, and a direct call must not repaint the stage
-   * of whatever the queue is actually working on. Concurrency is 1, so the
-   * guard is belt-and-braces — but the alternative failure is a pill confidently
-   * reporting the wrong thing, which is worse than reporting nothing.
-   */
+  /** Guarded on item key: a direct `indexSource` call must not repaint the queue's stage. */
   function setRunPhase(itemKey: string, phase: BrainRunPhase, label?: string): void {
     if (activeRun?.item !== itemKey) return;
     activeRun = { ...activeRun, phase, ...(label === undefined ? {} : { label }) };
     publishRun();
   }
 
-  // A crash or quit mid-item leaves a row `running` forever; without this the
-  // queue silently stops draining after one bad shutdown.
+  // Without this, one bad shutdown leaves a row running forever and the queue stops draining.
   const orphans = queueStore.recoverOrphans();
   if (orphans > 0) console.warn(`brain: recovered ${String(orphans)} orphaned queue entries`);
 
-  /**
-   * Progress counters for the drain in flight, reset per drain.
-   *
-   * Before Plan 8 only `indexSelection` published a `BrainRun`, so background
-   * indexing — the kind that actually runs unattended — was the one kind with
-   * nothing on screen to say it was happening.
-   */
   let queueRunStats = { completed: 0, written: 0, skipped: 0 };
 
-  /** What finished, the one in flight, and everything still waiting. */
   function runTotal(): number {
     return queueRunStats.completed + 1 + queueStore.counts().pending;
   }
 
-  /**
-   * Which of the two kinds of work owns `activeRun`, or nothing.
-   *
-   * The run record itself cannot say: both kinds publish the same `BrainRun`,
-   * deliberately, so the two indicators draw one thing. But only one of them
-   * is counted against the QUEUE, and `widenRunTotal` has to know which.
-   */
+  /** Only queue runs count against the queue depth in `widenRunTotal`. */
   let runOwner: 'queue' | 'selection' | null = null;
 
-  /**
-   * Republish the run in flight because the queue behind it grew.
-   *
-   * `total` is recomputed when an entry is CLAIMED, which is correct but only
-   * becomes visible at the next claim — and an item sits in the extractor for
-   * minutes. Closing a second tab mid-run therefore changed nothing on screen,
-   * so the only honest reading of the indicator was that the close had been
-   * dropped. It had not been; the queue is durable and the drain loop picks it
-   * up. Nothing said so.
-   *
-   * Silent when the count is unchanged: `enqueue` is idempotent for rows
-   * already pending, and the five-minute sweep re-offers the same backlog
-   * every time it runs.
-   *
-   * Silent for a SELECTION, always. `runTotal()` answers "how deep is the
-   * queue", which is the wrong question about a run whose total is the number
-   * of rows the user ticked — and answering it anyway stamped the queue's
-   * depth onto the selection while its own `completed` kept climbing past it,
-   * so a nine-item selection reported "8 of 3".
-   */
+  /** Silent when unchanged (enqueue is idempotent), and always for a selection, whose total is the rows ticked. */
   function widenRunTotal(): void {
     if (!activeRun || runOwner !== 'queue') return;
     const total = runTotal();
@@ -908,12 +447,7 @@ export function createBrainService(
     publishRun();
   }
 
-  /**
-   * Queue an item and keep the indicator honest about the depth behind it.
-   *
-   * Every enqueue goes through here rather than calling the store directly, so
-   * there is no path that grows the queue without saying so.
-   */
+  /** Every enqueue goes through here, so the queue never grows silently. */
   function enqueueItem(accountId: number, sourceId: string, itemKey: string): void {
     queueStore.enqueue(accountId, sourceId, itemKey);
     widenRunTotal();
@@ -921,22 +455,15 @@ export function createBrainService(
 
   const queueWorker = createBrainQueueWorker({
     store: queueStore,
-    // The dispatch. Routed through the service's own methods rather than
-    // captured closures, so every drain gets the unchanged-item short-circuit,
-    // the per-entity isolation and the re-qualification check that live there.
+    // Through the service's own methods, so every drain gets the unchanged-item, isolation and re-qualification checks.
     process: async (entry) => {
-      // `total` is recomputed per entry rather than snapshotted at drain start,
-      // so an enqueue that lands mid-drain widens the bar instead of pushing it
-      // past 100%. The claimed entry is no longer `pending`, hence the +1.
+      // Recomputed per entry so a mid-drain enqueue widens the bar; +1 for the claimed entry.
       runOwner = 'queue';
       activeRun = {
         accountId: entry.accountId,
         total: runTotal(),
         completed: queueRunStats.completed,
         item: entry.itemKey,
-        // The key until discovery hands back something human — which costs a
-        // `discover()` over every source, so it happens inside the work rather
-        // than being paid for twice just to fill in a label.
         label: entry.itemKey,
         phase: 'preparing',
         startedAt: clock(),
@@ -953,8 +480,7 @@ export function createBrainService(
         if (result.skipped) queueRunStats.skipped += 1;
         else queueRunStats.written += 1;
       } catch (err) {
-        // A rate limit puts the item back on the queue untouched, so counting
-        // it as completed would report work the user never got.
+        // A rate-limited item goes back untouched; never count it.
         if (!isRateLimitError((err as Error).message)) queueRunStats.skipped += 1;
         else queueRunStats.completed -= 1;
         throw err;
@@ -965,13 +491,7 @@ export function createBrainService(
     isPaused: opts.isQueuePaused ?? (() => false),
   });
 
-  /**
-   * Locate one item by account AND key.
-   *
-   * Both, never the key alone: a session id is unique per account, not
-   * globally, so matching on the key would hand one account's transcript to
-   * whoever guessed the id.
-   */
+  /** By account AND key: a session id is unique only per account. */
   async function findItem(
     accountId: number,
     itemKey: string,
@@ -984,14 +504,7 @@ export function createBrainService(
     return null;
   }
 
-  /**
-   * The set of session UUIDs open right now, or empty when the lookup fails.
-   *
-   * Swallows a throwing provider on purpose: this feeds a listing that must
-   * render, and the enforcement that actually protects money lives in
-   * `indexSource`. A pane that dies because the sessions service hiccupped
-   * would be a worse failure than a badge that is briefly missing.
-   */
+  /** Swallows a throwing provider: the listing must render, and indexSource enforces the money path. */
   function liveSessions(): Set<string> {
     try {
       return new Set(opts.liveSessionIds?.() ?? []);
@@ -1000,18 +513,7 @@ export function createBrainService(
     }
   }
 
-  /**
-   * True when this item is a session transcript that is still being written.
-   *
-   * Open is necessary but not sufficient. A tab can sit open for days after
-   * its conversation ended, and gating on open alone kept those transcripts
-   * out of the vault forever — the tab close was the only thing that ever
-   * discovered them. What actually disqualifies an item is recent WRITES, so
-   * that is what this asks: open, and touched within the idle threshold.
-   *
-   * `<` rather than `<=`, so a transcript exactly at the threshold is idle.
-   * `mtimeMs` comes from discovery's `stat`, which costs nothing extra.
-   */
+  /** Open is not enough: an item is live only if also written within the idle threshold, or open tabs hold transcripts out forever. */
   function isLiveItem(
     item: SourceItem,
     live: Set<string> = liveSessions(),
@@ -1022,45 +524,18 @@ export function createBrainService(
     return at - item.mtimeMs < idleMs();
   }
 
-  /**
-   * The row's display name. A session is named by its id — that is the thing
-   * you paste to find one conversation. Everything else is a file, and its
-   * file name says more than an encoded key does. Falls back to the key for a
-   * source with no real path behind it.
-   */
   function displayName(item: SourceItem): string {
     if (item.sourceId === SESSION_SOURCE_ID) return item.itemKey;
     const base = item.path ? basename(item.path) : '';
     return base || item.itemKey;
   }
 
-  /**
-   * What to CALL the item while it is being worked on.
-   *
-   * Deliberately not `displayName`, which names a session by its id because
-   * that is the thing you paste to find one conversation. Progress is read at a
-   * glance and never pasted, so a session is named by its project instead —
-   * `label` is the project folder, and its last segment is what the user calls
-   * it. Everything else is already a file name.
-   */
   function runLabel(item: SourceItem): string {
     if (item.sourceId !== SESSION_SOURCE_ID) return displayName(item);
     return basename(item.label) || item.label || item.itemKey;
   }
 
-  /**
-   * What this account has spent on the Brain, from the ledger.
-   *
-   * Read from `brain_spend`, not `brain_sources`. The per-item column is a
-   * snapshot the next re-index overwrites, so summing it reported only the most
-   * recent run of each item and understated every vault that had been indexed
-   * twice. It also cannot see curation, which writes no `brain_sources` row at
-   * all.
-   *
-   * Scoped by account_id like every other read here: one account's spend must
-   * never be reported under another's header, which is the same rule that
-   * governs the notes themselves.
-   */
+  /** From `brain_spend`, never `brain_sources` (a per-item snapshot re-indexing overwrites). Scoped by account. */
   function spentUsd(accountId: number): number {
     return spendStore.total(accountId);
   }
@@ -1069,29 +544,16 @@ export function createBrainService(
     return db.getSetting(vaultSettingKey(accountId));
   }
 
-  /** One account's recorded project decisions. */
   function readDecisions(accountId: number): ProjectDecisions {
     return parseDecisions(db.getSetting(excludedProjectsKey(accountId)));
   }
 
-  /**
-   * The single exclusion predicate, applied at EVERY path that can reach the
-   * model. Discovery alone is not enough: the queue is durable across restarts,
-   * so an exclusion added today has to stop work queued yesterday.
-   */
+  /** Applied at every path that can reach the model: the queue outlives an exclusion added later. */
   function isExcludedItem(accountId: number, item: SourceItem): boolean {
     return isExcludedProject(item.label, readDecisions(accountId));
   }
 
-  /**
-   * Commit in the background and remember whether it worked.
-   *
-   * Fire-and-forget: the Markdown is already on disk and versioning is a safety
-   * net, so a slow or failing commit must not block the write. But "must not
-   * block" is not "must not be reported" — the previous shape discarded the
-   * result entirely, so a persistently failing commit produced no log, no
-   * error, and no visible signal anywhere.
-   */
+  /** Fire-and-forget, but the result is recorded: a failing commit must be visible. */
   function commitAndRecord(handle: VaultHandle, message: string): void {
     void handle.git
       .commitAll(message)
@@ -1118,10 +580,7 @@ export function createBrainService(
     }
   }
 
-  /**
-   * Every OTHER account's configured vault row. Task 8 may add further settings
-   * under this prefix, so the key shape is what decides, not the prefix.
-   */
+  /** The key shape decides, not the prefix: other settings share it. */
   function otherVaultRows(accountId: number): { key: string; value: string }[] {
     const rows = db.raw
       .prepare(`SELECT key, value FROM app_settings WHERE key LIKE 'brain.vault.%'`)
@@ -1129,12 +588,7 @@ export function createBrainService(
     return rows.filter((row) => VAULT_KEY_RE.test(row.key) && row.key !== vaultSettingKey(accountId));
   }
 
-  /**
-   * Reject a vault path that IS, CONTAINS, or IS CONTAINED BY another account's
-   * vault. Equality alone is insufficient: a nested vault means the outer
-   * account's listNotes/readNote/rebuild see the inner account's notes, and the
-   * outer vault's `git add -A` races the inner `git init`.
-   */
+  /** Rejects equal, containing or contained paths: a nested vault leaks notes into the outer account. */
   function assertNoOverlap(accountId: number, target: string): void {
     for (const row of otherVaultRows(accountId)) {
       const other = canonicalPath(row.value);
@@ -1146,8 +600,7 @@ export function createBrainService(
     }
   }
 
-  /** open() plus the "there must be a vault" contract every write path shares.
-   *  Never falls back to another account's vault. */
+  /** Never falls back to another account's vault. */
   function requireHandle(accountId: number): VaultHandle {
     const handle = service.open(accountId);
     if (!handle) throw new Error(`no vault configured for account ${accountId}`);
@@ -1162,43 +615,27 @@ export function createBrainService(
 
     setVaultPath(accountId: number, path: string): void {
       requireAccountId(accountId);
-      // Judge the string before it can have any filesystem effect: the
-      // materialisation below writes to whatever it is handed, so `''` (the
-      // process cwd) and `~/…` (a directory literally named `~`) have to be
-      // refused here, not discovered afterwards.
+      // Judge the string before any filesystem effect: '' is cwd and `~` is literal.
       const resolved = resolveVaultRoot(path);
 
-      // Canonicalisation can only resolve symlinks and filesystem case for
-      // segments that EXIST, and vault directories are otherwise created lazily
-      // by open(). Materialise it first so the check below compares real
-      // on-disk identity rather than two strings that merely look different.
-      // mkdirSync returns the first directory it created, or undefined if
-      // nothing was created — that is how we clean up on rejection.
+      // Materialize first: canonicalization only sees real identity for existing segments.
       let created: string | undefined;
       try {
         created = mkdirSync(resolved, { recursive: true });
       } catch (err) {
-        // A vault root the app cannot materialise is not a configurable vault.
-        // Swallowing this would drop back to a lexical comparison, which is
-        // exactly the alias bypass this check exists to stop.
+        // Swallowing this would fall back to a lexical comparison, the alias bypass this stops.
         throw new Error(`cannot create vault directory: ${resolved} (${(err as Error).message})`);
       }
 
       try {
         assertNoOverlap(accountId, canonicalPath(resolved));
       } catch (err) {
-        // Never leave a stray directory behind — least of all one whose name
-        // the caller chose, inside another account's vault.
         if (created) rmSync(created, { recursive: true, force: true });
         throw err;
       }
 
       closeHandle(accountId);
-      // Store the RESOLVED path, not the raw one: a stored relative path
-      // re-resolves against whatever cwd happens to be current later, so two
-      // configurations that looked distinct at config time can converge.
-      // Deliberately NOT the canonical path — that rewrites /var/... to
-      // /private/var/... and would surprise the user reading their settings.
+      // Store the resolved path (a relative one re-resolves against a later cwd), not the canonical one.
       db.saveSetting(vaultSettingKey(accountId), resolved);
     },
 
@@ -1211,20 +648,9 @@ export function createBrainService(
     open(accountId: number): VaultHandle | null {
       requireAccountId(accountId);
       const path = readPath(accountId);
-      // No configured vault is an ordinary state, not an error: indexing for
-      // this account is simply inert.
       if (!path) return null;
 
-      // Route the stored value through the SAME validation setVaultPath()
-      // applies, here at the point it is READ FROM STORAGE — not only where it
-      // was written. app_settings can be written directly (tests do it, and a
-      // dev-only raw-SQL channel exists), so a stored value never actually
-      // passed through setVaultPath() at all. A bare `resolve()` would accept
-      // whitespace-only or `~`-prefixed garbage and happily scaffold a vault at
-      // e.g. `<cwd>/   `. An invalid stored value is treated the same as "no
-      // configured vault" (return null) rather than thrown: this keeps the
-      // unconfigured-account contract uniform for every caller of open(),
-      // including search(), which already returns [] for that case.
+      // Re-validate on read: app_settings can be written directly. Invalid reads as unconfigured.
       let root: string;
       try {
         root = resolveVaultRoot(path);
@@ -1232,34 +658,19 @@ export function createBrainService(
         return null;
       }
 
-      // THE GUARD. Unconditional, and first: before the cache is consulted and
-      // before a single byte is written to disk.
-      //
-      // Before the cache, because a check that only runs on a cold open stops
-      // being a check the moment a handle exists — the process then reuses that
-      // handle for its whole life. Before ensureLayout(), because scaffolding a
-      // vault into the directory and only then deciding it belongs to another
-      // account means the victim's vault has already been written into.
-      //
-      // Two storage locations have to be judged, not one: the vault ROOT, which
-      // holds the Markdown, and the index DATABASE, which holds a full copy of
-      // every note body in its FTS table. Guarding only the root leaves the
-      // index reachable through its own aliases.
+      // THE GUARD: unconditional and first, before the cache and before any write. Judge both the root and the index database.
       let indexFile: string;
       try {
         assertNoOverlap(accountId, canonicalPath(root));
         assertOwnGitDir(root);
         indexFile = ensureVaultIndexPath(root);
       } catch (err) {
-        // Fail closed and let go: a handle just judged unsafe must not keep a
-        // live SQLite descriptor open on another account's vault.
+        // Fail closed: an unsafe handle must not keep a SQLite descriptor on another account's vault.
         closeHandle(accountId);
         throw err;
       }
 
-      // Reuse the handle only when the configured name AND the objects that
-      // name currently reaches are the ones it was built for.
-      // (A null current identity can never match: cached.identity is a string.)
+      // Reuse only when the name and the objects it reaches both match.
       const cached = handles.get(accountId);
       if (cached?.identity === handleIdentity(root, indexFile) && cached.handle.root === root) {
         return cached.handle;
@@ -1270,10 +681,7 @@ export function createBrainService(
       vault.ensureLayout();
 
       const git = createVaultGit(vault.root, opts.execGit);
-      // Versioning is a safety net; a missing git binary must not block a
-      // write. The promise is RETAINED rather than dropped, so callers that
-      // must not race the init — test cleanup, and any future indexer that
-      // commits immediately after opening — can join it.
+      // A missing git must not block a write; the promise is retained so callers can join the init.
       const gitReady = git.init().catch((err: unknown) => {
         console.warn('brain: git init failed:', err);
       });
@@ -1281,10 +689,7 @@ export function createBrainService(
       const index = createVaultIndex(indexFile);
 
       const handle: VaultHandle = { accountId, root: vault.root, vault, index, git, gitReady };
-      // Read the identity again, after the index file has been created: on a
-      // cold open it did not exist a moment ago, so the earlier read was null.
-      // If it still cannot be read, do not cache — an unidentifiable handle
-      // would be indistinguishable from the next unidentifiable one.
+      // Re-read after the index file exists; an unidentifiable handle is never cached.
       const identity = handleIdentity(vault.root, indexFile);
       if (identity !== null) handles.set(accountId, { handle, identity });
       return handle;
@@ -1301,8 +706,6 @@ export function createBrainService(
         initialized: false,
         noteCount: 0,
         indexedCount: null,
-        // Probed from the process cwd, not the vault root: the vault may not
-        // exist, and "is git installed" is a property of the machine anyway.
         gitAvailable: await createVaultGit(process.cwd()).available(),
         lastGitError: lastGitError.get(accountId) ?? null,
         conflict: null,
@@ -1310,9 +713,7 @@ export function createBrainService(
       };
       if (stored === null) return base;
 
-      // A stored value that open() would refuse is REPORTED rather than
-      // thrown: this method exists to describe broken states, so failing on
-      // one would leave the UI with nothing to render.
+      // Report, never throw: this method exists to describe broken states.
       let root: string;
       try {
         root = resolveVaultRoot(stored);
@@ -1336,9 +737,6 @@ export function createBrainService(
         initialized: existsSync(join(root, 'config', 'notes.json')),
         noteCount: createVault(root).listNotes().length,
         indexedCount: readIndexedCount(join(root, INDEX_DIR, INDEX_FILE)),
-        // Only for a vault that is actually on disk: probing an absent path
-        // would report a `find` failure as "not determined", which is true but
-        // says nothing, at the cost of a child process on every status read.
         offloadedCount: await countOffloaded(root),
       };
     },
@@ -1349,13 +747,7 @@ export function createBrainService(
       try {
         handle = service.open(accountId);
       } catch (err) {
-        // The overlap test is necessarily symmetric — it cannot tell the victim
-        // of an aliasing swap from its cause — so a bad symlink under one
-        // account would otherwise start throwing at the OTHER account, whose
-        // configuration and directory never changed. The Brain is auxiliary, so
-        // a read degrades to empty instead. Everything that hands out a handle
-        // or writes (open, writeNote) still fails closed, so this costs
-        // visibility, never confidentiality.
+        // The overlap test is symmetric, so a read degrades to empty rather than throw at the unchanged account. Writes still fail closed.
         if (err instanceof VaultConflictError) {
           console.warn(`brain: search disabled for account ${accountId}: ${err.message}`);
           return [];
@@ -1368,8 +760,6 @@ export function createBrainService(
 
     backlinks(accountId: number, relPath: string): string[] {
       requireAccountId(accountId);
-      // A read path, so it degrades to empty rather than throwing — same rule
-      // as search(). An unconfigured account simply has no backlinks.
       let handle: VaultHandle | null;
       try {
         handle = service.open(accountId);
@@ -1379,9 +769,7 @@ export function createBrainService(
       }
       if (!handle) return [];
 
-      // A full scan, deliberately: the FTS index is stemmed and limited, so
-      // narrowing with it would silently miss links. A vault is hundreds of
-      // local files and this runs only when a note is opened.
+      // A full scan, not the FTS index: it is stemmed and limited, and would silently miss links.
       const out: string[] = [];
       for (const candidate of handle.vault.listNotes()) {
         if (candidate === relPath) continue;
@@ -1389,7 +777,6 @@ export function createBrainService(
         try {
           body = handle.vault.readNote(candidate).body;
         } catch {
-          // A hand-edited note with broken frontmatter must not abort the scan.
           continue;
         }
         if (parseWikilinks(body).some((target) => linkMatchesNote(target, relPath))) {
@@ -1424,10 +811,7 @@ export function createBrainService(
     updateNoteBody(accountId: number, relPath: string, body: string): ParsedNote {
       requireAccountId(accountId);
       const handle = requireHandle(accountId);
-      // Read-modify-write rather than accepting a whole note from the caller.
-      // The renderer edits prose; it has no business rewriting a note's type,
-      // provenance or sources, and an edit box that could do so would make the
-      // frontmatter untrustworthy for merge dedup later.
+      // Read-modify-write: the renderer must never rewrite type, provenance or sources.
       const existing = handle.vault.readNote(relPath);
       const updated: ParsedNote = {
         frontmatter: { ...existing.frontmatter, updated: today() },
@@ -1441,8 +825,7 @@ export function createBrainService(
 
     setExcludedProjects(accountId: number, decisions: ProjectDecisions): void {
       requireAccountId(accountId);
-      // Key-sorted so the stored value is stable: an unordered map would
-      // rewrite the setting on every save and make diffs meaningless.
+      // Key-sorted so the stored value is stable.
       const stable: ProjectDecisions = {};
       for (const key of Object.keys(decisions).sort()) {
         if (key !== '') stable[key] = decisions[key];
@@ -1456,23 +839,17 @@ export function createBrainService(
     ): Promise<SourceSummary[]> {
       requireAccountId(accountId);
       const decisions = readDecisions(accountId);
-      // Read once for the whole listing rather than per row: the set is a
-      // snapshot either way, and a per-row read could mark two rows of the
-      // same scan against different states of the world.
+      // One snapshot for the whole listing.
       const live = liveSessions();
       const summaries: SourceSummary[] = [];
       for (const source of sources) {
-        // The filter that makes this account-scoped. An item belonging to
-        // another account is not merely uninteresting here — surfacing it
-        // would put one account's project names in another's UI.
+        // The account scope: another account's project names must never reach this UI.
         const listed = (await source.discover()).filter(
           (item) =>
             item.accountId === accountId &&
             (opts.includeExcluded === true || !isExcludedProject(item.label, decisions)),
         );
-        // Bounded fan-out: the verdict and change check read files through the
-        // thread pool, and an unbounded Promise.all over every transcript the
-        // account owns would starve every other fs call the daemon makes.
+        // Bounded: an unbounded Promise.all starves every other fs call.
         const rows = await mapLimit(listed, LIST_CONCURRENCY, async (item): Promise<SourceSummary> => {
           const verdict = await source.admit(item);
           const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
@@ -1499,8 +876,6 @@ export function createBrainService(
         });
         summaries.push(...rows);
       }
-      // Newest first: the session a user wants to check is almost always the
-      // one they just finished.
       summaries.sort((a, b) => b.mtimeMs - a.mtimeMs);
       return summaries;
     },
@@ -1559,13 +934,9 @@ export function createBrainService(
       if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
       const { source, item } = found;
 
-      // The first moment the item has a name. Everything above this is
-      // discovery, which is why the run opens labelled with the bare key.
       setRunPhase(itemKey, 'preparing', runLabel(item));
 
-      // The backstop. The queue is durable across restarts, so an exclusion
-      // added after an item was queued still has to stop it — and this is the
-      // last point before anything is spent.
+      // Backstop: an exclusion added after queueing must still stop the item before any spend.
       if (isExcludedItem(accountId, item)) {
         return {
           itemKey,
@@ -1575,12 +946,7 @@ export function createBrainService(
         };
       }
 
-      // The session is open in another tab AND was written to recently, so its
-      // transcript is mid-conversation. Checked BEFORE the change check and
-      // ignoring `force`: the objection is not "this looks unchanged", it is
-      // "this is not finished", and forcing a redo of a partial conversation
-      // only buys a different partial note. Sits above every model call for
-      // the same reason the exclusion backstop does.
+      // A live transcript is skipped even with `force`: redoing a partial conversation only buys another partial note.
       if (isLiveItem(item)) {
         return {
           itemKey,
@@ -1590,13 +956,7 @@ export function createBrainService(
         };
       }
 
-      // Already done and nothing moved — stop before spending anything.
-      //
-      // This is what the mtime-then-sha256 store is FOR. Extraction asks a
-      // non-deterministic model, so a re-run does not merely waste a token: it
-      // returns different prose and rewrites the note, turning a stable vault
-      // into churn and every re-index into a git commit. `force` keeps a
-      // deliberate redo available for when the prompt or the model improves.
+      // Unchanged and indexed: stop. A re-run rewords the note and makes a commit; `force` allows a deliberate redo.
       const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
       if (!runOpts.force && prior?.status === 'indexed' && !(await sourceState.hasChanged(item))) {
         return {
@@ -1607,29 +967,17 @@ export function createBrainService(
         };
       }
 
-      // Gate first: a rejected item must not reach the model at all. This is
-      // the only thing standing between "142 sessions" and "142 Haiku calls".
-      //
-      // `force` is the one way past it, and it comes only from a person
-      // ticking a row and pressing Index. The gate is a COST policy for
-      // UNATTENDED indexing, not a ruling on what the user is allowed to keep:
-      // an explicit press used to record a skip and write nothing, which left
-      // the row exactly as actionable as before and read as a broken button.
-      // The sweep never sets this, so "142 sessions" stays 142 refusals.
+      // Gate before the model. `force` comes only from a person's explicit press; the sweep never sets it.
       const verdict = await source.admit(item);
       if (!verdict.admitted && !runOpts.force) {
         await sourceState.record(item, { status: 'skipped', error: verdict.reason });
         return { itemKey, notesWritten: [], skipped: true, reason: verdict.reason };
       }
 
-      // Fail before spending a token, not after: an extraction whose result
-      // has nowhere to go is pure waste.
+      // Fail before spending a token.
       const handle = requireHandle(accountId);
 
-      // A translating source produces finished notes with no model, so it needs
-      // neither an extractor nor an owning-account config dir. The branch sits
-      // before both: requiring an account here would block a source that cannot
-      // spend anything through the wrong subscription in the first place.
+      // Translating sources spend nothing, so they need neither an extractor nor an account.
       if (source.translate) {
         setRunPhase(itemKey, 'writing');
         const translated = await source.translate(item);
@@ -1637,9 +985,6 @@ export function createBrainService(
         const failures: string[] = [];
         for (const { relPath, note } of translated) {
           try {
-            // The source file is the authority for a translated note — it is a
-            // projection of one file, and re-translating overwrites. Change
-            // detection means that only happens when the file actually changed.
             handle.vault.writeNote(relPath, note);
             handle.index.upsert(relPath, handle.vault.noteTitle(relPath), note);
             written.push(relPath);
@@ -1665,16 +1010,13 @@ export function createBrainService(
         };
       }
 
-      // Everything below spends tokens, so both dependencies are required from
-      // here down rather than at the top of the method.
       if (!source.distill) throw new Error(`brain: source ${source.id} cannot produce notes`);
       if (!opts.extractor) throw new Error('brain: no extractor configured');
       if (!opts.accounts) throw new Error('brain: no accounts service configured');
 
       const account = opts.accounts.listAccounts().find((a) => a.id === accountId);
       if (!account) {
-        // No silent fallback to another account's config dir — that would push
-        // this account's content through the wrong subscription (spec §4).
+        // Never fall back to another account's config dir.
         const reason = 'no account for this item';
         await sourceState.record(item, { status: 'blocked', error: reason });
         return { itemKey, notesWritten: [], skipped: true, reason };
@@ -1687,14 +1029,10 @@ export function createBrainService(
       try {
         setRunPhase(itemKey, 'extracting');
         extraction = await opts.extractor(distilled, account.config_dir, {
-          // Telling the model what the vault already holds is the cheap half
-          // of the duplicate fix; `resolveEntityPath` below is the reliable
-          // half that catches what the model still renames.
           existingNames: handle.vault.listNotes().map((p) => handle.vault.noteTitle(p)),
         });
       } catch (err) {
-        // A failed extraction is a recorded status, never an exception into
-        // whatever called this. A failed item must not block anything (spec §8).
+        // A failed extraction is a recorded status, never an exception: it must not block anything.
         const reason = (err as Error).message;
         await sourceState.record(item, { status: 'failed', error: reason });
         return { itemKey, notesWritten: [], skipped: true, reason };
@@ -1702,21 +1040,12 @@ export function createBrainService(
 
       setRunPhase(itemKey, 'writing');
 
-      // Built once per item, not per entity: it is O(vault) reads, and the
-      // entities of one extraction all resolve against the same snapshot.
       const existingNotes = readExistingNotes(handle);
 
       const provenance = {
         sourceKey: `${item.sourceId}:${item.itemKey}`,
-        // Each kind supplies the date it actually knows. A capture has its
-        // capture time; a session its start; an instruction file has no event
-        // date at all, so the day it was indexed is the only honest answer.
-        // Every arm falls back to today rather than to another kind's field,
-        // since an empty string would sort before every real date.
+        // Every arm falls back to today, never another kind's field: an empty string sorts before every date.
         date: provenanceDate(distilled.metadata),
-        // Derived from the path the material came from, never from the model.
-        // Undefined when the item cannot say, which leaves any attribution an
-        // earlier run made in place rather than clearing it.
         projectLink: projectLinkFor(
           distilled.metadata,
           existingNotes.filter((n) => n.path.startsWith(`${NOTE_FOLDERS.Project}/`)),
@@ -1726,16 +1055,9 @@ export function createBrainService(
       const notesWritten: string[] = [];
       const entityErrors: string[] = [];
       for (const entity of extraction.entities) {
-        // Per-entity isolation. An entity name is model-supplied and therefore
-        // untrusted input for a filesystem path; `vault.notePath` rejects
-        // `..`, separators and the like. One unusable entity must cost that
-        // entity, not the whole item — the token has already been spent, and
-        // discarding four good notes to punish a fifth bad one is the worst
-        // available outcome.
+        // Per-entity isolation: one bad model-supplied name costs that entity, not the item.
         try {
-          // Resolve against what the vault already holds before minting a new
-          // path. `merge()` dedups by path, so without this an entity the model
-          // renames on a later run becomes a second note beside the first.
+          // Resolve before minting: merge dedups by path, so a renamed entity would become a second note.
           const relPath = resolveEntityPath(entity, existingNotes, (name) =>
             handle.vault.notePath(entity.type, name),
           );
@@ -1743,9 +1065,6 @@ export function createBrainService(
           try {
             existing = handle.vault.readNote(relPath);
           } catch {
-            // Absent, or unparseable after a hand edit. Either way this merge
-            // starts from nothing rather than failing the item — the spec's
-            // error table isolates a broken note to that note.
             existing = null;
           }
           const merged = merge(existing, entity, provenance);
@@ -1757,29 +1076,20 @@ export function createBrainService(
         }
       }
 
-      // One commit for the whole item, not one per note: the unit of work is
-      // "indexed this session", and per-note commits would make `git revert`
-      // of a bad run a multi-step operation.
+      // One commit per item, so reverting a bad run is one step.
       if (notesWritten.length > 0) commitAndRecord(handle, `Index ${provenance.sourceKey}`);
 
       const errorSummary = entityErrors.length > 0 ? entityErrors.join('; ') : undefined;
 
-      // Recorded before the outcome branches: a run that produced nothing
-      // usable still spent the money, and a ledger that only counted successes
-      // would understate every month containing a bad extraction.
+      // Recorded before the outcome branches: a run that produced nothing still spent the money.
       recordSpend(accountId, 'index', item.sourceId, itemKey, EXTRACTION_MODEL, extraction.run);
 
-      // Nothing usable at all is reported as skipped, so the Sources pane does
-      // not claim a successful run that produced no note.
       if (notesWritten.length === 0 && entityErrors.length > 0) {
         await sourceState.record(item, { status: 'failed', error: errorSummary, run: extraction.run });
         return { itemKey, notesWritten, skipped: true, reason: errorSummary ?? 'no notes written' };
       }
 
-      // Partially written still counts as indexed: the item was processed, and
-      // re-running would spend another token to arrive at the same place.
-      // The run is recorded with the outcome, not separately: money is spent
-      // whether or not the entities it produced turned into notes.
+      // Partially written still counts as indexed: a re-run would spend again to reach the same place.
       await sourceState.record(item, { status: 'indexed', error: errorSummary, run: extraction.run });
 
       const reason =
@@ -1795,8 +1105,7 @@ export function createBrainService(
       opts: { force?: boolean } = {},
     ): Promise<RunResult> {
       requireAccountId(accountId);
-      // Refused before the run record is set, so a rejected call cannot strand
-      // a banner with nothing left to finish it.
+      // Refused before the run record is set, so a rejected call cannot strand a banner.
       if (itemKeys.length === 0) throw new Error('brain: no items in the selection');
       if (activeRun) {
         throw new Error(
@@ -1817,11 +1126,7 @@ export function createBrainService(
 
       try {
         for (const itemKey of itemKeys) {
-          // Set before the await, so `currentRun` names the item actually in
-          // flight rather than the one that finished last.
-          // Every per-item field resets together. Carrying the previous item's
-          // phase or start time forward would report the new item as already
-          // minutes into a stage it has not reached.
+          // Every per-item field resets together, before the await.
           activeRun = {
             ...activeRun, item: itemKey, label: itemKey,
             phase: 'preparing', startedAt: clock(),
@@ -1832,11 +1137,7 @@ export function createBrainService(
             if (result.skipped) skipped += 1;
             else written += 1;
           } catch (err) {
-            // Spec §8's rule, applied to a selection: a failed item is
-            // recorded and stepped over, never allowed to end the run. Shaped
-            // as a skip so every item has one entry in `results` — a caller
-            // iterating outcomes should not have to join two arrays to find
-            // out what happened to the third item.
+            // A failed item is recorded as a skip and stepped over, never ends the run.
             results.push({
               itemKey, notesWritten: [], skipped: true, reason: (err as Error).message,
             });
@@ -1846,9 +1147,7 @@ export function createBrainService(
           publishRun();
         }
       } finally {
-        // In `finally` so a throw that escapes the loop still clears the run.
-        // A stuck `activeRun` would refuse every later run for the lifetime of
-        // the process, with no way to reset short of restarting the app.
+        // In `finally`: a stuck activeRun refuses every later run until restart.
         activeRun = null;
         runOwner = null;
         publishRun();
@@ -1859,20 +1158,12 @@ export function createBrainService(
 
     currentRun(accountId: number): BrainRun | null {
       requireAccountId(accountId);
-      // Account-scoped: another account's run is not this pane's business, and
-      // showing it would attribute one account's spend to another.
+      // Account-scoped: never attribute one account's run to another.
       return activeRun?.accountId === accountId ? activeRun : null;
     },
 
     activeRun(): BrainRun | null {
-      // Deliberately NOT account-scoped, unlike `currentRun`. The global
-      // indicator asks "is anything indexing?" and cannot know the answer's
-      // account in order to ask about it. Attribution is preserved rather than
-      // dropped: the run carries its own `accountId` and the indicator names
-      // the vault, so nothing is shown under the wrong account's header.
-      //
-      // This exposes no note content and no spend figure — only that a run
-      // exists and how far along it is.
+      // Deliberately not account-scoped: the run carries its own accountId.
       return activeRun;
     },
 
@@ -1887,23 +1178,19 @@ export function createBrainService(
       try {
         note = handle.vault.readNote(relPath);
       } catch {
-        // Deleted, or unparseable after a hand edit, between enqueue and claim.
-        // A completed unit of work, not a failure — see the queue's skip rule.
+        // A completed unit of work, not a failure.
         return { notePath: relPath, skipped: true, reason: 'note is missing or unreadable' };
       }
 
       const date = today();
-      // Before the token, never after. The note may have been curated or
-      // shortened since it was queued. Plan 4a's most expensive bug was
-      // `indexSource` skipping exactly this class of check.
+      // Re-check before the token: the note may have changed since it was queued.
       if (!qualifies(note, date)) {
         return { notePath: relPath, skipped: true, reason: 'no longer qualifies for curation' };
       }
 
       const account = opts.accounts.listAccounts().find((a) => a.id === accountId);
       if (!account) {
-        // No silent fallback to another account's config dir — that would push
-        // this account's content through the wrong subscription (spec §4).
+        // Never fall back to another account's config dir.
         return { notePath: relPath, skipped: true, reason: 'no account for this note' };
       }
 
@@ -1911,9 +1198,7 @@ export function createBrainService(
 
       const entries = collapsibleEntries(note);
       const decisions = collapsibleDecisions(note);
-      // Deliberately unguarded: a rejection here propagates to the worker,
-      // which records the failure against the queue entry. The note is not
-      // written, so a failed curation costs tokens and not history.
+      // Unguarded on purpose: the worker records the failure, and the note is not written.
       const result = await opts.curator(
         {
           title: handle.vault.noteTitle(relPath),
@@ -1940,8 +1225,7 @@ export function createBrainService(
 
     enqueueCuration(accountId: number): number {
       requireAccountId(accountId);
-      // `readPath` first, so an unconfigured account reports zero rather than
-      // lazily materialising a vault just to find it has nothing to curate.
+      // `readPath` first, so an unconfigured account never materializes a vault.
       const handle = readPath(accountId) === null ? null : requireHandle(accountId);
       if (!handle) return 0;
 
@@ -1962,10 +1246,7 @@ export function createBrainService(
         });
       }
 
-      // Worst offenders first, counting BOTH collapsible sections: the note
-      // with 38 decisions and 7 Timeline entries is where compression buys the
-      // most context back, and ranking on Timeline alone would bury it. Ties
-      // break on path so a run is deterministic.
+      // Rank on both sections, ties by path, so a run is deterministic.
       candidates.sort((a, b) => b.length - a.length || a.relPath.localeCompare(b.relPath));
 
       const chosen = candidates.slice(0, MAX_NOTES_PER_RUN);
@@ -1999,8 +1280,7 @@ export function createBrainService(
         try {
           out.push(toNoteMeta(relPath, handle.vault.readNote(relPath)));
         } catch {
-          // Same rule as `stats()`: one unreadable or malformed note must not
-          // cost the whole listing. It simply does not appear.
+          // One unreadable note must not cost the whole listing.
         }
       }
       return out;
@@ -2009,17 +1289,12 @@ export function createBrainService(
     async enqueueSource(accountId: number, itemKey: string): Promise<void> {
       requireAccountId(accountId);
       const found = await findItem(accountId, itemKey);
-      // Refuse rather than enqueue blind: the queue is what later spends
-      // tokens, and an item this account does not own would be indexed
-      // through the wrong subscription and into the wrong vault.
+      // Never enqueue an item this account does not own: it would index into the wrong vault.
       if (!found) throw new Error(`source item not found for this account: ${itemKey}`);
-      // Refuse rather than silently drop: this is an explicit user action, and
-      // a no-op would look like it worked.
+      // Refuse out loud: a no-op would look like it worked.
       if (isExcludedItem(accountId, found.item)) {
         throw new Error(`project is excluded from the Brain: ${found.item.label}`);
       }
-      // Same rule as the exclusion above: an explicit user action that cannot
-      // succeed is refused out loud, not queued to fail quietly later.
       if (isLiveItem(found.item)) {
         throw new Error('session is active in OmniFex — it will index once it goes idle');
       }
@@ -2028,21 +1303,17 @@ export function createBrainService(
 
     async enqueueProjectSources(accountId: number, projectPath: string): Promise<number> {
       requireAccountId(accountId);
-      // The CLI's own encoding, which is what an auto-memory item's key is
-      // qualified by. Lossy in the decode direction, but exact in this one.
+      // The CLI's encoding: lossy to decode, exact in this direction.
       const encoded = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
       let queued = 0;
 
       for (const source of sources) {
-        // The transcript is enqueued by its own key at the call site; this
-        // covers what a session close does NOT already reach.
+        // The session close enqueues the transcript itself.
         if (source.id === SESSION_SOURCE_ID) continue;
 
         for (const item of await source.discover()) {
           if (item.accountId !== accountId) continue;
-          // Auto-memory keys are `<encoded project>/<file>`; repo artifacts are
-          // `<repoPath>:<file>`. Matching either shape keeps the check here
-          // without teaching the caller both formats.
+          // Key formats: auto-memory `<encoded>/<file>`, repo artifacts `<repoPath>:<file>`.
           const belongs =
             item.itemKey.startsWith(`${encoded}/`) || item.itemKey.startsWith(`${projectPath}:`);
           if (!belongs) continue;
@@ -2066,26 +1337,10 @@ export function createBrainService(
         for (const item of await source.discover()) {
           if (item.accountId !== accountId) continue;
           if (isExcludedItem(accountId, item)) continue;
-          // Mid-conversation: `indexSource` would refuse it at claim time
-          // anyway, and on a five-minute timer that refusal is pure churn.
-          // Costs nothing if it goes idle before the next tick picks it up.
-          // First, ahead of the change check: a live transcript is the one
-          // whose mtime always moved, so checking it first hashed the very
-          // session the user is streaming, in full, every tick.
+          // Live first, before the change check: otherwise every tick hashes the streaming session in full.
           if (isLiveItem(item, live, at)) continue;
           const prior = sourceState.get(accountId, item.sourceId, item.itemKey);
-          // The sweep's horizon. Absent for the Backfill button, which is the
-          // deliberate "everything" action and must stay one.
-          //
-          // It does NOT apply to an item already carrying state whose bytes
-          // have moved. The horizon is an age limit on the FILE, not a
-          // watermark since the last sweep, so an edit that landed while the
-          // app was closed for longer than the horizon was stranded: every
-          // later tick re-excluded it on age, while the Sources table went on
-          // reporting it as changed with nothing left to act on it. The
-          // horizon's stated job is the first tick after the opt-in — not
-          // enqueuing every transcript ever written — and an item that was
-          // already admitted and paid for once is not that case.
+          // The sweep's horizon (absent for Backfill) never strands a known item whose bytes moved.
           const knownAndChanged = prior !== null && (await sourceState.hasChanged(item));
           if (
             !knownAndChanged &&
@@ -2094,17 +1349,8 @@ export function createBrainService(
           ) {
             continue;
           }
-          // Already done and unmoved: `indexSource` would short-circuit
-          // anyway, but keeping it out of the queue is what makes re-running
-          // backfill after a partial run cost only what is left.
           if (prior?.status === 'indexed' && !knownAndChanged) continue;
-          // Gate LAST, so the queue never holds work that would be skipped the
-          // moment it was claimed — but only after every cheap predicate has
-          // had its say. `admit()` reads and parses the whole transcript, and
-          // the periodic sweep calls this across every account: running it
-          // ahead of the mtime and change checks would re-read the user's
-          // entire history every five minutes. Reordering is safe because
-          // `admit()` is side-effect-free.
+          // Gate last: admit() reads the whole transcript, so cheap checks go first. Safe because admit() has no side effects.
           if (!(await source.admit(item)).admitted) continue;
           enqueueItem(accountId, item.sourceId, item.itemKey);
           queued += 1;
@@ -2128,25 +1374,13 @@ export function createBrainService(
     },
 
     async drainQueue(): Promise<DrainOutcome> {
-      // A manual selection owns `activeRun` exclusively — `indexSelection`
-      // refuses to start while one is in flight, and the queue has to be just
-      // as polite in the other direction, or a timed drain would silently
-      // overwrite the banner the user is watching.
+      // A manual selection owns activeRun exclusively; a timed drain must not overwrite its banner.
       if (activeRun) return { processed: 0, yielded: true, reason: 'busy' };
 
       queueRunStats = { completed: 0, written: 0, skipped: 0 };
       try {
         let outcome = await queueWorker.drain();
-        // An enqueue can land after the loop's last `claimNext()` and before
-        // this method releases the run. Neither party saw it: the loop had
-        // stopped asking, and the second caller was told `busy` because
-        // `activeRun` was still set. The item then waited for the five-minute
-        // sweep — and with the indicator now widening on enqueue, the user had
-        // already been promised it.
-        //
-        // Not while `yielded`: a rate limit parks the queue deliberately, and
-        // re-entering would spin against the same wall. `processed === 0` ends
-        // it either way, so an item that cannot be claimed cannot loop here.
+        // Catch an enqueue that landed after the last claim. Not while yielded: a rate limit parks the queue.
         while (!outcome.yielded && queueStore.counts().pending > 0) {
           const again = await queueWorker.drain();
           if (again.processed === 0) break;

@@ -1,21 +1,4 @@
-/**
- * Session bridge — the edge where the existing sessions service meets the
- * protocol.
- *
- * `createSessionsService` talks to its UI through one callback,
- * `sendToRenderer(channel, ...args)`, whose channel names are the Electron
- * IPC vocabulary (`agent-output:<tabId>`, `session-status:<tabId>`, …). The
- * daemon hands it THIS object's `sendToRenderer` instead of a BrowserWindow,
- * and every call becomes a sequenced protocol push. Nothing in
- * `daemon/services/sessions/` changes; that is the point of adapting at the
- * edge rather than rewriting the service.
- *
- * The daemon uses the protocol's `sessionId` as the service's `tabId`, so the
- * suffix on a tab-scoped channel already IS the session id. A suffix that does
- * not name an open session (`session-summary:updated`, `session-git-changed:
- * <watchId>`) is an app-wide signal, and goes out as a `channel` broadcast —
- * the prefix alone is not evidence of scope.
- */
+// A tab-scoped suffix that names no open session is an app-wide signal: it goes out as a `channel` broadcast.
 import { IDLE_TURN, type SendToRenderer, type TurnState } from '../services/sessions/types';
 import type { JsonlNode } from '../../src/types/jsonl';
 import type { ServerMessage, SessionScopedPush, SessionStatus } from '../../src/protocol';
@@ -23,34 +6,26 @@ import type { SessionLog, UnsequencedPush } from './session-log';
 
 export interface SessionBridgeDeps {
   log: SessionLog;
-  /** `classifyJsonlLine` — injected so this module stays free of `@/` imports. */
+  /** Injected: this module must stay free of `@/` imports. */
   classify: (raw: unknown) => JsonlNode | null;
-  /** Deliver a stamped push to the session's subscribers. */
   publish: (push: SessionScopedPush) => void;
-  /** Deliver an app-wide message to every client. */
   broadcast: (message: Extract<ServerMessage, { type: 'channel' }>) => void;
 }
 
 export interface SessionControlState {
   sessionStatus: SessionStatus;
-  /** Mirrored from the session's `session-turn:<id>` announcements. */
   turn: TurnState;
   error?: string;
 }
 
 export interface SessionBridge {
   sendToRenderer: SendToRenderer;
-  /** Permission ids shown to the user and not yet answered, oldest first. */
   pendingPermissions(sessionId: string): string[];
-  /** Forget a permission the handler has successfully answered. */
   permissionAnswered(sessionId: string, permissionId: string): void;
-  /** Both axes as last announced, for summaries. */
   state(sessionId: string): SessionControlState | null;
-  /** Drop per-session tracking once a session is gone for good. */
   forget(sessionId: string): void;
 }
 
-/** `prefix:suffix` → both halves; a channel with no colon has no suffix. */
 function splitChannel(channel: string): { prefix: string; suffix: string | null } {
   const i = channel.indexOf(':');
   return i < 0 ? { prefix: channel, suffix: null } : { prefix: channel.slice(0, i), suffix: channel.slice(i + 1) };
@@ -64,7 +39,6 @@ function isPermissionPayload(payload: unknown): payload is Record<string, unknow
   );
 }
 
-/** Main's `permission_withdrawn`: the CLI took back a request it had sent. */
 function isWithdrawnPayload(payload: unknown): payload is { type: 'permission_withdrawn'; request_id: string } {
   return (
     typeof payload === 'object' &&
@@ -80,8 +54,6 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
   function stateFor(sessionId: string): SessionControlState {
     let s = states.get(sessionId);
     if (!s) {
-      // A session the log knows but the bridge has not seen a status for is
-      // still dialing — the same optimistic 'starting' the renderer assumes.
       s = { sessionStatus: 'starting', turn: IDLE_TURN };
       states.set(sessionId, s);
     }
@@ -117,8 +89,7 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
   }
 
   function transcript(sessionId: string, channel: string, raw: unknown, origin: 'engine' | 'tail'): void {
-    // Never drop a frame the classifier cannot place: the renderer's own
-    // catch-all is an `unknown` node, and a client shim re-emits `raw` anyway.
+    // Never drop a frame the classifier cannot place.
     const node =
       deps.classify(raw) ??
       ({ kind: 'unknown', raw: raw as Record<string, unknown>, sessionId, receivedAt: null });
@@ -145,8 +116,6 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
     });
   }
 
-  // Not transcript: the client drops the card it was showing, and the id
-  // stops counting as pending for summaries and `permission.respond`.
   function withdrawn(sessionId: string, channel: string, payload: { request_id: string }): void {
     const list = pending.get(sessionId);
     const i = list?.indexOf(String(payload.request_id)) ?? -1;
@@ -158,7 +127,6 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
     const payload = args[0];
     const { prefix, suffix } = splitChannel(channel);
 
-    // `claude-notification` is global on the wire but names its tab inside.
     if (prefix === 'claude-notification' && suffix === null) {
       const tabId = (payload as { tab_id?: unknown } | undefined)?.tab_id;
       if (typeof tabId === 'string' && deps.log.isOpen(tabId)) {
@@ -169,10 +137,7 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
       return;
     }
 
-    // `session-cost:<id>` names the CLI session UUID, not a tab, and the hook
-    // that reads it listens on exactly that name. The daemon keys sessions by
-    // the same UUID, so the open-session test below would otherwise pass and
-    // the client would re-emit it under a renderer tab id nobody listens on.
+    // `session-cost:<id>` names the CLI session UUID, not a tab; its listener uses exactly that name.
     if (prefix === 'session-cost' || suffix === null || !deps.log.isOpen(suffix)) {
       deps.broadcast({ type: 'channel', channel, payload });
       return;
@@ -196,8 +161,7 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
         return;
       }
       case 'session-turn': {
-        // The session announces its own turn axis; the bridge never infers
-        // one from the transcript (a result row is content, not state).
+        // Never infer the turn from the transcript: the session announces it.
         const turn = payload as TurnState | undefined;
         if (turn && (turn.status === 'idle' || turn.status === 'running')) {
           stateFor(sessionId).turn = { status: turn.status, since: turn.since ?? null };
@@ -223,9 +187,7 @@ export function createSessionBridge(deps: SessionBridgeDeps): SessionBridge {
         return;
 
       default:
-        // A tab-scoped channel this bridge has no mapping for. Not dropped —
-        // it rides as a session event under its own prefix, so a client shim
-        // can still re-emit it and a future mapping is a one-line addition.
+        // Unmapped tab-scoped channel: never dropped.
         emitEvent(sessionId, 'notification', prefix, payload);
     }
   };

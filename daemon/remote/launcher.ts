@@ -1,88 +1,38 @@
-/**
- * The app's view of the daemon: is it up, is it *this* build, and if not,
- * make it so. Run by `omnifex-server ensure|restart`, which the macOS app
- * calls at launch and from the Daemon popover's Restart button.
- *
- * The daemon is the app's: spawned into the app's process group, stopped
- * when the app quits, and gone on its own (the idle watch) when the app dies
- * without quitting. See daemon-control.ts.
- *
- * It can still meet an older build: one left behind by a crash, inside its
- * idle window, or one a previous release spawned detached before daemons
- * belonged to the app. Launch a new OmniFex and the daemon answering on the
- * port may be that old build. Nothing in the protocol would catch that (same protocol version,
- * different code). So the app that launches wins: a daemon reporting another
- * version is replaced — at once when it has no turn in flight, otherwise the
- * app attaches to it for now (`outdated: true`) and asks again until it is
- * idle. Nobody has to run a script. The asking-again is the caller's: this
- * runs in a CLI process that exits once it has answered.
- *
- * Pure with respect to I/O: probing, spawning, stopping and sleeping are
- * injected, so the decision logic is unit-testable without a socket or a
- * child process.
- */
+// Same protocol version can mean different code, so a daemon reporting another app version is replaced.
 import { get as httpGet } from 'node:http';
 
 import { isLoopbackHost, type ServerConfig } from './config';
 
-/** What the launcher needs from `GET /healthz`. */
 export interface DaemonHealth {
   version: string;
-  /** Bundle stamp (script mtime), when the daemon reports one. */
   build?: string;
-  /** Absolute path of the daemon script it is running, when it reports one. */
   script?: string;
-  /** Sessions with a prompt currently running. */
   inFlight: number;
 }
 
 export interface RemoteLauncherDeps {
-  /** Read fresh each time: `~/.omnifex/server.json` may change between calls. */
   config: () => ServerConfig;
-  /** Parsed `/healthz`, or null when nothing answers. */
   probe: (healthUrl: string) => Promise<DaemonHealth | null>;
-  /** Start the daemon in the background. Must not throw for a missing script — return false. */
+  /** Must not throw for a missing script — return false. */
   spawn: (config: ServerConfig) => boolean;
-  /** Ask the running daemon to exit. False when there was no way to reach it. */
   stop: (config: ServerConfig) => Promise<boolean>;
-  /** The app's version; a daemon reporting anything else gets replaced. */
   appVersion: string;
-  /**
-   * This bundle's stamp, dev only: the version never moves between `npm start`s,
-   * so a same-version daemon with another stamp is stale too. Packaged builds
-   * leave it undefined and compare versions alone. Defined ⇒ this is a dev
-   * build, which is also what limits it to retiring its own daemon (below).
-   */
+  /** Dev only: the version never moves between `npm start`s. Defined ⇒ dev build, which retires only its own daemon. */
   appBuild?: string;
-  /**
-   * Absolute path of the daemon script this bundle would spawn. A dev build
-   * replaces only a daemon that reports this same path.
-   */
   appScript?: string;
   sleep?: (ms: number) => Promise<void>;
-  /** How long to wait for a spawned daemon to answer, or a stopped one to go. */
   startupTimeoutMs?: number;
   pollIntervalMs?: number;
   log?: (message: string, meta?: Record<string, unknown>) => void;
 }
 
 export interface EnsureResult {
-  /** The daemon's WebSocket URL, or null when it is not available. */
   url: string | null;
-  /**
-   * The daemon answering is another build, busy, and kept for now. The
-   * caller asks again later; the first idle answer replaces it.
-   */
   outdated: boolean;
 }
 
 export interface RemoteLauncher {
   ensure(): Promise<EnsureResult>;
-  /**
-   * Stop whatever daemon answers on the port — busy or not, the user asked —
-   * and start this build's. The renderer's socket client reconnects on its
-   * own once the new daemon is up.
-   */
   restart(): Promise<EnsureResult>;
 }
 
@@ -94,21 +44,9 @@ export function wsUrlFor(config: Pick<ServerConfig, 'host' | 'port'>): string {
   return `ws://${config.host}:${config.port}/ws`;
 }
 
-/**
- * `/healthz` body → what the launcher compares on. Tolerant of an older
- * daemon that does not report `sessions.inFlight` yet: that reads as idle,
- * which is what makes it replaceable by the build that does.
- */
 const LOOPBACK = '127.0.0.1';
 
-/**
- * The URL for a client on this machine. A daemon on a tailnet address also
- * listens on loopback (`extraListenHosts`), and the Mac app must use that:
- * WebKit runs plain http on a non-loopback address in its EnhancedSecurity
- * process — no JIT, about 5x slower JavaScript — and denies it a secure
- * context, so no async clipboard either. Loopback is neither. An older daemon
- * that does not listen there keeps the configured URL.
- */
+// The Mac app must use loopback: WebKit runs non-loopback http without JIT (~5x slower) and without a secure context.
 async function localUrl(
   result: EnsureResult,
   config: Pick<ServerConfig, 'host' | 'port'>,
@@ -119,6 +57,7 @@ async function localUrl(
   return (await probe(healthUrlFor(loopback))) ? { ...result, url: wsUrlFor(loopback) } : result;
 }
 
+// A daemon that does not report `sessions.inFlight` must read as idle, so a newer build can replace it.
 export function parseDaemonHealth(body: string): DaemonHealth | null {
   try {
     const h = JSON.parse(body) as { version?: unknown; build?: unknown; script?: unknown; sessions?: { inFlight?: unknown } };
@@ -141,13 +80,10 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
   const pollIntervalMs = deps.pollIntervalMs ?? 250;
   const log = deps.log ?? (() => {});
 
-  // One attempt at a time: a second spawn racing the first would only fail on
-  // the port and confuse the log.
   let inFlight: Promise<EnsureResult> | null = null;
 
   const up = (url: string | null): EnsureResult => ({ url, outdated: false });
 
-  /** Poll until `pred` holds or the startup window closes. */
   async function waitUntil(pred: () => Promise<boolean>): Promise<boolean> {
     const deadline = Date.now() + startupTimeoutMs;
     while (Date.now() < deadline) {
@@ -157,12 +93,7 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
     return false;
   }
 
-  /**
-   * The daemon on `config`'s address, or else on loopback. A daemon started
-   * before Tailscale came up listens on loopback only, while this computes
-   * the tailnet address now; looking only there spawned a second daemon
-   * beside the running one.
-   */
+  // Also probe loopback: a daemon started before Tailscale came up listens only there.
   async function probeDaemon(config: ServerConfig): Promise<DaemonHealth | null> {
     const found = await deps.probe(healthUrlFor(config));
     if (found || isLoopbackHost(config.host)) return found;
@@ -178,11 +109,6 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
     }
   }
 
-  /**
-   * Stop the running daemon and wait for the port to clear. Null once it is
-   * gone; the ws url when it has to be kept as is (unreachable, or it ignored
-   * the stop) — spawning onto an occupied port would only fail.
-   */
   async function retire(config: ServerConfig, ws: string, meta: Record<string, unknown>): Promise<string | null> {
     if (!(await deps.stop(config))) {
       log('could not reach the running daemon to stop it; using it as is', meta);
@@ -216,16 +142,7 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
 
     const running = await probeDaemon(config);
     if (running) {
-      // A dev build is a guest on this port. It shares `~/.omnifex` and the
-      // DB with the INSTALLED app, whose daemon holds every live CLI process
-      // the user has open — and which differs from the dev bundle in both
-      // version and stamp, so every earlier rule said "replace it". `npm start`
-      // therefore SIGTERM'd the installed app's daemon and killed its sessions
-      // (2026-09-13). A dev build now retires only a daemon that reports the
-      // very script it would spawn itself; anything else it attaches to, old
-      // or new. The installed app keeps full authority over the port: it is
-      // the product, and it must still replace its own daemon after an
-      // upgrade even if the app moved.
+      // A dev build retires only a daemon running its own script; anything else may be the installed app's, with live sessions.
       if (deps.appBuild !== undefined && running.script !== deps.appScript) {
         log('daemon belongs to another install; attaching to it instead of replacing it', {
           running: `${running.version} (${running.script ?? 'unknown script'})`,
@@ -272,18 +189,14 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
     return launch(config, ws);
   }
 
-  /** Run `fn` as the one in-flight attempt; `after` queues behind whatever is running. */
   function occupy(fn: () => Promise<EnsureResult>, after: Promise<unknown> | null): Promise<EnsureResult> {
     const p: Promise<EnsureResult> = (after ? after.then(fn, fn) : fn()).finally(() => {
-      // Nothing is cached: the next call probes again, so a daemon started by
-      // hand a minute later is picked up.
       if (inFlight === p) inFlight = null;
     });
     inFlight = p;
     return p;
   }
 
-  /** `fn`, then the loopback URL in place of the configured one if it answers. */
   function local(fn: () => Promise<EnsureResult>): () => Promise<EnsureResult> {
     return async () => {
       const result = await fn();
@@ -303,11 +216,6 @@ export function createRemoteLauncher(deps: RemoteLauncherDeps): RemoteLauncher {
   return { ensure, restart };
 }
 
-/**
- * `GET /healthz`, parsed — or null when nothing answers within 1.5 s. The
- * one piece of real I/O the launcher needs; kept out of it so the decisions
- * stay testable without a socket.
- */
 /* v8 ignore start -- a socket round trip; the parse it ends in is tested */
 export function probeDaemonHealth(url: string): Promise<DaemonHealth | null> {
   return new Promise<DaemonHealth | null>((resolve) => {

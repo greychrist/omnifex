@@ -1,11 +1,4 @@
-// Cost module — durable cost history in SQLite.
-//
-// Rows survive the CLI's transcript pruning (cleanupPeriodDays); the table is
-// the source for the Costs view. replaceSession keeps writes idempotent
-// (delete-then-insert per session inside one transaction). backfill() walks
-// every account config dir's surviving JSONLs — including sessions run
-// outside OmniFex — so monthly totals can reconcile against Anthropic's
-// console.
+// Rows outlive the CLI's transcript pruning. replaceSession must stay idempotent (delete-then-insert per session).
 
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -31,16 +24,13 @@ import {
   type RecordInternalSpend,
 } from '../sessions/internal-spend';
 
-/** Multi-valued fields OR their values together; an empty array means "no
- *  filter", not "match nothing" — a filter bar that empties the table the
- *  moment you clear a checkbox reads as a bug. */
+/** An empty array means "no filter", never "match nothing". */
 export interface CostHistoryFilters {
   startDate?: string;
   endDate?: string;
   accountName?: string | string[];
   projectPath?: string | string[];
   model?: string | string[];
-  /** `undefined` includes both the main loop and subagents. */
   isSubagent?: boolean;
 }
 
@@ -48,8 +38,7 @@ export interface CostHistoryPeriod {
   period: string;
   cost_usd: number;
   request_count: number;
-  /** Distinct sessions touching this period. NOT summable across periods —
-   *  use `totals()` for a range-wide count. */
+  /** Not summable across periods; use `totals()`. */
   session_count: number;
   input_tokens: number;
   output_tokens: number;
@@ -62,7 +51,6 @@ export interface CostHistoryPeriod {
   is_estimated: number;
 }
 
-/** One period x model bucket, for the stacked-area chart. */
 export interface CostHistoryPeriodModel extends CostHistoryPeriod {
   model: string;
 }
@@ -99,11 +87,6 @@ export interface CostComponents {
   output_usd: number;
   cache_read_usd: number;
   cache_write_usd: number;
-  /** Share of spend that is context (fresh input + cache read + cache write)
-   *  rather than generated output. The headline the report exists to produce:
-   *  "87% of spend is context" reframes "we spend a lot on AI" as "we spend a
-   *  lot on re-sending context", which is a different and more fixable
-   *  problem. 0 when nothing matched. */
   context_share: number;
 }
 
@@ -113,17 +96,11 @@ export interface CachingRoi {
   cache_write_1h_tokens: number;
   cache_read_usd: number;
   cache_write_usd: number;
-  /** Reads per write. 0 when nothing was written to cache. */
   read_write_ratio: number;
-  /** Reads are billed at 0.1x input and writes at 1.25x, so caching pays for
-   *  itself somewhere around 2 reads per write. Below that it costs more than
-   *  it saves, which the UI must say out loud rather than printing a number. */
+  /** The UI must say this out loud rather than print a ratio. */
   below_break_even: boolean;
-  /** What the cache-read tokens would have cost at the full input rate, minus
-   *  what they did cost. Derived from the stored cache_read_usd so it stays
-   *  consistent with the rates actually billed. */
+  /** From the stored cache_read_usd, so it matches the rates actually billed. */
   saved_usd: number;
-  /** The extra paid for 1h-TTL writes over the 5m rate. */
   premium_1h_usd: number;
 }
 
@@ -131,7 +108,6 @@ export interface SubagentSplitRow {
   is_subagent: number;
   cost_usd: number;
   request_count: number;
-  /** 0 when the side recorded no requests. */
   usd_per_request: number;
 }
 
@@ -141,11 +117,8 @@ export interface UnpricedModel {
   cost_usd: number;
 }
 
-/** Distinct values available to the filter controls. Deliberately NOT narrowed
- *  by the multi-select filters themselves — a control that erases its own
- *  alternatives when you use it cannot be un-used. */
-/** Range-wide totals. Separate from `aggregate()` because `session_count` has
- *  to be counted once over the whole range, not summed per period. */
+/** Not narrowed by the multi-select filters: a control that erases its own alternatives cannot be un-used. */
+/** `session_count` is counted once over the range, never summed per period. */
 export interface CostTotals {
   cost_usd: number;
   request_count: number;
@@ -164,13 +137,8 @@ export interface CostFacets {
   maxDate: string | null;
 }
 
-/** Break-even reads-per-write. cacheRead is 0.10x input and cacheWrite5m is
- *  1.25x, so a write pays for itself after 1.25 / (1 - 0.10) ≈ 1.39 reads;
- *  2 is the conventional rule of thumb and the one the Python report uses. */
 const CACHE_BREAK_EVEN_RATIO = 2;
 
-/** Cache reads bill at 0.10x the input rate, so 0.90 of the notional full-rate
- *  cost is what caching saved. */
 const CACHE_READ_DISCOUNT = 0.1;
 
 export interface CostSessionRow {
@@ -205,15 +173,8 @@ export interface CostHistoryService {
   subagentSplit(filters: CostHistoryFilters): SubagentSplitRow[];
   unpriced(filters: CostHistoryFilters): UnpricedModel[];
   facets(filters: CostHistoryFilters): CostFacets;
-  /** Re-price every session whose transcripts (or pricing) changed since its
-   *  last scan. Overlapping calls share one sweep. */
   backfill(accounts: AccountLike[]): Promise<{ sessionsScanned: number }>;
-  /**
-   * Price one of OmniFex's own CLI runs, from its transcript, under the
-   * activity's label. Replaces any rows already held for the session id, so a
-   * run an earlier pass priced under the scratch path is relabelled, not
-   * doubled. See sessions/internal-spend.ts.
-   */
+  /** Replaces rows already held for the session id, so a run priced under the scratch path is relabelled, not doubled. */
   recordInternal: RecordInternalSpend;
 }
 
@@ -224,8 +185,7 @@ function whereClause(filters: CostHistoryFilters): { sql: string; params: unknow
   const multi = (column: string, value: string | string[] | undefined): void => {
     if (value === undefined) return;
     const values = Array.isArray(value) ? value : [value];
-    // An empty array is "the user cleared the checkboxes", which means show
-    // everything — not `IN ()`, which matches nothing.
+    // Not `IN ()`, which matches nothing.
     if (values.length === 0) return;
     clauses.push(`${column} IN (${values.map(() => '?').join(',')})`);
     params.push(...values);
@@ -243,21 +203,11 @@ function whereClause(filters: CostHistoryFilters): { sql: string; params: unknow
   return { sql: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
 
-/**
- * The session a row belongs to. `cli-unlogged-<id>` rows are that session's
- * spend the transcript never recorded; they carry their own id only so the
- * transcript rescan (`replaceSession(<id>)`) cannot delete them. Every count
- * and per-session grouping reads through this, so they are never a session of
- * their own.
- */
+/** `cli-unlogged-<id>` rows carry their own id only so `replaceSession(<id>)` cannot delete them; every count reads through this. */
 const SESSION_KEY = `CASE WHEN session_id LIKE '${UNLOGGED_SESSION_PREFIX}%'
   THEN substr(session_id, ${UNLOGGED_SESSION_PREFIX.length + 1}) ELSE session_id END`;
 
-/** The SUM columns every grouped query shares.
- *
- *  `session_count` is COUNT(DISTINCT ...), not a SUM — a session spanning two
- *  days contributes a row to each, so summing per-period counts would
- *  double-count it in any range total. */
+/** `session_count` is COUNT(DISTINCT): a session spanning two days has a row in each. */
 const SUM_COLUMNS = `
   SUM(cost_usd) AS cost_usd,
   SUM(request_count) AS request_count,
@@ -273,21 +223,12 @@ const PERIOD_EXPR: Record<'day' | 'week' | 'month', string> = {
   month: 'substr(date, 1, 7)',
 };
 
-/** Bump when what a scan extracts or how it prices changes in code: every
- *  persisted signature then goes stale and the next sweep re-reads everything. */
+/** Bump when extraction or pricing code changes: a restart does not re-price. */
 const COST_SCAN_VERSION = 1;
 
-/** Sessions scanned at once. Each read is chunked and every chunk yields, so
- *  this bounds memory and thread-pool share, not event-loop time. */
 const SCAN_CONCURRENCY = 2;
 
-/**
- * Everything other than the transcripts that decides a session's rows: the
- * scan code's version, the shipped rates and the user's pricing rows. Part of
- * every persisted signature, so a release with new rates, or an edited pricing
- * row, re-prices history on the next sweep — which a daemon restart used to do
- * by forgetting every signature.
- */
+/** Part of every signature, so new shipped rates or an edited pricing row re-price history. */
 function pricingKey(overrides: readonly ModelPricingInput[] | undefined): string {
   return createHash('sha256')
     .update(JSON.stringify([COST_SCAN_VERSION, SHIPPED_PRICING, overrides ?? null]))
@@ -295,14 +236,10 @@ function pricingKey(overrides: readonly ModelPricingInput[] | undefined): string
     .slice(0, 16);
 }
 
-/** A session's on-disk transcripts as one sweep saw them. */
 interface SessionFiles {
   main: FileStat | null;
   subagents: { file: string; stat: FileStat | null }[];
-  /** Main file `size:mtimeMs` plus every subagent transcript at any depth,
-   *  keyed on its path relative to `subagents/`, not its basename — two
-   *  workflows can each hold an `agent-<id>.jsonl`, and a basename-keyed
-   *  signature would let a new nested file hide behind an unchanged flat one. */
+  /** Keyed on the path relative to `subagents/`, not the basename: two workflows can each hold `agent-<id>.jsonl`. */
   signature: string;
 }
 
@@ -318,17 +255,12 @@ async function statSessionFiles(fsDeps: CostFs, mainPath: string, subagentsDir: 
   return { main, subagents, signature: `${main?.size ?? 0}:${main?.mtimeMs ?? 0}|${subs}` };
 }
 
-/** What changes when the CLI reports a new figure for any of the session's processes. */
 function cliUsageSignature(processes: readonly CliProcessUsage[]): string {
   return processes.map((p) => `${p.processId}:${p.baselineAt ?? ''}:${p.latestAt ?? ''}`).join(',');
 }
 
 export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCostFs): CostHistoryService {
-  // Session file path -> the signature it was last scanned at, in SQLite
-  // (`cost_scan_signatures`, migration 35) so it outlives the daemon. Lets a
-  // sweep skip sessions whose transcripts have not changed: kept in memory
-  // only, every restart re-read and re-parsed every transcript of every
-  // account — ~1.9 GB, in one synchronous call that froze every session.
+  // Persisted: re-reading every transcript on restart (~1.9 GB, synchronously) froze every session.
   const selectSignature = db.raw.prepare('SELECT signature FROM cost_scan_signatures WHERE file_path = ?');
   const upsertSignature = db.raw.prepare(`
     INSERT INTO cost_scan_signatures (file_path, signature) VALUES (?, ?)
@@ -387,9 +319,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
       .all(...params) as CostHistoryPeriod[];
   }
 
-  /** Period x model, for the stacked-area chart. Kept separate from
-   *  `aggregate` so the chart and the KPI tiles cannot disagree about the
-   *  total by rounding a re-summed breakdown differently. */
+  /** Separate from `aggregate` so the chart and KPI tiles cannot round the total differently. */
   function aggregateByModel(
     filters: CostHistoryFilters,
     groupBy: 'day' | 'week' | 'month',
@@ -404,7 +334,6 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
       .all(...params) as CostHistoryPeriodModel[];
   }
 
-  /** `GROUP BY` one or two columns with the shared SUM set, ordered by spend. */
   function grouped<T>(filters: CostHistoryFilters, columns: string): T[] {
     const { sql, params } = whereClause(filters);
     return db.raw
@@ -439,8 +368,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
 
   function components(filters: CostHistoryFilters): CostComponents {
     const { sql, params } = whereClause(filters);
-    // COALESCE because SUM over no rows is NULL, and a null cost_usd reaching
-    // the renderer renders as "$NaN" rather than "$0.00".
+    // COALESCE: SUM over no rows is NULL, which renders as "$NaN".
     const r = db.raw
       .prepare(`
         SELECT COALESCE(SUM(cost_usd), 0) AS cost_usd,
@@ -470,16 +398,11 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
 
     const ratio = r.cache_write_tokens > 0 ? r.cache_read_tokens / r.cache_write_tokens : 0;
 
-    // Derived from the STORED cache_read_usd rather than tokens x a blended
-    // rate: rates differ per model and are effective-dated, so re-deriving
-    // here would drift from what was actually billed.
+    // From the stored cache_read_usd: rates are per-model and effective-dated.
     const fullRateUsd = r.cache_read_usd / CACHE_READ_DISCOUNT;
     const savedUsd = fullRateUsd - r.cache_read_usd;
 
-    // The 1h premium needs a per-model input rate, which the aggregate has
-    // averaged away. Recover it from the 1h tokens' share of cache_write_usd:
-    // a 1h token costs 2.00x input and a 5m token 1.25x, so the extra paid is
-    // 0.75/2.00 of what those tokens cost.
+    // A 1h token costs 2.00x input and a 5m token 1.25x, so the premium is 0.75/2.00 of what 1h tokens cost.
     const writeTokens = r.cache_write_tokens;
     const share1h = writeTokens > 0 ? r.cache_write_1h_tokens * 2 / (r.cache_write_1h_tokens * 2 + (writeTokens - r.cache_write_1h_tokens) * 1.25) : 0;
     const premium1hUsd = r.cache_write_usd * share1h * (0.75 / 2);
@@ -510,9 +433,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
     }));
   }
 
-  /** Models priced by the sonnet-tier fallback rather than a table entry.
-   *  Surfaced, never silently defaulted — a new model billed at the wrong rate
-   *  with no warning is how `<synthetic>` went unnoticed for months. */
+  /** Surfaced, never silently defaulted to a rate. */
   function unpriced(filters: CostHistoryFilters): UnpricedModel[] {
     const { sql, params } = whereClause(filters);
     const where = sql ? `${sql} AND is_estimated = 1` : 'WHERE is_estimated = 1';
@@ -526,16 +447,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
   }
 
   function facets(filters: CostHistoryFilters): CostFacets {
-    // The date range narrows every facet. Beyond that, a control must not
-    // narrow its OWN list — select "Work" and "Personal" would vanish from
-    // the list you need to get back — so account and model are listed
-    // against the date range alone.
-    //
-    // Projects are the one deliberate exception, and it is not a violation of
-    // that rule: the project list is narrowed by ACCOUNT, never by the
-    // project selection itself. A project belongs to exactly one account's
-    // config dir, so showing every account's projects under a chosen account
-    // is noise rather than a useful alternative.
+    // A control never narrows its own list. Projects narrow by account only: each belongs to one account's config dir.
     const dateOnly = { startDate: filters.startDate, endDate: filters.endDate };
     const { sql, params } = whereClause(dateOnly);
     const distinct = (name: string, where: { sql: string; params: unknown[] }): string[] =>
@@ -583,8 +495,6 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
     subagentsDir: string;
   }
 
-  /** Read one session's transcripts and replace its rows. False when its main
-   *  transcript could not be read (vanished mid-sweep): nothing written. */
   async function scanSession(
     item: SessionItem,
     files: SessionFiles,
@@ -602,8 +512,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
       if (sub) subagents.push({ agentId: subagentId(file), rows: [...sub.state.fold.rows.values()] });
     }
     const usage = claimSessionUsage([...main.state.fold.rows.values()], subagents);
-    // The real project path, from `cwd` on an early line; the dir name's
-    // `/`→`-` encoding is lossy. Mirrors usage.ts's recovery approach.
+    // The dir name's `/`→`-` encoding is lossy; prefer `cwd`.
     const projectPath = main.state.fold.cwd ?? item.dirName.replace(/-/g, '/');
     const meta = { sessionId, accountName: account.name, configDir: account.config_dir, projectPath, overrides };
     replaceSession(sessionId, priceSessionUsage(usage, meta).dailyRows);
@@ -628,10 +537,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
   async function sweep(accounts: AccountLike[]): Promise<{ sessionsScanned: number }> {
     const overrides = createModelPricingService(db).toOverrides();
     const pricing = pricingKey(overrides);
-    // The CLI's own per-process totals, read once per sweep. A new figure
-    // (a side question after the last turn) changes nothing on disk, so it
-    // joins the file signature below — otherwise the session would be skipped
-    // as unchanged and the spend would wait for its next transcript write.
+    // Part of the signature: a new CLI figure changes nothing on disk, so the session would be skipped as unchanged.
     const cliUsage = createCliProcessUsageStore(db).listBySession();
 
     const items: SessionItem[] = [];
@@ -639,8 +545,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
       const projectsDir = path.join(account.config_dir, 'projects');
       for (const projectEntry of await fsDeps.listDir(projectsDir)) {
         if (!projectEntry.isDirectory) continue;
-        // OmniFex's own runs are priced by recordInternal under their
-        // activity's label. Priced here they would land under the scratch path.
+        // Priced by recordInternal; here they would land under the scratch path.
         if (isSummaryScratchProject(projectEntry.name)) continue;
         const projectDir = path.join(projectsDir, projectEntry.name);
         for (const entry of await fsDeps.listDir(projectDir)) {
@@ -657,10 +562,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
       }
     }
 
-    // replaceSession keys on the session id, and EnterWorktree can leave one
-    // id's transcripts in two project dirs: the last one scanned wins. Scan
-    // each id's files in listing order within one task, so that stays the
-    // later dir however the concurrent reads interleave.
+    // EnterWorktree can leave one id in two dirs and replaceSession keys on id: scan each id's files in order, in one task, so the later dir wins.
     const byId = new Map<string, SessionItem[]>();
     for (const item of items) {
       const group = byId.get(item.sessionId);
@@ -668,8 +570,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
       else byId.set(item.sessionId, [item]);
     }
 
-    // A group is re-read whole when any member changed, so the later dir
-    // wins even when only the earlier one was written to.
+    // Re-read whole, so the later dir wins even when only the earlier one changed.
     const scanGroup = async (group: SessionItem[]): Promise<number> => {
       const processes = cliUsage.get(group[0].sessionId) ?? [];
       const looked = [];
@@ -679,7 +580,7 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
         const stored = selectSignature.get(item.mainPath) as { signature: string } | undefined;
         looked.push({ item, files, signature, unchanged: stored?.signature === signature });
       }
-      if (looked.every((l) => l.unchanged)) return 0; // unchanged, skip entirely
+      if (looked.every((l) => l.unchanged)) return 0;
       let n = 0;
       for (const { item, files, signature } of looked) {
         if (!(await scanSession(item, files, processes, overrides))) continue;
@@ -692,14 +593,12 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
       try {
         return await scanGroup(group);
       } catch (err) {
-        // One bad transcript must not cost the rest of the sweep; it is
-        // tried again next sweep, its signature unrecorded.
+        // One bad transcript must not cost the sweep; its signature stays unrecorded so it is retried.
         console.warn(`[cost-history] scan failed for session ${group[0].sessionId}:`, err);
         return 0;
       }
     });
 
-    // Forget transcripts the CLI has pruned, so the table tracks what exists.
     const seen = new Set(items.map((i) => i.mainPath));
     for (const account of accounts) {
       const prefix = path.join(account.config_dir, 'projects') + path.sep;
@@ -712,8 +611,6 @@ export function createCostHistoryService(db: Database, fsDeps: CostFs = nodeCost
     return { sessionsScanned: scanned.reduce((n, x) => n + x, 0) };
   }
 
-  // One sweep at a time: the hourly tick, the startup pass and a manual rescan
-  // can all land while a cold first sweep is still reading.
   let running: Promise<{ sessionsScanned: number }> | null = null;
   function backfill(accounts: AccountLike[]): Promise<{ sessionsScanned: number }> {
     running ??= sweep(accounts).finally(() => { running = null; });

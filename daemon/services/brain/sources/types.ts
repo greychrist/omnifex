@@ -1,209 +1,84 @@
-/**
- * Shared vocabulary for Brain source adapters.
- *
- * A "source" is anything that can produce indexable material: session
- * transcripts, repo artifacts, auto-memory notes, explicit captures. All of
- * them implement `BrainSource`, so adding one changes nothing upstream
- * (spec §5).
- */
 import type { ParsedNote } from '../types';
 
-/**
- * One candidate for indexing, with a key that is stable across restarts.
- *
- * `accountId` is derived from WHERE the item lives — never from `resolve()`,
- * never from a caller-supplied default (spec §4). An adapter that cannot
- * determine ownership must omit the item rather than guess; guessing writes
- * one account's material into another account's vault, which is the
- * confidentiality failure this whole design exists to prevent.
- */
+/** `accountId` comes from where the item lives, never resolve() or a default; an adapter that cannot tell must omit the item. */
 export interface SourceItem {
-  /** The adapter that produced this. Matches `BrainSource.id`. */
   sourceId: string;
-  /** Unique within (accountId, sourceId). For sessions: the session id. */
   itemKey: string;
-  /** The owning account. */
   accountId: number;
-  /**
-   * Absolute path to the backing file. When an item spans several (see
-   * `paths`), this is the newest — the one whose project the item is grouped
-   * and excluded under.
-   */
+  /** The newest file when `paths` has several: the item is grouped and excluded under its project. */
   path: string;
-  /**
-   * Every file backing this item, oldest first, when there is more than one.
-   *
-   * A session id is not unique per file: the CLI stores transcripts per
-   * project directory, so resuming a conversation in another cwd continues it
-   * in a second file under the same id. Those files are halves of ONE
-   * conversation and must be one item — emitting one per file collides on
-   * `(account_id, source_id, item_key)`, which means a shared state row, a
-   * duplicate React key, and indexing that distils half the conversation and
-   * records the whole thing as done.
-   *
-   * Absent for the ordinary single-file case. Read it through `pathsOf`, never
-   * directly, so callers have one code path.
-   */
+  /** A session resumed in another cwd spans several files that must stay one item. Read through `pathsOf`, never directly. */
   paths?: string[];
-  /** Modification time in epoch ms, from `fs.stat`. */
   mtimeMs: number;
-  /** Size in bytes. Half of the cheap change check. */
   size: number;
-  /**
-   * The project folder this item belongs to, as an absolute path.
-   *
-   * The Sources pane groups on it and exclusions key on it, so every adapter
-   * must produce the SAME identity for the same folder — a session, its
-   * auto-memory and its CLAUDE.md are one project. Adapters that only hold the
-   * CLI's encoded directory name must recover the path authoritatively
-   * (`recoverProjectPath`) rather than decoding it: the encoding is lossy, and
-   * a folder whose own name contains a dash decodes to a path that does not
-   * exist.
-   */
+  /** Every adapter must produce the same identity for a folder; recover it (`recoverProjectPath`), never decode the lossy encoding. */
   label: string;
 }
 
-/**
- * Why an item was admitted or skipped.
- *
- * Spec §5 types `admit()` as returning a bare boolean. It returns this
- * instead: the reason is what the Sources pane displays, and inspecting the
- * gate's decisions before spending tokens is the stated purpose of this build
- * step. The gate itself is unchanged — still deterministic, still no model.
- */
 export interface AdmitVerdict {
   admitted: boolean;
-  /** Populated in both directions. Never empty. */
+  /** Never empty. */
   reason: string;
 }
 
-/**
- * Deterministic facts about a session, extracted with NO model (spec §6).
- * The model's job is prose and aliases; everything here is read straight off
- * the transcript rows.
- */
+/** Read straight off transcript rows, with no model. */
 export interface SessionMetadata {
   sessionId: string;
-  /** The `cwd` the session ran in. Null when no row carries one. */
   projectPath: string | null;
   gitBranch: string | null;
-  /** Distinct models, in first-seen order. A session can switch mid-run. */
   models: string[];
   cliVersion: string | null;
   startedAt: string | null;
   endedAt: string | null;
   durationMs: number | null;
-  /** User prompts — the turn anchor, per spec §6. */
   promptCount: number;
-  /** Assistant messages carrying prose (not tool_use, not thinking). */
   proseCount: number;
-  /**
-   * Absolute paths named by file-touching tool calls, deduped, in first-seen
-   * order. Paths only — file CONTENTS never appear anywhere in a distillation.
-   */
+  /** Paths only: file contents never appear in a distillation. */
   filesTouched: string[];
   terminalStatus: 'completed' | 'error' | 'unknown';
 }
 
-/**
- * Deterministic facts about an explicitly captured note (`brain_remember`).
- * There is no session behind one, so it shares none of `SessionMetadata`.
- */
 export interface CaptureMetadata {
-  /** ISO 8601, from the moment the tool was called. */
   capturedAt: string;
-  /** Project the capture named, when it named one. */
   project: string | null;
-  /** Working directory of the session that captured it. */
   cwd: string | null;
 }
 
-/**
- * Deterministic facts about a repository's agent instruction file
- * (`CLAUDE.md` / `AGENTS.md`). There is no session and no capture behind one.
- */
 export interface ArtifactMetadata {
   repoPath: string;
-  /** Repo-relative, e.g. "CLAUDE.md" or "src/CLAUDE.md". */
   file: string;
 }
 
-/**
- * What a distillation knows about its item.
- *
- * A discriminated union rather than one shape with optional fields: the
- * extraction prompt STATES these as facts, and a capture reporting
- * `promptCount: 1` would be feeding the model a fabricated fact about the very
- * material it is summarising — the failure mode Plan 4a recorded when Haiku
- * invented internals it could not see.
- */
+/** A union, not optional fields: the prompt states these as facts, so a kind must never carry another's. */
 export type ItemMetadata =
   | ({ kind: 'session' } & SessionMetadata)
   | ({ kind: 'capture' } & CaptureMetadata)
   | ({ kind: 'artifact' } & ArtifactMetadata);
 
-/** The bounded prose plus structured metadata handed to the extractor. */
 export interface DistilledItem {
-  /** Bounded prose. Never contains tool results, file contents or diffs. */
+  /** Never contains tool results, file contents or diffs. */
   prose: string;
   metadata: ItemMetadata;
-  /** True when the ceiling forced oldest-first truncation. */
   truncated: boolean;
 }
 
-/**
- * A finished note and where it goes, built with no model.
- *
- * The path is chosen by the ADAPTER rather than by `resolveEntityPath`: a
- * translated note is a projection of one source file, not an entity other
- * sources merge into, so folding it into a same-named entity note would blend
- * two different kinds of provenance under one title.
- */
+/** The adapter picks the path, never resolveEntityPath: a translated note must not blend into a same-named entity note. */
 export interface TranslatedNote {
-  /** Vault-relative, e.g. "Notes/project_nodepty_pty_leak.md". */
   relPath: string;
   note: ParsedNote;
 }
 
-/**
- * A source of indexable material. Every method is independently testable, and
- * GitHub/Jira adapters later implement this same interface with nothing
- * upstream changing (spec §5).
- *
- * A source produces material one of two ways: `distill()` for material a model
- * turns into entities, or `translate()` for material that is already a note.
- * Exactly one of them is implemented.
- */
+/** Implements exactly one of `distill()` or `translate()`. */
 export interface BrainSource {
   readonly id: string;
-  /**
-   * Every candidate across every account, each stamped with its owning
-   * account. There is deliberately no `accountId` parameter: ownership is a
-   * property of where an item lives, so a caller that could pass one would be
-   * asserting ownership rather than deriving it.
-   */
+  /** Deliberately no `accountId` parameter: ownership is derived from where an item lives, never asserted. */
   discover(): Promise<SourceItem[]>;
-  /**
-   * The deterministic gate. A source whose gate reads a large file (a
-   * transcript) answers asynchronously, so the read never runs on the
-   * daemon's event loop; one that only looks at a few bytes may answer
-   * directly. Callers always `await` it.
-   */
+  /** A gate that reads a large file must answer async, off the event loop. */
   admit(item: SourceItem): AdmitVerdict | Promise<AdmitVerdict>;
-  /** Bounded prose for the model. Absent on a source that translates instead. */
   distill?(item: SourceItem): Promise<DistilledItem>;
-  /**
-   * Notes built with NO model. When present, `indexSource` skips extraction
-   * entirely — no extractor, no owning-account config dir, no tokens spent.
-   * The gate, change detection, the git commit and the queue are unchanged.
-   */
   translate?(item: SourceItem): Promise<TranslatedNote[]>;
 }
 
-/**
- * Every file backing an item, oldest first — the one place that knows a
- * single-file item and a multi-file one are the same shape.
- */
 export function pathsOf(item: Pick<SourceItem, 'path' | 'paths'>): string[] {
   return item.paths ?? [item.path];
 }

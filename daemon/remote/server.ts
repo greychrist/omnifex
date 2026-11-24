@@ -1,16 +1,4 @@
-/**
- * `ProtocolServer` over WebSocket, plus the handful of HTTP routes a person
- * with `curl` needs to trust the thing is up.
- *
- * Transport concerns live here and nowhere else: framing, the `hello`
- * handshake, request/response correlation, per-client subscriptions, fan-out,
- * dead-peer detection, static files. What a method *does* is a handler's
- * business (`handlers.ts`); what a message *is* is the protocol's
- * (`src/protocol`).
- *
- * There is no authentication. The bind address is the boundary — see
- * `config.ts` for why it is never `0.0.0.0` by default.
- */
+// No authentication: the bind address is the boundary.
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
@@ -44,23 +32,15 @@ export interface RemoteServerLogger {
 
 export interface RemoteServerDeps {
   host: string;
-  /**
-   * Further addresses served on the same port — loopback, when `host` is the
-   * tailnet address (`extraListenHosts`). One that cannot be bound is logged
-   * and skipped: the main address is what the daemon exists to serve.
-   */
   extraHosts?: string[];
   port: number;
   daemonVersion: string;
   capabilities?: Record<string, unknown>;
-  /** Directory of static files served at `/` (the web client). Null = none. */
   webRoot?: string | null;
-  /** JSON bodies for the curl-level routes. */
   api: {
     health(): unknown;
     sessions(): unknown;
     projects(): unknown;
-    /** Web Push (Phase 6). Absent → the routes 404. */
     push?: {
       publicKey(): string;
       subscribe(body: unknown): unknown;
@@ -68,7 +48,6 @@ export interface RemoteServerDeps {
     };
   };
   log?: RemoteServerLogger;
-  /** Dead-peer ping interval. Tests shorten it; 0 disables. */
   heartbeatMs?: number;
 }
 
@@ -76,19 +55,10 @@ export interface RemoteServer extends ProtocolServer {
   listen(): Promise<{ host: string; port: number }>;
   close(): Promise<void>;
   readonly address: { host: string; port: number } | null;
-  /** Every address being served: the main host, then the extras. */
   readonly hosts: readonly string[];
-  /**
-   * Serve one more address on the running port — the tailnet address that
-   * was not up when the daemon started. False when it cannot be bound.
-   */
   addHost(host: string): Promise<boolean>;
-  /** Connections accepted since startup. Monotonic, so "was anyone ever
-   *  here?" survives a client that came and went between two observations. */
   readonly connectionsSeen: number;
-  /** How many clients are subscribed to a session right now. */
   subscriberCount(sessionId: string): number;
-  /** The clients subscribed to a session right now. */
   subscribers(sessionId: string): readonly ClientContext[];
 }
 
@@ -114,7 +84,6 @@ const MIME: Record<string, string> = {
 interface Connection extends ClientContext {
   socket: WebSocket;
   alive: boolean;
-  /** Set once `hello` has been accepted; requests before it are refused. */
   greeted: boolean;
   clientId: string;
   clientKind: ClientKind;
@@ -122,21 +91,17 @@ interface Connection extends ClientContext {
   closeListeners: (() => void)[];
 }
 
-/** How long `close()` waits for clients to answer the close frame. */
 const CLOSE_GRACE_MS = 1_000;
 
 export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
   const log = deps.log ?? NOOP_LOG;
   const heartbeatMs = deps.heartbeatMs ?? 30_000;
-  // One per daemon run: seqs restart with the process, and this is how a
-  // client tells that happened.
+  // One per daemon run: seqs restart with the process, and this is how a client tells.
   const bootId = randomUUID();
 
   let handlers: ProtocolHandlers | null = null;
   const connections = new Set<Connection>();
-  // Monotonic, unlike `connections.size`: the dev instance's idle watch has to
-  // know whether a client was EVER here, and a client that came and went
-  // between two polls leaves no trace in the set.
+  // Monotonic, unlike `connections.size`: the idle watch must know whether a client was EVER here.
   let connectionsSeen = 0;
   const subscribers = new Map<string, Set<Connection>>();
   let http: Server | null = null;
@@ -144,10 +109,6 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
   let extras: { host: string; http: Server; wss: WebSocketServer }[] = [];
   let heartbeat: NodeJS.Timeout | null = null;
   let address: { host: string; port: number } | null = null;
-
-  // -------------------------------------------------------------------------
-  // Sending
-  // -------------------------------------------------------------------------
 
   function send(conn: Connection, message: ServerMessage): void {
     if (conn.socket.readyState !== conn.socket.OPEN) return;
@@ -163,10 +124,6 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
   function respondError(conn: Connection, requestId: string, error: ProtocolError): void {
     send(conn, { type: 'response', requestId, ok: false, error });
   }
-
-  // -------------------------------------------------------------------------
-  // Subscriptions
-  // -------------------------------------------------------------------------
 
   function subscribe(conn: Connection, sessionId: string): void {
     conn.subscriptions.add(sessionId);
@@ -195,10 +152,6 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
       }
     }
   }
-
-  // -------------------------------------------------------------------------
-  // Inbound
-  // -------------------------------------------------------------------------
 
   async function dispatch(conn: Connection, message: ClientMessage): Promise<void> {
     if (message.type === 'hello') {
@@ -307,19 +260,13 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
     });
   }
 
-  // -------------------------------------------------------------------------
-  // HTTP
-  // -------------------------------------------------------------------------
-
   function json(res: ServerResponse, status: number, body: unknown): void {
     const text = JSON.stringify(body, null, 2);
     res.writeHead(status, {
       'content-type': 'application/json; charset=utf-8',
       'content-length': Buffer.byteLength(text),
       'cache-control': 'no-store',
-      // The Electron renderer (localhost in dev, its own scheme packaged)
-      // reads /healthz for the title-bar Daemon panel; that is a cross-origin
-      // GET. Reachability is the tailnet's job, so any origin may read.
+      // Any origin may read: reachability is the tailnet's job.
       'access-control-allow-origin': '*',
     });
     res.end(text);
@@ -329,8 +276,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
     const root = deps.webRoot;
     if (!root) return false;
     const rootAbs = resolve(root);
-    // Resolve inside the root and refuse anything that escapes it. Decoding
-    // first so `%2e%2e` cannot slip past the `..` check.
+    // Decode first so `%2e%2e` cannot slip past the `..` check.
     let decoded: string;
     try {
       decoded = decodeURIComponent(urlPath);
@@ -347,8 +293,6 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
       st = existsSync(file) ? statSync(file) : null;
     }
     if (!st?.isFile()) {
-      // SPA fallback: a deep link into the client renders index.html and lets
-      // the client router take it from there. Asset-looking paths 404.
       if (extname(decoded)) return false;
       file = join(rootAbs, 'index.html');
       if (!existsSync(file)) return false;
@@ -395,7 +339,6 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
   function onRequest(req: IncomingMessage, res: ServerResponse): void {
     const url = new URL(req.url ?? '/', 'http://localhost');
 
-    // The only writes: push subscription management, JSON in, JSON out.
     if (req.method === 'POST' && url.pathname.startsWith('/api/push/')) {
       const push = deps.api.push;
       if (!push) {
@@ -440,11 +383,6 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Lifecycle
-  // -------------------------------------------------------------------------
-
-  /** The same request handler and socket endpoint on one more address. */
   async function listenOn(host: string, port: number): Promise<boolean> {
     const extraHttp = createServer(onRequest);
     const extraWss = new WebSocketServer({ server: extraHttp, path: '/ws' });
@@ -475,7 +413,6 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
     get clients() {
       return [...connections];
     },
-    /** How many connections this daemon has accepted since it started. */
     get connectionsSeen() {
       return connectionsSeen;
     },
@@ -549,9 +486,7 @@ export function createRemoteServer(deps: RemoteServerDeps): RemoteServer {
       return new Promise((resolvePromise) => {
         if (heartbeat) clearInterval(heartbeat);
         heartbeat = null;
-        // A polite close, then a hard one: a peer that never answers (a
-        // sleeping iPad) would otherwise hold `http.close()` for ws's 30s close
-        // timeout, and the app quitting waits only seconds for the daemon.
+        // Hard close after a polite one: a silent peer holds http.close() for 30s, and the quitting app waits only seconds.
         const sockets = [...connections].map((conn) => conn.socket);
         for (const socket of sockets) socket.close(1001, 'daemon shutting down');
         const hardClose = setTimeout(() => {

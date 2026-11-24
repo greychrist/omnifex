@@ -1,18 +1,4 @@
-/**
- * File watchers that keep sign-in state honest across clients.
- *
- * A logout or login done outside OmniFex — in a terminal — changes the
- * account's credentials on disk and nothing else. Without a watcher the
- * verification badge stays red (or green) until something remounts. So the
- * daemon watches each Claude account's `.claude.json` for an identity change
- * and each Codex account's `auth.json`, and tells every client which config
- * dir changed (`account-identity-changed` / `codex-auth-status-changed`).
- *
- * This lived in Electron main, which meant the iPad never heard about it and
- * the watchers stopped whenever the window was closed. The account list
- * changes under it, so `sync()` is called after every account mutation:
- * watchers for new accounts start, watchers for removed ones stop.
- */
+// `sync()` must be called after every account mutation.
 
 interface WatchedAccount {
   config_dir: string;
@@ -32,7 +18,6 @@ export interface AccountWatchersDeps {
 }
 
 export interface AccountWatchers {
-  /** Bring the watcher set in line with the current account list. */
   sync(): void;
   disposeAll(): void;
 }

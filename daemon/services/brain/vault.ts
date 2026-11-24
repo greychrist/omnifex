@@ -3,7 +3,6 @@ import { join, dirname, basename, relative, resolve, sep } from 'node:path';
 import { parseNote, serializeNote } from './frontmatter';
 import { NOTE_FOLDERS, type NoteType, type ParsedNote } from './types';
 
-/** Thrown when a note name or relative path would escape the vault root. */
 export class VaultPathError extends Error {
   constructor(message: string) {
     super(message);
@@ -11,18 +10,10 @@ export class VaultPathError extends Error {
   }
 }
 
-/** Directories never scanned for notes. */
 const EXCLUDED_DIRS = new Set(['.git', '.omnifex']);
 
-/** POSIX NAME_MAX. Longer names fail at the syscall with a raw ENAMETOOLONG. */
 const MAX_NAME_BYTES = 255;
 
-/**
- * Seed note-type definitions written to config/notes.json on first use. Kept
- * config-driven (Rowboat's note_system.ts pattern) so adding a type is an edit
- * rather than a code change, and so the template and the extraction prompt
- * render from one source and cannot drift.
- */
 const DEFAULT_NOTE_DEFS = [
   {
     type: 'Project',
@@ -54,7 +45,7 @@ export interface Vault {
   notePath(type: NoteType, name: string): string;
   readNote(relPath: string): ParsedNote;
   writeNote(relPath: string, note: ParsedNote): void;
-  /** Removes a note. Absent is not an error. */
+  /** Absent is not an error. */
   deleteNote(relPath: string): void;
   listNotes(): string[];
   noteTitle(relPath: string): string;
@@ -63,10 +54,7 @@ export interface Vault {
 export function createVault(root: string): Vault {
   const absoluteRoot = resolve(root);
 
-  /**
-   * Resolve the real root once. Symlink checks compare against this, not the
-   * lexical root, so a vault reached via a symlinked path still works.
-   */
+  // Symlink checks compare against the real root, so a vault reached via a symlink still works.
   let cachedRealRoot: string | null = null;
   function realRoot(): string {
     if (cachedRealRoot === null) {
@@ -75,20 +63,7 @@ export function createVault(root: string): Vault {
     return cachedRealRoot;
   }
 
-  /**
-   * Reject a path whose target is a regular file with more than one name.
-   *
-   * A hard link has no distinct realpath from its target — both names resolve
-   * to the same inode — so the containment check below cannot see one. The link
-   * is legitimately inside this vault; the *inode* is shared with another. So
-   * reading it returns the other file's bytes and writing it truncates them,
-   * which is the same defect `registry.ts`'s `ensureVaultIndexPath` already
-   * closes for the index directory, applied here to note files.
-   *
-   * Directories are exempt: '.' and '..' make `nlink > 1` normal for them.
-   * APFS/Time Machine clones use copy-on-write `clonefile`, which does not
-   * raise `nlink`, so ordinary backups do not trip this.
-   */
+  /** Hard links share an inode, so realpath containment cannot see them. Directories are exempt: nlink > 1 is normal there. */
   function assertSingleName(abs: string, relPath: string): void {
     const stat = lstatSync(abs, { throwIfNoEntry: false });
     if (stat && stat.isFile() && stat.nlink > 1) {
@@ -96,15 +71,7 @@ export function createVault(root: string): Vault {
     }
   }
 
-  /**
-   * Resolve a vault-relative path, refusing anything that escapes the root.
-   *
-   * A lexical prefix check is not sufficient: a symlink INSIDE the vault whose
-   * target is outside it passes the string test, because dereferencing happens
-   * in the OS afterwards. So we also resolve the deepest EXISTING ancestor with
-   * realpathSync and re-check. The ancestor walk is what makes this work for
-   * writes to files that do not exist yet.
-   */
+  /** A lexical prefix check is not enough: a symlink inside the vault can point out, so realpath the deepest existing ancestor. */
   function safeJoin(relPath: string): string {
     const abs = resolve(absoluteRoot, relPath);
     if (abs !== absoluteRoot && !abs.startsWith(absoluteRoot + sep)) {
@@ -176,8 +143,7 @@ export function createVault(root: string): Vault {
     },
 
     deleteNote(relPath: string): void {
-      // safeJoin first: deletion has to be judged by the same containment and
-      // hard-link rules as reading and writing, or it becomes the one way out.
+      // safeJoin first: deletion must obey the same containment and hard-link rules.
       rmSync(safeJoin(relPath), { force: true });
     },
 
@@ -194,22 +160,17 @@ export function createVault(root: string): Vault {
           if (EXCLUDED_DIRS.has(entry)) continue;
           const abs = join(dir, entry);
           try {
-            // lstat, not stat: a symlink is never followed, so a link pointing
-            // outside the vault can neither be listed nor round-tripped back
-            // into readNote/writeNote by a caller enumerating the vault.
+            // lstat, never stat: a symlink out of the vault must never be listed.
             const stat = lstatSync(abs);
             if (stat.isSymbolicLink()) continue;
             if (stat.isDirectory()) walk(abs);
             else if (stat.isFile() && entry.endsWith('.md')) {
-              // Same reasoning as assertSingleName: a hard-linked file is one
-              // inode wearing two names. Listing it would round-trip it back
-              // into readNote, which now refuses it — so it could only ever
-              // surface as an error in the UI.
+              // readNote refuses hard-linked files, so never list them.
               if (stat.nlink > 1) continue;
               out.push(relative(absoluteRoot, abs).split(sep).join('/'));
             }
           } catch {
-            continue; // unstat-able entry (dangling link, race) — skip it
+            continue;
           }
         }
       };

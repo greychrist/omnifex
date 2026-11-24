@@ -1,7 +1,3 @@
-// Plugin enrichment — read .claude-plugin/plugin.json manifests and each
-// plugin's scope, so the renderer can show richer info than what the CLI's
-// reloadPlugins response carries.
-
 import fs from 'node:fs';
 import path from 'node:path';
 import { readModModules, type ModInspection } from './mods';
@@ -14,14 +10,10 @@ export interface PluginBase {
 
 export type PluginScope = 'user' | 'project' | 'local' | 'builtin' | 'unknown';
 
-/** The CLI's `path` for a plugin built into Claude Code (2.1.288 init). */
 export const BUILTIN_PLUGIN_PATH = 'builtin';
 
 export interface PluginMod {
-  /** The hooks modules hooks.json names. */
   modules: string[];
-  /** What `claude plugin validate` says it does; null until inspected, or
-   *  when validate could not read it. */
   inspection: ModInspection | null;
 }
 
@@ -31,7 +23,6 @@ export interface EnrichedPlugin extends PluginBase {
   description?: string;
   author?: string;
   authorEmail?: string;
-  /** Non-null when the plugin holds mod code. */
   mod: PluginMod | null;
 }
 
@@ -73,21 +64,14 @@ export function inferScope(
   return 'unknown';
 }
 
-/** One install of a plugin, as the CLI records it. */
 interface InstallRecordEntry {
   scope?: string;
   projectPath?: string;
 }
 
-/** `name@marketplace` → every scope that id is installed under. */
 export type InstalledPlugins = Map<string, InstallRecordEntry[]>;
 
-/**
- * The CLI's own record of what is installed where:
- * `<config>/plugins/installed_plugins.json`, `{ version: 2, plugins: { id: [entry] } }`.
- * A missing or unreadable file is an empty record — the folder guess still
- * answers — never an error that would empty the plugin list.
- */
+// A missing or unreadable file is an empty record, never an error that would empty the plugin list.
 export function readInstalledPlugins(
   configDir: string,
   readFile: (p: string) => string = (p) => fs.readFileSync(p, 'utf-8'),
@@ -106,13 +90,7 @@ export function readInstalledPlugins(
   }
 }
 
-/**
- * The scope the CLI recorded for `id`, as this session sees it. One plugin
- * can be installed user-wide and for particular projects at once; an install
- * for this session's project is the more specific answer, so it wins. Null
- * when the record does not list the id, or lists only a scope OmniFex has no
- * group for — the caller then falls back to the folder guess.
- */
+// A project install outranks a user-wide one.
 export function scopeFromInstallRecord(
   installed: InstalledPlugins,
   id: string,
@@ -136,44 +114,14 @@ function isInside(child: string, parent: string): boolean {
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
-/**
- * Characters that are invisible or reorder what follows them.
- *
- *  • C0/C1 controls and DEL, minus the whitespace handled below. This is what
- *    strips the ESC out of an ANSI sequence.
- *  • U+200B-200F zero-width space/non-joiner/joiner and the LTR/RTL marks.
- *  • U+202A-202E and U+2066-2069 — bidi embeddings, overrides and isolates.
- *    U+202E is the "gpj.exe renders as exe.jpg" trick.
- *  • U+2060-2064 word joiner and invisible operators, U+00AD soft hyphen,
- *    U+180E Mongolian vowel separator, U+FEFF BOM.
- */
+// Controls (the ESC of ANSI), zero-width, bidi overrides (U+202E spoofing), soft hyphen, BOM.
 const INVISIBLE_RE =
   // eslint-disable-next-line no-control-regex -- deliberate: stripping control characters is the point.
   /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
 
-/**
- * Make manifest-supplied text safe to render.
- *
- * A plugin's `.claude-plugin/plugin.json` is written by whoever published the
- * plugin, and OmniFex reads it directly rather than through the CLI — so the
- * CLI's own marketplace hardening (2.1.247 rejects names with control or
- * invisible characters and escapes marketplace text in `/plugin` output) does
- * not cover the fields we surface ourselves.
- *
- * This is not an injection defence: React escapes markup, so the exposure is
- * spoofing — a name that renders as a different name, or a description that
- * reorders the row around it. Strip rather than reject, so a plugin with a
- * sloppy manifest still lists.
- *
- * Tab/newline/CR become a space instead of vanishing: dropping them outright
- * would turn "first\nsecond" into "firstsecond", silently merging words.
- * Returns undefined for absent input and for text that sanitizes to nothing,
- * so a hostile field reads as missing rather than as a blank row.
- */
-/** Stand-in for a name that sanitizes to nothing. Same wording the CLI uses
- *  for an unprintable marketplace plugin name. */
 const UNPRINTABLE_NAME = '(unprintable plugin name)';
 
+// Manifests bypass the CLI's marketplace hardening. Strip, don't reject; whitespace becomes a space so words don't merge.
 export function sanitizeManifestText(value: string | undefined): string | undefined {
   if (typeof value !== 'string') return undefined;
   const cleaned = value
@@ -189,7 +137,6 @@ export function enrichPlugin(
   options: {
     configDir?: string;
     projectPath?: string;
-    /** The CLI's install record, read once per list by the caller. */
     installed?: InstalledPlugins;
     readFile?: (p: string) => string;
   } = {},
@@ -200,17 +147,11 @@ export function enrichPlugin(
   const author = typeof manifest?.author === 'string'
     ? { name: manifest.author }
     : manifest?.author ?? {};
-  // `path` is deliberately NOT sanitized: it is a real filesystem path used to
-  // read the manifest and to key the renderer's list, not prose. Altering it
-  // would break the lookup it participates in. `name` and `source` come from
-  // the CLI rather than the manifest, but the CLI only hardens marketplace
-  // names — a locally installed plugin's name reaches us unchecked.
+  // `path` is not sanitized: it is a real path used for lookup. A local plugin's `name` reaches us unchecked.
   return {
     ...plugin,
     name: sanitizeManifestText(plugin.name) ?? UNPRINTABLE_NAME,
     source: sanitizeManifestText(plugin.source),
-    // The CLI's record first; the folder guess covers what it does not list
-    // (built-ins, --plugin-dir folders, a missing record).
     scope: (!builtin && plugin.source && options.installed
       ? scopeFromInstallRecord(options.installed, plugin.source, options.projectPath)
       : null) ?? inferScope(plugin.path, options),

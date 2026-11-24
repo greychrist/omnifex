@@ -5,10 +5,6 @@ import type { Database } from '../database';
 import { findOnPath } from '../util/path-lookup';
 import { probeBinaryVersion } from '../util/exec-text';
 
-// ---------------------------------------------------------------------------
-// Public interfaces
-// ---------------------------------------------------------------------------
-
 export interface CodexInstallation {
   path: string;
   version: string | null;
@@ -22,11 +18,7 @@ export interface CodexBinaryService {
   findBestBinary(): string | null;
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/** `codex` on PATH, found in-process rather than by shelling out to `which`. */
+/** Found in-process: shelling out to `which` costs a process per lookup. */
 function tryWhich(): string | null {
   return findOnPath(process.platform === 'win32' ? 'codex.exe' : 'codex', process.env.PATH);
 }
@@ -80,10 +72,6 @@ function findStandardInstallations(): string[] {
   return candidates.filter((p) => fs.existsSync(p));
 }
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-
 export function createCodexBinaryService(db: Database): CodexBinaryService {
   const SETTING_KEY = 'codex_binary_path';
 
@@ -123,8 +111,6 @@ export function createCodexBinaryService(db: Database): CodexBinaryService {
       add(custom, 'custom');
     }
 
-    // One `--version` per installation, all at once: each can take up to its
-    // 5 s timeout, and they used to run serially and synchronously.
     return Promise.all(
       found.map(async ({ path: p, source }) => ({ path: p, source, version: await probeBinaryVersion(p) })),
     );

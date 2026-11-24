@@ -1,18 +1,8 @@
 import type { Database } from './database';
 
-/**
- * The set of project paths pinned to the top of the Projects list.
- *
- * Deliberately a set, not an ordered list: the list sorts within the pinned
- * group by whatever sort key is active, so pin order is never read. A pin for
- * a path that no longer exists on disk is inert — it simply matches no row.
- */
 export interface ProjectPinsService {
-  /** Every pinned project path. Order is not meaningful to callers. */
   list(): string[];
   isPinned(projectPath: string): boolean;
-  /** Idempotent in both directions: re-pinning and un-pinning an unpinned
-   *  project are both no-ops rather than errors. */
   setPinned(projectPath: string, pinned: boolean): void;
 }
 

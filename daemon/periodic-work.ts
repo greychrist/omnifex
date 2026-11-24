@@ -1,22 +1,5 @@
-/**
- * The background work that has to happen whether or not anyone is looking:
- * settling stranded internal transcripts, cost-history backfill, SQLite
- * free-page reclaim,
- * the Brain's discovery sweep + queue drain, and the catch-up sweep for
- * session summaries the close path never delivered.
- *
- * Two processes can hold the database at once: the real daemon and the dev
- * instance's (until 2026-10-23, also Electron main). Running these blocks in
- * both is worse than redundant. `createBrainService()` calls
- * `queueStore.recoverOrphans()` at construction, which flips every `running`
- * row back to `pending`, so a second process starting while the first is
- * mid-extraction distils that transcript again. `merge.ts` is idempotent so
- * the note is unchanged — but `brain_spend` is an append-only ledger, so the
- * second Sonnet call is billed for real.
- *
- * Hence `enabled`: the dev daemon passes a closed gate, the real one none.
- * Read per tick, never sampled at construction.
- */
+// The dev daemon passes a closed `enabled` gate (read per tick): two processes on one DB re-run
+// recovered Brain extractions and bill `brain_spend` twice.
 
 import {
   BRAIN_AUTO_INDEX_SETTING_KEY,
@@ -37,13 +20,8 @@ const THIRTY_SECONDS = 30_000;
 const ONE_HOUR = 60 * 60 * 1000;
 const FIVE_MINUTES = 5 * 60 * 1000;
 
-/**
- * Only the fields this module reads: `name` / `config_dir` for the cost sweep,
- * `id` for the Brain's per-account vault lookup.
- */
 type PeriodicAccount = CostAccountLike & { id: number };
 
-/** Only the Brain surface the sweep touches. */
 interface BrainLike {
   vaultPath(accountId: number): string | null;
   backfill(accountId: number, opts?: { sinceMs?: number }): Promise<number>;
@@ -58,41 +36,25 @@ export interface PeriodicWorkDeps {
   };
   listAccounts(): PeriodicAccount[];
   costHistory: Pick<CostHistoryService, 'backfill' | 'recordInternal'>;
-  /**
-   * Read per use, not captured: both roots assign their `brainRef` after the
-   * service graph is built, and the daemon can be running before it resolves.
-   */
+  /** Read per use, not captured: assigned after the service graph is built. */
   brain: () => BrainLike | undefined;
-  /** Read per tick, like `brain`: both roots assign the summary service late. */
+  /** Read per tick, like `brain`: assigned late. */
   summary: SummarySweepDeps['summary'];
-  /** Session UUIDs open in a tab; their transcripts are still being written. */
   activeSessionIds: () => string[];
   log: {
     info(message: string, meta?: Record<string, unknown>): void;
     warn(message: string, meta?: Record<string, unknown>): void;
   };
-  /**
-   * Fill the sessions page's persisted metadata cache. Run once, shortly
-   * after start. Optional so callers without a Claude service can omit it.
-   */
   warmSessionMetadata?: () => Promise<{ files: number }>;
-  /**
-   * Whether this process owns the work right now. Omitted means "always" —
-   * that is the daemon. Evaluated on every tick.
-   */
   enabled?: () => boolean;
 }
 
-/** Arms the timers. Returns the disposer that clears all of them. */
 export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
   const { db, listAccounts, costHistory, brain, log } = deps;
   const owned = (): boolean => deps.enabled?.() ?? true;
 
   const timers: (NodeJS.Timeout | number)[] = [];
 
-  // Transcripts of OmniFex's own runs that the runner did not settle: priced
-  // under their activity's label, then deleted. Its own try, so a failure here
-  // never costs the pricing pass that follows.
   const settleScratch = (): void => {
     try {
       const r = settleStrandedScratch({
@@ -101,18 +63,12 @@ export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
         nowMs: Date.now(),
       });
       if (r.settled) log.info('settled stranded internal transcripts', { settled: r.settled });
-      // Left on disk to retry. Repeated, this means pricing is broken and
-      // transcripts are accumulating again.
       if (r.failed) log.warn('internal transcripts left unpriced', { failed: r.failed });
     } catch (err) {
       log.warn('internal transcript settle failed', { error: String(err) });
     }
   };
 
-  // Read every transcript into the sessions page's persisted metadata cache,
-  // once. With the cache in SQLite this only reads what changed while the
-  // daemon was down, so even a project's first visit after a restart is
-  // instant. Ten seconds in, ahead of the heavier cost backfill at thirty.
   const warm = deps.warmSessionMetadata;
   if (warm) {
     timers.push(
@@ -126,14 +82,11 @@ export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
     );
   }
 
-  // Backfill from surviving transcripts shortly after startup, then sweep
-  // hourly to catch sessions run outside OmniFex (terminal claude-work).
   timers.push(
     setTimeout(() => {
       if (!owned()) return;
       settleScratch();
-      // Inside the promise chain so a synchronous throw (listAccounts) is
-      // logged like a rejected sweep, not left uncaught in a timer.
+      // Inside the chain so a synchronous throw is logged, not uncaught in a timer.
       Promise.resolve()
         .then(() => costHistory.backfill(listAccounts()))
         .then((r) => { log.info('cost-history startup backfill', { sessionsScanned: r.sessionsScanned }); })
@@ -145,25 +98,13 @@ export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
     setInterval(() => {
       if (!owned()) return;
       settleScratch();
-      // Overlapping sweeps share one run (cost-history), so an hourly tick
-      // landing on a cold first sweep does not start a second.
       Promise.resolve()
         .then(() => costHistory.backfill(listAccounts()))
         .catch((err: unknown) => { log.warn('cost-history sweep failed', { error: String(err) }); });
     }, ONE_HOUR),
   );
 
-  // Hand back pages freed by deletes anywhere in the database — rate-limit
-  // snapshots, brain queue rows, cost history — not just by a log prune, which
-  // compacts on its own way out. Without this, deleted space stays on SQLite's
-  // freelist and the file only ever grows: greychrist.db reached 2.15 GB
-  // holding 36 MB of live data that way.
-  //
-  // Cheap by construction: `reclaimFreePages` returns immediately when the
-  // freelist is empty (the steady state), and when it isn't, it moves free
-  // pages only and never rewrites live data. Not on every delete, so it never
-  // lands on a write path. Once shortly after start as well as hourly: the
-  // daemon dies with the app, so most runs never reach the first hour.
+  // Without this SQLite's freelist only grows. Also run soon after start: most runs never reach an hour.
   const reclaim = (): void => {
     if (!owned()) return;
     try {
@@ -175,27 +116,11 @@ export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
   timers.push(setTimeout(reclaim, THIRTY_SECONDS));
   timers.push(setInterval(reclaim, ONE_HOUR));
 
-  // Periodic discovery, then drain.
-  //
-  // The drain half is Plan 8's: session close is the only other trigger, and
-  // it is not enough on its own — a drain that stops (paused, rate limited, or
-  // because a selection run held the worker) used to have nothing to restart
-  // it until the next session happened to close, which is how 165 items came
-  // to be pending.
-  //
-  // The discovery half is why a tab no longer has to close for its
-  // conversation to reach the vault. Session close used to be the ONLY thing
-  // that enqueued anything; a tab left open for a week held a conversation
-  // that ended on Tuesday out of the vault indefinitely. Both halves are
-  // bounded so an idle app pays nothing: an empty queue costs one indexed
-  // SELECT, and `backfill`'s cheap predicates run ahead of `admit()` so a
-  // sweep that finds nothing new reads no transcripts at all.
+  // Close is not the only drain trigger: a stalled drain has nothing else to restart it.
   timers.push(
     setInterval(() => {
       if (!owned()) return;
       void (async () => {
-        // Read fresh on every tick, matching the close-time gate: a flip in
-        // the Settings pane applies without a restart.
         const autoIndexOn = db.getSetting(BRAIN_AUTO_INDEX_SETTING_KEY) === 'true';
         const curateOn = db.getSetting(BRAIN_CURATE_SETTING_KEY) === 'true';
 
@@ -210,19 +135,11 @@ export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
             ) * ONE_HOUR;
 
           for (const account of listAccounts()) {
-            // An account with no vault has nowhere to put a note, and
-            // `backfill` would only queue work that failed at claim time.
             if (!brain()?.vaultPath(account.id)) continue;
             try {
               if (autoIndexOn) await brain()?.backfill(account.id, { sinceMs });
-              // Curation has the same gap indexing had: it was close-triggered
-              // only, so a user who never closes tabs would accumulate notes
-              // that nothing ever compressed — and unlimited re-indexing is
-              // exactly what makes notes accumulate. `enqueueCuration` selects
-              // from the vault as it stands now and caps itself per run.
               if (curateOn) brain()?.enqueueCuration(account.id);
             } catch (err) {
-              // One account's failure must not cost the others their sweep.
               log.warn('brain sweep failed for account', { accountId: account.id, error: String(err) });
             }
           }
@@ -235,10 +152,6 @@ export function startPeriodicWork(deps: PeriodicWorkDeps): () => void {
     }, FIVE_MINUTES),
   );
 
-  // Session summaries the close path never delivered — above all the ones a
-  // shutdown closed, which no longer start a summary the exit would kill.
-  // Same two switches as auto-on-close, read per tick: this IS auto-on-close,
-  // run late.
   const summarySweep = createSummarySweep({
     listConfigDirs: () => listAccounts().map((a) => a.config_dir),
     activeSessionIds: deps.activeSessionIds,

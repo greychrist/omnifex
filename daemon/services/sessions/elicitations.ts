@@ -1,32 +1,14 @@
-// Sessions module — MCP elicitations
-//
-// An MCP server can ask the user something mid-tool-call (MCP
-// `elicitation/create`). The CLI relays it to a stream-json host as a
-// `control_request {subtype:'elicitation'}` and parks the session until the
-// host answers — `hostAnswersElicitations` defaults to true, so this is not
-// opt-in. Form mode carries a flat JSON schema for the answer; URL mode
-// (MCP 2026-07-28, CLI >= 2.1.281) carries a page to open, typically a
-// sign-in, and the server confirms completion on its own.
-//
-// One dialog per tab at a time, like permission prompts. The rest queue.
-// The CLI may withdraw a request (`control_cancel_request`) when the turn is
-// interrupted or the server stops waiting; a withdrawn request leaves the
-// queue unanswered.
+// The CLI parks the session until the host answers (`hostAnswersElicitations` defaults to true).
 
 import path from 'node:path';
 import { truncate } from './permissions';
 import type { SessionHandle, SendToRenderer } from './types';
 import type { AgentElicitationRequest, ElicitationAction } from '../agents/types';
 
-/**
- * Narrow an action off the wire. Anything unrecognised is a cancel — the
- * answer that commits the user to nothing.
- */
 export function toElicitationAction(action: string): ElicitationAction {
   return action === 'accept' || action === 'decline' ? action : 'cancel';
 }
 
-/** Push the head of the queue to the dialog, or `null` to close it. */
 function showHead(handle: SessionHandle, tabId: string, sendToRenderer: SendToRenderer): void {
   sendToRenderer(`elicitation-request:${tabId}`, handle.elicitationQueue[0] ?? null);
 }
@@ -41,9 +23,6 @@ export function createElicitationHandlers(
     if (handle.elicitationQueue.length !== 1) return;
     showHead(handle, tabId, sendToRenderer);
 
-    // A banner like a permission prompt's: the session is parked until the
-    // user answers. It once went only to an Electron-main hook, so under the
-    // daemon an MCP server's question arrived silently.
     const projectName = path.basename(handle.projectPath) || 'OmniFex';
     sendToRenderer('claude-notification', {
       tab_id: tabId,
@@ -64,12 +43,7 @@ export function createElicitationHandlers(
   return { onRequest, onCancel };
 }
 
-/**
- * Answer the request on screen. `requestId` names the request the dialog was
- * showing; an answer for anything but the current head is stale — the CLI
- * withdrew it while the dialog was open — and is dropped rather than applied
- * to the request queued behind it.
- */
+// An answer for anything but the head is stale (the CLI withdrew it) and is dropped, never applied to the next request.
 export async function respondToElicitation(
   handle: SessionHandle,
   tabId: string,

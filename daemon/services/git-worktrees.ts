@@ -4,7 +4,6 @@ import path from 'node:path';
 
 import { gitBinary } from './git-binary';
 
-/** Injectable exec for testing. Mirrors execFileSync's shape but returns a string. */
 export type ExecSyncFn = (
   cmd: string,
   args: string[],
@@ -14,9 +13,6 @@ export type ExecSyncFn = (
 const defaultExec: ExecSyncFn = (cmd, args, opts) =>
   execFileSync(cmd, args, { ...opts, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 
-/** Parse `git worktree list --porcelain` output. Each block starts with a
- *  `worktree <path>` line; the rest (HEAD, branch, detached, bare, locked,
- *  prunable) is informational and ignored. */
 export function parseWorktreeListPorcelain(output: string): string[] {
   const paths: string[] = [];
   for (const line of output.split('\n')) {
@@ -32,13 +28,7 @@ function normalizePath(p: string): string {
   return path.resolve(p).replace(/\/+$/, '');
 }
 
-/** Run `git -C <cwd> worktree list --porcelain` and return every registered
- *  worktree path *other than* `cwd` itself, deduped, with stale entries
- *  (paths that no longer exist on disk) filtered out.
- *
- *  Returns `[]` on any error (not a repo, git missing, timeout) — never
- *  throws. Used to populate `additionalDirectories` at session start so the
- *  CLI's sandbox allows writes into sibling worktrees of the same repo. */
+/** Feeds `additionalDirectories`, so the CLI sandbox allows writes into sibling worktrees. Never throws. */
 export function discoverWorktrees(
   cwd: string,
   opts?: { exec?: ExecSyncFn; fileExists?: (p: string) => boolean },

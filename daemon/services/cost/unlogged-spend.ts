@@ -1,18 +1,5 @@
-// Cost module — spend the CLI counted but no transcript records.
-//
-// For each CLI process, `latest − baseline` (cli-process-usage.ts) is what the
-// process spent, per model, by the CLI's own count. The transcript's usage
-// rows inside the same process window are the part the Cost Report already
-// prices. What is left — side questions, title generation, anything run with
-// `skipTranscript` — is priced here as `cli-unlogged-<session>` rows.
-//
-// The rule that keeps money from being counted twice: these rows are the
-// complement of the transcript by construction, never an independent record.
-// Anything else that records CLI spend without a transcript (a per-call side-
-// question ledger, a cost-state reconciliation) must not be added alongside
-// them — it is already inside the CLI's totals, and so already here.
-//
-// Pure, like session-cost-core.ts, so the sweep and the tests share it.
+// These rows are the transcript's complement by construction. Never record transcript-less CLI spend anywhere else
+// alongside them: it is already inside the CLI's totals, so already here.
 
 import { computeMessageCost, splitCacheWriteTokens, type ModelPricingInput } from '../../../src/lib/pricing';
 import type { SessionCostDailyRow } from './session-cost-core';
@@ -28,7 +15,6 @@ export interface ComputeUnloggedArgs {
   configDir: string;
   projectPath: string | null;
   processes: readonly CliProcessUsage[];
-  /** Deduped usage rows from the session's main JSONL and every subagent JSONL. */
   transcript: readonly ExtractedUsageRow[];
   overrides?: readonly ModelPricingInput[] | undefined;
 }
@@ -43,17 +29,12 @@ interface Tokens {
   output: number;
   cacheRead: number;
   cacheWrite: number;
-  /** The 1-hour share of cacheWrite; null where the CLI reported no split. */
   cacheWrite1h: number | null;
 }
 
 const zero = (): Tokens => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null });
 
-/**
- * The CLI keys its totals by the id it ran (`claude-opus-5-5[1m]`); the
- * transcript records the API's model id (`claude-opus-5-5`). The bracketed
- * suffix is the CLI's context-window variant, not a different model.
- */
+/** The CLI keys totals by `claude-opus-5-5[1m]`, the transcript by `claude-opus-5-5`: the same model. */
 function modelKey(model: string): string {
   return model.replace(/\[[^\]]*\]$/, '');
 }
@@ -107,9 +88,7 @@ export function computeUnloggedRows(args: ComputeUnloggedArgs): {
     for (const [model, latest] of totalsByModel(proc.latest)) {
       const before = baseline.get(model) ?? zero();
       const seen = logged.get(model) ?? zero();
-      // Per category, never below zero: a transcript row written after the
-      // CLI's last report (a turn still running) must not cancel spend in
-      // another category.
+      // Per category, never below zero: a row written after the CLI's last report must not cancel another category.
       const hidden = {
         input: Math.max(0, latest.input - before.input - seen.input),
         output: Math.max(0, latest.output - before.output - seen.output),
@@ -118,11 +97,7 @@ export function computeUnloggedRows(args: ComputeUnloggedArgs): {
       };
       if (hidden.input + hidden.output + hidden.cacheRead + hidden.cacheWrite === 0) continue;
 
-      // The 1-hour share, when the CLI reports one (>= 2.1.311). A baseline
-      // without it was restored from an older CLI whose writes the latest
-      // figure never counted, so it subtracts nothing. Bounded by the hidden
-      // total; the remainder, and everything from an older CLI, keeps the
-      // rule for unsplit writes — the 5-minute rate and column.
+      // A baseline without the 1h split came from an older CLI and subtracts nothing; unsplit writes use the 5-minute rate.
       const hidden1h = latest.cacheWrite1h === null
         ? 0
         : Math.min(hidden.cacheWrite, Math.max(0, latest.cacheWrite1h - (before.cacheWrite1h ?? 0) - (seen.cacheWrite1h ?? 0)));
@@ -147,8 +122,7 @@ export function computeUnloggedRows(args: ComputeUnloggedArgs): {
           config_dir: args.configDir,
           project_path: args.projectPath,
           is_subagent: 0,
-          // The CLI reports totals, not calls; how many requests made them up
-          // is not known and is not guessed.
+          // Not known, never guessed.
           request_count: 0,
           input_tokens: 0,
           output_tokens: 0,
