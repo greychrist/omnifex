@@ -1,10 +1,3 @@
-// Cost Report — filter state and formatting, kept pure and out of the view.
-//
-// The filter bar's state is the single source of truth for every panel on the
-// page, so the state → query-params mapping is the one place a bug would show
-// up as "two panels disagree about what they're showing". It lives here, with
-// tests, rather than inline in the component.
-
 import type { CostHistoryFilterParams } from '@/lib/api';
 import {
   emptyFilterState,
@@ -13,9 +6,6 @@ import {
   type CostScope,
 } from '@/lib/costFilterState';
 
-// The state shape and its defaults live in costFilterState.ts so the main
-// process can import them without dragging the renderer API in. Re-exported
-// here so every existing `from '@/lib/costReportFilters'` still resolves.
 export {
   RANGE_PRESETS,
   emptyFilterState,
@@ -26,16 +16,7 @@ export {
   type RangeKey,
 } from '@/lib/costFilterState';
 
-/**
- * Filter state → the shape every cost query takes.
- *
- * Empty multi-selects are omitted rather than sent as `[]`. The service reads
- * an empty array as "no filter" too, but omitting keeps the IPC payload honest
- * about what the user actually chose.
- *
- * A custom date beats the preset. The alternative — preset wins — makes typing
- * a start date look like it did nothing.
- */
+/** A custom date beats the preset; otherwise typing a start date looks like it did nothing. */
 export function toFilterParams(state: CostFilterState, today: string): CostHistoryFilterParams {
   const preset = resolveRange(state.rangeKey, today);
   const params: CostHistoryFilterParams = {};
@@ -54,8 +35,7 @@ export function toFilterParams(state: CostFilterState, today: string): CostHisto
   return params;
 }
 
-/** Sub-cent figures matter here — a $0.0031 per-request cost rounded to $0.00
- *  is the whole subagent-efficiency finding erased. */
+/** Sub-cent figures matter: $0.0031 rounded to $0.00 erases per-request costs. */
 export function fmtUsd(v: number): string {
   if (v !== 0 && Math.abs(v) < 0.01) return `$${v.toFixed(4)}`;
   return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -72,25 +52,14 @@ export function fmtPercent(share: number): string {
   return `${Math.round(share * 100)}%`;
 }
 
-/** Reads as a ratio because that is what it is; a bare `35.4` invites being
- *  mistaken for a dollar figure in a table full of them. */
 export function fmtRatio(ratio: number): string {
   if (!Number.isFinite(ratio) || ratio <= 0) return '—';
   return ratio >= 10 ? `${Math.round(ratio)}:1` : `${ratio.toFixed(1)}:1`;
 }
 
-// ── Persistence ────────────────────────────────────────────────────────────
-//
-// localStorage rather than `app_settings`, matching how the rest of the
-// renderer stores view state (LogTab column widths, AgentSession header
-// height). It also reads synchronously, so the page opens already filtered
-// instead of flashing the defaults while an async setting loads.
-
 const STORAGE_KEY = 'omnifex.costReport.filters';
 
-/** Fields that survive a relaunch. The date range deliberately does not: an
- *  absolute window saved in August is meaningless in October and would
- *  silently show an empty page. */
+/** The date range deliberately does not persist: a saved absolute window goes stale. */
 type PersistedFilters = Pick<
   CostFilterState,
   'accounts' | 'models' | 'projects' | 'scope' | 'groupBy'
@@ -99,8 +68,7 @@ type PersistedFilters = Pick<
 const SCOPES: CostScope[] = ['all', 'main', 'subagent'];
 const GROUP_BYS: CostFilterState['groupBy'][] = ['day', 'week', 'month'];
 
-/** Only strings survive — a stored array from an older build must not smuggle
- *  a non-string into an `IN (...)` clause. */
+/** Only strings: a stored array from an older build must not smuggle a non-string into an `IN (...)` clause. */
 function stringArray(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 }
@@ -120,11 +88,6 @@ export function saveFilterState(state: CostFilterState): void {
   }
 }
 
-/**
- * The remembered filters, merged over the defaults. Every field is validated
- * against the values this build actually accepts: a stale `scope` or `groupBy`
- * from an older build must fall back rather than reach a query.
- */
 export function loadFilterState(): CostFilterState {
   const base = emptyFilterState();
   let raw: unknown;

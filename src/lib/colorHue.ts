@@ -1,12 +1,4 @@
-/**
- * OKLCH hue and chroma of a hex color — what Modern's prompt bubble and
- * answer card take from Settings › Chats › Modern. Each card keeps its own
- * lightness (styles.css), so only the hue is read, plus the chroma to tell
- * whether there is a hue at all: white, greys and black have none, and the
- * angle of their near-zero a/b is noise (white reads as ~90°, a yellow).
- *
- * sRGB → linear → OKLab (Björn Ottosson's matrices) → atan2(b, a), hypot(a, b).
- */
+// Chroma says whether there is a hue at all: a neutral's near-zero a/b angle is noise (white reads as ~90°).
 function oklab(hex: string): { a: number; b: number } | null {
   const m = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(hex);
   if (!m) return null;
@@ -37,5 +29,4 @@ export function hexChroma(hex: string): number | null {
   return lab ? Math.hypot(lab.a, lab.b) : null;
 }
 
-/** Below this a color reads as white, grey or black — no hue to take. */
 export const NEUTRAL_CHROMA = 0.015;

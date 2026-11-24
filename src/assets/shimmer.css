@@ -1,8 +1,3 @@
-/**
- * Shimmer animation styles
- * Provides a sword-like shimmer effect for elements
- */
-
 @keyframes shimmer {
   0% {
     transform: translateX(-100%);
@@ -52,7 +47,6 @@
   }
 }
 
-/* Overlay variant: keeps the overlay text transparent and simply fades it out */
 @keyframes shimmer-overlay {
   0% {
     background-position: -150% center;
@@ -111,14 +105,12 @@
   animation: shimmer-text 1s ease-out forwards;
 }
 
-/* Ensures text remains visible after shimmer completes on engines
-   where -webkit-text-fill-color set in keyframes may not persist */
+/* -webkit-text-fill-color set in keyframes may not persist after the animation. */
 .shimmer-fallback-visible {
   -webkit-text-fill-color: currentColor !important;
   background: none !important;
 }
 
-/* Layered brand text: base solid text plus shimmering overlay to avoid flicker */
 .brand-text { position: relative; display: inline-block; }
 .brand-text-solid { position: relative; color: currentColor; }
 .brand-text-shimmer {
@@ -146,7 +138,7 @@
 .rotating-symbol {
   display: inline-block;
   color: #8B5CF6;
-  font-size: 1.5rem; /* Make it bigger! */
+  font-size: 1.5rem;
   margin-right: 0.5rem;
   font-weight: bold;
   vertical-align: middle;
@@ -164,7 +156,6 @@
   vertical-align: baseline;
 }
 
-/* Allow pausing the rotating symbol via an extra class */
 .rotating-symbol.paused::before {
   animation: none !important;
 }
@@ -204,10 +195,6 @@
   animation: shimmer 1s ease-out;
 } 
 
-/* Modern chat format: AI Elements' Shimmer. Muted text with a band of the
-   background color sweeping across it; --modern-shimmer-spread (set per
-   element from the text length) is the band's half-width; --modern-shimmer-color
-   (a step kind's color, set on its title) replaces the muted gray. */
 @keyframes modern-shimmer {
   from { background-position: 100% center, 0 0; }
   to { background-position: 0% center, 0 0; }

@@ -1,34 +1,4 @@
-/**
- * The Modern chat format's grouping: displayable transcript rows → the units
- * Modern draws. See docs/superpowers/specs/2026-10-28-modern-chat-format-design.md.
- *
- * - A main prompt is a bubble.
- * - Assistant prose is a text item.
- * - Thinking and tool calls — with their results, and any records Compact
- *   would hide that land between them — fold into one `work` item, drawn as
- *   a Chain of Thought.
- * - AskUserQuestion and ExitPlanMode are conversation, not work: each is its
- *   own item and absorbs its result record.
- * - Notifications and the interrupt marker are `notice` lines; a stop shows
- *   once, whether as the live notification, the persisted marker, or both.
- *   Lost writes on a full disk (`session_writes_lost`) are an error notice.
- * - A recap — the CLI's away summary or `/recap`'s output — is a `recap`
- *   item: prose under a Recap line, not the Compact card.
- * - The instruction files the CLI loaded are one folded `instructions` line.
- * - Every other non-conversation record — a mode, effort or model change, a
- *   slash command's output, a system or attachment record, an unrecognized
- *   one — is a `line` (modernLines.ts): a Trace line, as the recap is.
- * - Records the chosen rules hide (Compact's unless Settings › Modern › Show
- *   records like says Verbose or All) are left out — no hidden-events cards.
- *   The one it reads first: `thinking_tokens`, whose estimate goes on the
- *   thought it measured.
- * - Anything else — conversation content Modern does not model, such as an
- *   assistant record of only server-tool or image blocks — is `other`,
- *   drawn as Compact draws a shown row.
- *
- * Pure, one pass, and keyed by node identity (`rowKeyOf`), so appending a
- * record never re-keys the items before it.
- */
+// Keyed by node identity (`rowKeyOf`), so appending a record never re-keys the items before it.
 import type { JsonlNode } from '@/types/jsonl';
 import type { MessageRenderingConfig } from './messageRenderingConfig';
 import { isMessageFullyHidden } from './recordVisibility';
@@ -40,9 +10,7 @@ import { modernLineOf, type LineAccent, type ModernLine } from './modernLines';
 import { originInjectedKind } from './messageKind';
 import { formatTokens } from './contextPressure';
 import { shortDuration } from './modernSteps';
-/** OmniFex's progress mod's tool (removed 2026-11-24). Transcripts written
- *  while it shipped still hold its calls, each answered "Progress recorded.":
- *  bookkeeping, not work, so Modern leaves them out of the step list. */
+/** The removed progress mod's tool: old transcripts still hold its calls, which are bookkeeping, not work. */
 const LEGACY_PROGRESS_TOOL = 'mcp__omnifex__progress';
 
 export type ToolStatus = 'pending' | 'done' | 'error';
@@ -53,10 +21,7 @@ export type WorkEntry =
       key: string;
       node: JsonlNode;
       text: string;
-      /** The CLI's thinking_duration_ms (live records), else the gap from the
-       *  record before; null without either. */
       ms: number | null;
-      /** The last thinking_tokens estimate before it (live only). */
       tokens: number | null;
     }
   | {
@@ -69,15 +34,12 @@ export type WorkEntry =
       status: ToolStatus;
       resultNode?: JsonlNode;
       resultText?: string;
-      /** A Skill step's SKILL.md body — the CLI's companion record, folded in
-       *  so the step, not a classic card beside it, is the skill's one row. */
       skillBody?: string;
     };
 
 export type ModernItem =
   | {
       kind: 'prompt'; key: string; node: JsonlNode; text: string;
-      /** Pasted images, as data URLs. */
       images?: PromptImage[];
     }
   | { kind: 'text'; key: string; node: JsonlNode; text: string }
@@ -87,9 +49,7 @@ export type ModernItem =
   | { kind: 'notice'; key: string; node: JsonlNode; tone: NoticeTone; text: string }
   | {
       kind: 'compaction'; key: string; node: JsonlNode;
-      /** "manual · 777k → 27k tokens · 1m 10s", from the boundary. */
       detail: string;
-      /** The recap the CLI wrote after it. */
       summary?: string;
       summaryNode?: JsonlNode;
     }
@@ -99,13 +59,10 @@ export type ModernItem =
 
 export interface PromptImage { src: string; mediaType: string }
 
-/** One file an `instructions` attachment loaded; scope is the CLI's `type`
- *  (User, Project, Local, …), null when absent. */
 export interface InstructionFile { path: string; scope: string | null }
 
 export type NoticeTone = 'stop' | 'error' | 'warn' | 'info';
 
-/** A stop reads the same live (notification) and reloaded (marker). */
 const STOP_TEXT = 'Response interrupted';
 
 function noticeOf(node: JsonlNode): { tone: NoticeTone; text: string } | null {
@@ -120,7 +77,6 @@ function noticeOf(node: JsonlNode): { tone: NoticeTone; text: string } | null {
   return { tone, text: parts.join(' — ') || 'Notice' };
 }
 
-/** `text`, `thinking` and `id` are strings on the wire whenever present. */
 interface Block { type?: unknown; text?: string; thinking?: string; id?: string; [k: string]: unknown }
 
 function contentOf(node: JsonlNode): Block[] {
@@ -139,23 +95,14 @@ function resultText(content: unknown): string {
 
 const CONVERSATION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 
-/** A record's text blocks, joined. Ingress (normalizeMessage) makes
- *  content an array. */
 function plainText(node: JsonlNode): string {
   return contentOf(node).filter((b) => b.type === 'text').map((b) => String(b.text ?? '')).join('\n');
 }
 
 type PromptShape = Pick<Extract<ModernItem, { kind: 'prompt' }>, 'text' | 'images'>;
 
-/**
- * What the bubble draws for a user record: a typed prompt (text, pasted
- * images), or a slash command's echo as its command line. Null for anything
- * else, which Modern draws as Compact does.
- */
 function promptOf(node: JsonlNode): PromptShape | null {
   if (node.kind !== 'user') return null;
-  // A task notification or coordinator message: injected, not typed. Left
-  // to the rules every format shares (Compact hides it by default).
   if (originInjectedKind(node.raw) !== null) return null;
   const text = plainText(node);
   const isEcho = commandEnvelopeKind(text) === 'echo';
@@ -179,7 +126,6 @@ function promptOf(node: JsonlNode): PromptShape | null {
   return images.length > 0 ? { text, images } : { text };
 }
 
-/** A recap's prose: the away summary's `content`, or `/recap`'s output. */
 function recapOf(node: JsonlNode): string | null {
   if (node.kind !== 'system') return null;
   const content = (node.raw as { content?: unknown }).content;
@@ -189,7 +135,6 @@ function recapOf(node: JsonlNode): string | null {
   return null;
 }
 
-/** The files an `instructions` attachment loaded; null for any other record. */
 function instructionFilesOf(node: JsonlNode): InstructionFile[] | null {
   if (node.kind !== 'attachment') return null;
   const att = (node.raw as { attachment?: { type?: unknown; files?: unknown } }).attachment;
@@ -202,7 +147,6 @@ function instructionFilesOf(node: JsonlNode): InstructionFile[] | null {
   return files.length > 0 ? files : null;
 }
 
-/** The boundary's figures, as the classic card writes them, minus its title. */
 function compactionDetail(node: JsonlNode): string {
   const meta = ((node as { raw?: unknown }).raw as { compactMetadata?: { trigger?: unknown; preTokens?: unknown; postTokens?: unknown; durationMs?: unknown } } | undefined)?.compactMetadata ?? {};
   const parts: string[] = [];
@@ -214,7 +158,6 @@ function compactionDetail(node: JsonlNode): string {
   return parts.join(' · ');
 }
 
-/** A tool-result record whose every result belongs to a tool use we drew. */
 function isAbsorbedResult(node: JsonlNode, claimed: Set<string>): boolean {
   if (node.kind !== 'user' || node.userKind !== 'tool-result') return false;
   const results = contentOf(node).filter((b) => b.type === 'tool_result');
@@ -224,15 +167,11 @@ function isAbsorbedResult(node: JsonlNode, claimed: Set<string>): boolean {
 export function buildModernItems(
   messages: JsonlNode[],
   config: MessageRenderingConfig,
-  /** The whole transcript, for pairing tools with results: the display
-   *  filter drops tool-result rows, which other formats reach by lookup. */
+  /** The whole transcript: the display filter drops tool-result rows. */
   allMessages: JsonlNode[] = messages,
-  /** Standard: records whose kinds are hidden in Standard are left out.
-   *  Expanded passes false and every record is drawn. */
   filtered = true,
 ): ModernItem[] {
   const hidden = (node: JsonlNode) => filtered && isMessageFullyHidden(node, messages, config);
-  // Every tool result, by the tool use it answers.
   const results = new Map<string, { node: JsonlNode; text: string; error: boolean }>();
   for (const node of allMessages) {
     if (node.kind !== 'user') continue;
@@ -243,7 +182,6 @@ export function buildModernItems(
     }
   }
 
-  // Tool uses an item draws, so their result records are not drawn again.
   const claimed = new Set<string>();
   for (const node of messages) {
     if (node.kind !== 'assistant') continue;
@@ -253,8 +191,6 @@ export function buildModernItems(
   }
 
   const items: ModernItem[] = [];
-  // `as` keeps TypeScript from narrowing this to `null` for good: the
-  // closures below reassign it, which flow analysis does not follow.
   let work = null as Extract<ModernItem, { kind: 'work' }> | null;
   let pendingTokens: number | null = null;
   const skillEntries = new Map<string, { entry: Extract<WorkEntry, { type: 'tool' }>; work: Extract<ModernItem, { kind: 'work' }> }>();
@@ -267,8 +203,7 @@ export function buildModernItems(
     }
     return work;
   };
-  // The thinking record lands when the thought ends, so the gap from the
-  // record before it is how long it took.
+  // The thinking record lands when the thought ends, so the gap from the record before is its duration.
   let previousAt: number | null = null;
   const timeOf = (node: JsonlNode): number | null => {
     const t = Date.parse((node as { receivedAt?: string | null }).receivedAt ?? '');
@@ -280,7 +215,6 @@ export function buildModernItems(
     const startedAt = previousAt;
     previousAt = timeOf(node) ?? previousAt;
 
-    // Results of tools drawn elsewhere: attach to the run they belong to.
     if (isAbsorbedResult(node, claimed)) {
       if (work && !work.nodes.includes(node)) work.nodes.push(node);
       continue;
@@ -313,16 +247,12 @@ export function buildModernItems(
             closeWork();
             items.push({ kind: 'text', key: `t-${key}`, node, text });
           } else if (b.type === 'tool_use' && typeof b.name === 'string') {
-            // A report from the removed progress mod (old transcripts only):
-            // how far along, never what. Its result is claimed above, so
-            // neither is drawn.
             if (b.name === LEGACY_PROGRESS_TOOL) return;
             const id = String(b.id ?? '');
             const input = (b.input && typeof b.input === 'object' ? b.input : {}) as Record<string, unknown>;
             const res = results.get(id);
             if (CONVERSATION_TOOLS.has(b.name)) {
-              // Until it is answered, the live card above the composer is the
-              // only copy — Compact draws these only once the result lands.
+              // Until it is answered, the live card above the composer is the only copy.
               if (!res) return;
               closeWork();
               items.push(b.name === 'AskUserQuestion'
@@ -345,21 +275,16 @@ export function buildModernItems(
         });
         continue;
       }
-      // A redacted, signature-only thinking record has nothing to draw;
-      // Compact drops these too. Any other block type (server tools, images)
-      // falls through and is drawn as Compact draws it.
       if (blocks.every((b) => b.type === 'thinking')) continue;
     }
 
-    // A thought's token estimate: kept for the thought, never a row.
     if (node.kind === 'system' && node.subtype === 'thinking_tokens') {
       const n = (node.raw as { estimated_tokens?: unknown }).estimated_tokens;
       if (typeof n === 'number') pendingTokens = n;
       continue;
     }
 
-    // A skill's body: the CLI names the Skill call it belongs to. A
-    // re-invocation sends a preamble and the body, so both are kept.
+    // A re-invocation sends a preamble and the body, so both are kept.
     if (node.kind === 'user' && node.userKind === 'meta-skill') {
       const source = skillEntries.get(String((node.raw as { sourceToolUseID?: string }).sourceToolUseID ?? ''));
       if (source) {
@@ -374,14 +299,12 @@ export function buildModernItems(
     if (notice) {
       closeWork();
       const last = items[items.length - 1];
-      // One stop, whichever of notification and marker arrive.
       if (!(notice.tone === 'stop' && last?.kind === 'notice' && last.tone === 'stop')) {
         items.push({ kind: 'notice', key: `n-${nodeKey}`, node, ...notice });
       }
       continue;
     }
 
-    // A compaction is one line: the boundary, with the recap folded in.
     if (node.kind === 'system' && node.subtype === 'compact_boundary') {
       closeWork();
       items.push({ kind: 'compaction', key: `c-${nodeKey}`, node, detail: compactionDetail(node) });
@@ -420,7 +343,6 @@ export function buildModernItems(
       continue;
     }
 
-    // Hidden under the chosen rules: left out. Anything else is a line.
     if (hidden(node)) continue;
     closeWork();
     items.push({ kind: 'line', key: `l-${nodeKey}`, node, line: modernLineOf(node, messages, config) });
@@ -450,9 +372,7 @@ function sameItem(a: ModernItem, b: ModernItem): boolean {
     case 'text': return a.node === (b as typeof a).node && a.text === (b as typeof a).text;
     case 'compaction': return a.node === (b as typeof a).node && a.summaryNode === (b as typeof a).summaryNode;
     case 'instructions': return a.node === (b as typeof a).node;
-    // A line's icon and color are resolved from the config when it is built,
-    // so it is unchanged only if it still looks the same: a settings change
-    // must replace it, or the row keeps the old look until a reload.
+    // A line's look is resolved from config at build time, so a settings change must replace it.
     case 'line': return a.node === (b as typeof a).node && sameLine(a.line, (b as typeof a).line);
   }
 }
@@ -468,12 +388,7 @@ function accentKey(accent: LineAccent | undefined): string {
   return accent.kind === 'css' ? `css:${accent.color}` : `model:${accent.model}`;
 }
 
-/**
- * `next`, with every item that is unchanged since `prev` replaced by its
- * previous object. Grouping rebuilds every item on each appended record;
- * without this, every row's memo would break on every record — the
- * one-record-re-renders-the-whole-transcript freeze this app has had before.
- */
+/** Without this, every row's memo breaks on each appended record: the whole-transcript re-render freeze. */
 export function keepUnchangedItems(prev: ModernItem[], next: ModernItem[]): ModernItem[] {
   if (prev.length === 0) return next;
   const byKey = new Map(prev.map((item) => [item.key, item]));

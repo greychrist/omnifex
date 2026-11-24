@@ -2,14 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { useSurfaceVisible } from './useSurfaceVisible';
 
-/**
- * Tell the git watcher whether anyone can see this watch's badges (see
- * useSurfaceVisible). The watcher polls a repository only while at least one
- * of its watches is visible.
- *
- * In remote mode the daemon hides a watch when the connection holding it
- * closes (a closed window must not poll), so each reconnect reports again.
- */
+/** The daemon hides a watch when its connection closes, so each reconnect reports again. */
 export function useGitWatchVisibility(watchId: string | null, isActive: boolean): void {
   const visible = useSurfaceVisible(isActive);
   const [connectedCount, setConnectedCount] = useState(0);

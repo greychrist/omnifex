@@ -17,10 +17,6 @@ interface ApiCallState<T, A extends unknown[]> {
   reset: () => void;
 }
 
-/**
- * Custom hook for making API calls with consistent error handling and loading states
- * Includes automatic toast notifications and cleanup on unmount
- */
 export function useApiCall<T, A extends unknown[] = []>(
   apiFunction: (...args: A) => Promise<T>,
   options: ApiCallOptions<T> = {}
@@ -43,12 +39,10 @@ export function useApiCall<T, A extends unknown[] = []>(
   const call = useCallback(
     async (...args: A): Promise<T | null> => {
       try {
-        // Cancel any pending request
         if (abortControllerRef.current) {
           abortControllerRef.current.abort();
         }
 
-        // Create new abort controller
         abortControllerRef.current = new AbortController();
 
         setIsLoading(true);
@@ -56,32 +50,27 @@ export function useApiCall<T, A extends unknown[] = []>(
 
         const result = await apiFunction(...args);
 
-        // Only update state if component is still mounted
         if (!isMountedRef.current) return null;
 
         setData(result);
         
         if (showSuccessToast) {
-          // TODO: Implement toast notification
           console.log('Success:', successMessage);
         }
 
         onSuccess?.(result);
         return result;
       } catch (err) {
-        // Ignore aborted requests
         if (err instanceof Error && err.name === 'AbortError') {
           return null;
         }
 
-        // Only update state if component is still mounted
         if (!isMountedRef.current) return null;
 
         const error = err instanceof Error ? err : new Error('An error occurred');
         setError(error);
 
         if (showErrorToast) {
-          // TODO: Implement toast notification
           console.error('Error:', errorMessage || error.message);
         }
 
@@ -102,7 +91,6 @@ export function useApiCall<T, A extends unknown[] = []>(
     setIsLoading(false);
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       isMountedRef.current = false;

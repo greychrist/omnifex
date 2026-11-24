@@ -35,17 +35,6 @@ import {
   DEFAULT_CONTEXT_TIMELINE_ENABLED,
 } from "@/lib/contextTimeline";
 
-/**
- * The two session-header gauges that are user-configurable: the
- * context-pressure banner's budget, and whether the prompt-cache countdown
- * shows. Both live in one provider because they are one Settings section and
- * one load round-trip; splitting them would mean two near-identical providers
- * and an extra level in the App tree.
- *
- * Same shape as AutoScrollContext: load once on mount, persist on change, and
- * apply live to open sessions without a restart. Each setter applies its value
- * at once and rejects if persisting it fails, so Settings can report it.
- */
 interface SessionGaugesContextType {
   contextPressure: ContextPressureSetting;
   setContextPressure: (next: ContextPressureSetting) => Promise<void>;

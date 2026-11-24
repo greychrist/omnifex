@@ -1,9 +1,4 @@
-/**
- * Catalog of selectable notification sounds. The renderer uses this to
- * populate the picker in General settings; the main process maps the same
- * IDs to real file paths and macOS `Notification.sound` values
- * (see `daemon/services/notification-sounds.ts` — keep them in sync).
- */
+// The daemon maps these ids to files and `Notification.sound` (daemon/services/notification-sounds.ts): keep in sync.
 
 export type NotificationSoundId =
   | 'none'
@@ -65,11 +60,7 @@ export function normalizeNotificationSoundId(
   return isNotificationSoundId(value) ? value : fallback;
 }
 
-/**
- * Mods' OS notifications (`$.ui.notify`, CLI 2.1.321). On unless this is
- * 'false'; the daemon reads it per notification, so turning it off quiets
- * sessions already running. See daemon/services/sessions/mod-notifications.ts.
- */
+/** On unless 'false'; the daemon reads it per notification, so turning it off quiets running sessions. */
 export const MOD_NOTIFICATIONS_SETTING_KEY = 'mod_notifications_enabled';
 
 export function modNotificationsEnabled(value: string | null | undefined): boolean {

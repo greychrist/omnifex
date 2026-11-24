@@ -1,18 +1,5 @@
-/**
- * What a drop onto the chat turns into.
- *
- * - An image Claude can take inline (PNG, JPEG, GIF, WebP) goes in as a paste
- *   would: a data URL beside the prompt.
- * - Anything else with a real path (the Mac app reports it over
- *   `drop:paths`; WebKit never tells the page) becomes an `@path` mention,
- *   so Claude reads, and can edit, the file where it lives. A path with no
- *   file behind it is a dropped folder, mentioned the same way.
- * - Anything else without a path (dragged from a browser, the iPad) is
- *   copied by the daemon (`save_dropped_file`) and the copy is mentioned.
- *
- * SVG is not inline-able: the Messages API takes four raster types only,
- * and an SVG is text Claude reads fine from a path.
- */
+// WebKit never gives the page a dropped file's path; the Mac app reports it over `drop:paths`.
+// SVG is not inline-able: the Messages API takes four raster types only.
 
 export interface DroppedFileLike {
   name: string;
@@ -58,7 +45,6 @@ export function mentionFor(path: string): string {
   return /\s/.test(path) ? `@"${path}"` : `@${path}`;
 }
 
-/** Appends `path` as a mention, unless the prompt already names it. */
 export function appendMention(prompt: string, path: string): string {
   const mention = mentionFor(path);
   if (prompt.split(/\s+/).includes(mention) || prompt.includes(`${mention} `)) return prompt;

@@ -1,21 +1,7 @@
-/**
- * OmniFex Remote protocol — the only shared vocabulary between the daemon and
- * its clients.
- *
- * Lives in `src/` rather than a `packages/` workspace because this repo is a
- * single package and already has the precedent: `daemon/services/usage.ts`
- * and friends import pure TypeScript out of `src/lib/`. The daemon reaches it
- * the same way (`../../src/protocol`), the renderer as `@/protocol`, and
- * vitest resolves both. Introducing a workspace root to hold one folder would
- * buy nothing and would move every build config.
- *
- * Nothing here may import Electron, Node, React or the DOM: this module is
- * loaded by the main process, the renderer, and a plain-Node test runner.
- */
+/** Imported by the daemon, the renderer and plain-Node tests: never import Node, React or the DOM here. */
 export { PROTOCOL_VERSION } from './version';
 
 export {
-  // Schemas
   ClientMessageSchema,
   ServerMessageSchema,
   ProjectSchema,
@@ -31,10 +17,8 @@ export {
   ErrorCodeSchema,
   EventKindSchema,
   SeqSchema,
-  // Constants
   CLIENT_METHODS,
   SESSION_SCOPED_PUSHES,
-  // Decoders
   decodeClientMessage,
   decodeServerMessage,
 } from './messages';

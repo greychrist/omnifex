@@ -54,14 +54,12 @@ export interface IncomingSuggestion {
   destination?: string;
 }
 
-/** Parse a display rule string like "Bash(git:*)" into { toolName, ruleContent }. */
 export function parseRuleString(rule: string): ParsedRule {
   const match = /^([A-Za-z_][A-Za-z0-9_]*)\((.+)\)$/.exec(rule);
   if (match) return { toolName: match[1], ruleContent: match[2] };
   return { toolName: rule.trim() };
 }
 
-/** Stringify a ParsedRule back into "ToolName(content)" or bare "ToolName". */
 export function formatRuleString(parsed: ParsedRule): string {
   return parsed.ruleContent ? `${parsed.toolName}(${parsed.ruleContent})` : parsed.toolName;
 }
@@ -72,28 +70,14 @@ function assertNonEmptyRule(ruleString: string): void {
   }
 }
 
-/**
- * Path-rule tool names the CLI's file permission checks never consult, mapped
- * to the one they do. As of CLI 2.1.210 only `Edit(path)` and `Read(path)`
- * participate; a rule written against any other file tool loads but is never
- * matched, so the permission it was meant to grant silently does nothing.
- *
- * `Glob` is deliberately absent. Its rule content is a search pattern rather
- * than a path, and the docs carve out an exception for `Glob` rules passed via
- * `--allowedTools`, so rewriting it would change meaning rather than fix a
- * typo. `unmatchedFileRuleWarning` still flags it for a human to decide.
- */
+/** CLI 2.1.210: only `Edit(path)` and `Read(path)` rules are matched. `Glob` is absent: its content is a pattern, not a path. */
 const UNMATCHED_FILE_RULE_TOOLS: Readonly<Record<string, string>> = {
   Write: 'Edit',
   MultiEdit: 'Edit',
   NotebookEdit: 'Edit',
 };
 
-/**
- * Rewrite a rule into the form the CLI will actually match, leaving the path
- * untouched. Bare tool-name rules (no path) already match the tool everywhere,
- * and `:*` content is Bash prefix syntax rather than a path — both pass through.
- */
+/** `:*` content is Bash prefix syntax, not a path. */
 export function canonicalizeRule(rule: ParsedRule): ParsedRule {
   if (!rule.ruleContent) return rule;
   if (rule.ruleContent.includes(':*')) return rule;
@@ -101,18 +85,13 @@ export function canonicalizeRule(rule: ParsedRule): ParsedRule {
   return canonical ? { ...rule, toolName: canonical } : rule;
 }
 
-/**
- * Pick the suggestion that actually carries rules. The CLI mixes `addRules`
- * with `setMode` / `addDirectories` entries and does not promise an order, so
- * indexing blindly into `[0]` can land on a suggestion with no rules at all.
- */
+/** The CLI mixes `addRules` with `setMode` / `addDirectories` entries in no promised order. */
 export function firstRuleSuggestion(
   suggestions: IncomingSuggestion[] | undefined,
 ): IncomingSuggestion | undefined {
   return suggestions?.find((s) => Array.isArray(s?.rules) && s.rules.length > 0);
 }
 
-/** Build the `updatedPermissions` entry for an allow-and-persist action. */
 export function buildPersistedSuggestion(
   ruleString: string,
   scope: PersistedScopeValue,
@@ -127,12 +106,7 @@ export function buildPersistedSuggestion(
   };
 }
 
-/**
- * Build the `updatedPermissions` entry for a folder grant — the only answer
- * that stops the CLI re-asking about a write through a symlink. The CLI writes
- * a persisted grant to `additionalDirectories` itself and applies it to the
- * running session at any destination (verified on 2.1.280).
- */
+/** The only answer that stops re-asks about a write through a symlink; the CLI persists and applies it itself (2.1.280). */
 export function buildDirectoryGrant(
   directories: string[],
   destination: PersistedScopeValue | 'session',
@@ -140,7 +114,6 @@ export function buildDirectoryGrant(
   return { type: 'addDirectories', directories, destination };
 }
 
-/** Build the `updatedPermissions` entry for the current CLI session only. */
 export function buildSessionSuggestion(ruleString: string): SessionSuggestion {
   assertNonEmptyRule(ruleString);
   const parsed = canonicalizeRule(parseRuleString(ruleString));
@@ -152,15 +125,6 @@ export function buildSessionSuggestion(ruleString: string): SessionSuggestion {
   };
 }
 
-/**
- * Warn when a rule is in a form the CLI's file permission checks never match.
- * As of CLI 2.1.210, only `Edit(path)` and `Read(path)` rules participate in
- * file permission checks — `Write(path)`, `NotebookEdit(path)`, and
- * `Glob(path)` are accepted but dead, and the CLI logs a startup warning for
- * each. Bare tool-name rules (no path) still match the tool everywhere and
- * are fine. Returns the warning text to show inline, or null when the rule
- * is unaffected.
- */
 export function unmatchedFileRuleWarning(ruleString: string): string | null {
   const parsed = parseRuleString(ruleString);
   if (!parsed.ruleContent) return null;
@@ -175,40 +139,18 @@ export function unmatchedFileRuleWarning(ruleString: string): string | null {
 }
 
 export interface CommandPreviewResult {
-  /** Render-safe text: every invisible character replaced by a visible escape. */
   text: string;
-  /** How many invisible or control characters were made visible. */
   hiddenCount: number;
-  /** Lines in `text`, so the caller can warn when the preview will scroll. */
   lineCount: number;
 }
 
-/**
- * Characters that occupy no visible width in a `<pre>` — zero-width spaces and
- * joiners, bidi overrides, soft hyphens, C0/C1 controls, the BOM, and the
- * line/paragraph separators. `\t` and `\n` are deliberately excluded: tabs get
- * their own visible glyph below, and newlines are meaningful in the preview.
- */
 const INVISIBLE_RE =
   // eslint-disable-next-line no-control-regex -- matching C0/C1 control characters is this regex's purpose
   /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
 
-/** Above this, the preview box scrolls and the tail is off-screen by default. */
 const SCROLL_LINE_THRESHOLD = 8;
 
-/**
- * Make a command safe to *show* in an approval dialog.
- *
- * OmniFex spawns the CLI with `--permission-prompt-tool stdio`, so this card is
- * the only place a human ever sees the command — the CLI's own dialog (which
- * gained this hardening in 2.1.223) never runs. Rendering `toolInput.command`
- * verbatim let a command pad itself with tabs, zero-width characters or bidi
- * overrides and display as something other than what would execute.
- *
- * Nothing is dropped: every neutralized character is replaced by its `<U+XXXX>`
- * escape and counted, so the preview stays a faithful account of the real
- * string rather than a prettier one.
- */
+/** Under `--permission-prompt-tool stdio` this card is the only place a human sees the command; nothing is dropped, only escaped. */
 export function buildCommandPreview(raw: string): CommandPreviewResult {
   let hiddenCount = 0;
   const text = raw
@@ -224,11 +166,6 @@ export function buildCommandPreview(raw: string): CommandPreviewResult {
   return { text, hiddenCount, lineCount: text.split('\n').length };
 }
 
-/**
- * One-line caution to show beside the preview, or null when there's nothing
- * unusual. Covers both ways a command can hide from a reviewer: characters
- * that don't render, and length that pushes the tail out of the scroll box.
- */
 export function commandPreviewWarning(preview: CommandPreviewResult): string | null {
   const parts: string[] = [];
   if (preview.hiddenCount > 0) {
@@ -242,18 +179,13 @@ export function commandPreviewWarning(preview: CommandPreviewResult): string | n
   return parts.length > 0 ? parts.join('; ') : null;
 }
 
-/**
- * Pull the initial editable rule string out of the first CLI suggestion, or
- * fall back to the bare tool name if the CLI didn't provide one.
- */
 export function getInitialRuleString(
   suggestion: IncomingSuggestion | undefined,
   fallbackToolName: string,
 ): string {
   const r = suggestion?.rules?.[0];
   if (r?.toolName) {
-    // Canonicalise here too, so the rule shown in the card is the rule that
-    // will actually be written — the CLI can suggest an unmatched form.
+    // The CLI can suggest an unmatched form; show the rule that will actually be written.
     const c = canonicalizeRule(r);
     return c.ruleContent ? `${c.toolName}(${c.ruleContent})` : c.toolName;
   }

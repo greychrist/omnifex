@@ -5,18 +5,8 @@ import { sessionAuthFailure, type SessionAuthFailure } from '@/lib/sessionDerive
 import { onAccountSignedIn } from '@/lib/accountSignIn';
 
 /**
- * Has this tab's running CLI process lost its sign-in — and if so, restart it
- * the moment its account is signed in again.
- *
- * `sessionAuthFailure` reads the transcript, which outlives the process: a
- * restored or restarted tab replays history that can still end on the
- * failure. So a failure only counts if it landed after this tab last saw its
- * process start. The cost is a false negative when the renderer reattaches to
- * a live process that had already failed; the alternative was a red shield on
- * a working session.
- *
- * The auto-restart skips a turn in flight: restarting kills the process, and
- * the Restart session button stays available for that case.
+ * The transcript outlives the process, so a failure counts only if it landed after this tab last saw its
+ * process start. The auto-restart skips a running turn: restarting kills the process.
  */
 export function useSessionAuthExpiry(opts: {
   messages: JsonlNode[];
@@ -41,7 +31,6 @@ export function useSessionAuthExpiry(opts: {
     return found;
   }, [messages, processStartedAt]);
 
-  // Read at event time, so the listener subscribes once per account.
   const latest = useRef({ failure, turnRunning, restart });
   useLayoutEffect(() => { latest.current = { failure, turnRunning, restart }; });
 

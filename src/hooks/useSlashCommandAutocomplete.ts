@@ -8,9 +8,7 @@ interface SlashCommandAutocompleteState {
 }
 
 interface SlashCommandAutocompleteActions {
-  /** Call when text changes — detects `/` trigger and updates query. */
   handleTextChangeForSlash: (newValue: string, newCursorPosition: number, prevPrompt: string) => void;
-  /** Handle a command selection from the picker. */
   handleSlashCommandSelect: (
     command: SlashCommand,
     prompt: string,
@@ -18,25 +16,12 @@ interface SlashCommandAutocompleteActions {
     setPrompt: (p: string) => void,
     textarea: HTMLTextAreaElement | null,
   ) => void;
-  /** Close the picker and reset query. */
   handleSlashCommandPickerClose: (textarea: HTMLTextAreaElement | null) => void;
 }
 
 export type SlashCommandAutocomplete = SlashCommandAutocompleteState & SlashCommandAutocompleteActions;
 
-/**
- * useSlashCommandAutocomplete — manages the slash-command autocomplete
- * lifecycle: trigger detection, query text, selection, and close.
- *
- * The actual SlashCommandPicker UI remains a separate component; this
- * hook only manages the STATE and LOGIC that drives it.
- */
 export interface SlashCommandAutocompleteOptions {
-  /**
-   * Called when the user picks a command OmniFex provides itself rather than
-   * one the CLI knows about. The trigger text is stripped from the prompt
-   * first, so the handler starts from a clean insertion point.
-   */
   onLocalCommand?: (commandId: string) => void;
 }
 
@@ -45,16 +30,12 @@ export function useSlashCommandAutocomplete(
 ): SlashCommandAutocomplete {
   const [showSlashCommandPicker, setShowSlashCommandPicker] = useState(false);
   const [slashCommandQuery, setSlashCommandQuery] = useState("");
-  // Internal cursor snapshot for query-range math
   const [triggerCursorPosition, setTriggerCursorPosition] = useState(0);
-  // Read through a ref-stable binding so the select callback's identity does
-  // not change on every parent render — TabContent's inline closures have
-  // caused render loops here before.
+  // Ref-stable so the select callback's identity survives parent renders: TabContent's inline closures caused render loops.
   const { onLocalCommand } = opts;
 
   const handleTextChangeForSlash = useCallback(
     (newValue: string, newCursorPosition: number, prevPrompt: string) => {
-      // Detect `/` typed at the beginning of input or after whitespace
       if (newValue.length > prevPrompt.length && newValue[newCursorPosition - 1] === '/') {
         const isStartOfCommand =
           newCursorPosition === 1 ||
@@ -69,7 +50,6 @@ export function useSlashCommandAutocomplete(
         }
       }
 
-      // Update query while picker is open
       if (showSlashCommandPicker && newCursorPosition >= triggerCursorPosition) {
         let slashPosition = -1;
         for (let i = newCursorPosition - 1; i >= 0; i--) {
@@ -104,7 +84,6 @@ export function useSlashCommandAutocomplete(
     ) => {
       if (!textarea) return;
 
-      // Find the / position before cursor
       let slashPosition = -1;
       for (let i = cursorPosition - 1; i >= 0; i--) {
         if (prompt[i] === '/') {
@@ -124,10 +103,7 @@ export function useSlashCommandAutocomplete(
       const beforeSlash = prompt.substring(0, slashPosition);
       const afterCursor = prompt.substring(cursorPosition);
 
-      // An OmniFex-local command runs a handler instead of being inserted as
-      // text — the CLI has never heard of it, so sending "/recall" would just
-      // be an unknown command. The trigger text is removed either way, so the
-      // handler inserts into a prompt with no half-typed "/rec" in it.
+      // OmniFex-local commands run a handler instead of being inserted: the CLI does not know them.
       if (isLocalSlashCommand(command.id)) {
         setPrompt(`${beforeSlash}${afterCursor}`);
         setShowSlashCommandPicker(false);

@@ -1,13 +1,4 @@
-/**
- * Per-row run stats for the `agents` popover: how long a subagent has run,
- * what its tokens cost, and how full its context is.
- *
- * Cost and context come from the session cost watcher's per-agent split
- * (`SessionCostSnapshot.bySubagent`), which prices each subagent's own
- * transcript the same way the Cost Report does. A row joins it by `taskId`,
- * which for an Agent task is the agent id in the transcript's file name.
- * Rows with no transcript — background shell tasks — get time only.
- */
+// Rows join the cost split by taskId, which for an Agent task is the agent id in the transcript's file name.
 import type { SubagentCost } from '@/lib/api';
 import { resolveContextWindow } from '@/lib/pricing';
 import type { Subagent } from '@/lib/subagentStreams';
@@ -52,8 +43,7 @@ export function subagentRunStats(sub: Subagent, costs: Costs, nowMs: number): Su
   };
 }
 
-/** The popover header's total: the cost of the rows shown, not every agent
- *  the session ever ran — a dismissed row drops out of both. */
+/** The cost of the rows shown, not every agent the session ran. */
 export function subagentTotals(subs: readonly Subagent[], costs: Costs): { usd?: number; estimated: boolean } {
   let usd: number | undefined;
   let estimated = false;

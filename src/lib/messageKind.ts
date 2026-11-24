@@ -1,25 +1,3 @@
-/**
- * Authoritative JsonlNode['kind'] catalog post-refactor (Phase 4 + 5).
- * These are the only kinds reachable by classifyJsonlLine:
- *
- *   ai-title
- *   assistant
- *   attachment
- *   cli-stream-init
- *   cli-stream-result
- *   file-history-snapshot
- *   last-prompt
- *   lifecycle
- *   permission-mode
- *   queue-operation
- *   rate-limit
- *   rate-limit-event
- *   stream-event
- *   system
- *   unknown
- *   user
- */
-
 import type { JsonlNode } from '@/types/jsonl';
 import { isSubagentPrompt } from './subagentDispatch';
 import { transcriptIndex } from './transcriptIndex';
@@ -29,13 +7,6 @@ import { commandEnvelopeKind, isRecapCommandRecord } from './commandEnvelope';
 import { isCliSidechannelRecord } from './cliSidechannelRecords';
 import { isTaskLifecycleMarker } from './subagentEvents';
 
-/**
- * Renderable in the chat feed for the purpose of "is this message
- * effectively a single-thing message?" decisions. Mirrors the predicate
- * `compactGrouping.ts` uses for the same question — kept inline here so
- * the two files stay independent. (An empty text block or signature-only
- * thinking block doesn't count.)
- */
 function isRenderableBlockLocal(b: unknown): boolean {
   if (!b || typeof b !== 'object') return false;
   const block = b as { type?: string; text?: unknown; thinking?: unknown };
@@ -62,32 +33,7 @@ function findMatchingToolUseName(
   return transcriptIndex(allMessages).toolUses.get(toolUseId)?.name;
 }
 
-/**
- * Classify a stream node as a single "standalone" rendering kind — i.e. a
- * message whose rendered output is exactly one kind card and can be filtered
- * as a unit in compact mode.
- *
- * Returns null for messages whose rendering depends on per-content-block
- * logic (assistant/user messages with mixed text / tool_use / tool_result).
- * Those are intentionally left to the StreamMessage renderer; dropping them
- * wholesale would hide unrelated content.
- *
- * The kind IDs returned here must match entries in DEFAULT_KINDS.
- */
-/**
- * Kind for a user record the CLI stamped as injected rather than typed.
- *
- * Every user record carries `origin.kind`. Three values occur in practice:
- * `human` (you typed it), `task-notification` (a background task reporting
- * in) and `coordinator` (an orchestrator messaging a subagent mid-run). Only
- * the first is the user speaking; the other two were being classified as
- * `user.prompt` purely because nothing else claimed them, which put a build
- * notification on screen as a message you had written.
- *
- * Returns null for `human`, for an absent stamp, and for any value not listed
- * here — an unrecognised origin falls through to the content rules rather
- * than getting a kind invented for it.
- */
+/** Only `origin.kind` task-notification / coordinator are injected; `human`, absent or unknown fall to the content rules. */
 export function originInjectedKind(raw: unknown): string | null {
   const kind = (raw as { origin?: { kind?: unknown } })?.origin?.kind;
   if (kind === 'task-notification') return 'user.taskNotification';
@@ -112,27 +58,19 @@ const STREAM_BOOKKEEPING_SUBTYPES: ReadonlySet<string> = new Set([
   'ui_notify_cancel',
   'commands_changed',
   'permission_check_status',
-  // The CLI's live phase pings: 'requesting' at each model call, 'compacting',
-  // and null when compaction ends or the permission mode changes.
   'status',
 ]);
 
-/** A mod's $.ui.log / $.ui.toast, pushed to a headless host. Shown. */
 const MOD_LINE_SUBTYPES: ReadonlySet<string> = new Set(['ui_log', 'ui_toast']);
 
 export function classifyStandaloneKind(
   msg: JsonlNode,
   allMessages: readonly JsonlNode[],
 ): string | null {
-  // permission_request comes through as 'unknown' kind with raw.type === 'permission_request'
   if (msg.kind === 'unknown') {
     const raw = msg.raw as { type?: string; tool_name?: string; subtype?: string };
     if (raw.type === 'permission_request') {
       const toolName = (raw as { tool_name?: string }).tool_name;
-      // The live AskUserQuestion prompt keeps its own kind (distinct accent/icon
-      // from the generic Bash/Read permission prompt). NOTE: only the *answered*
-      // card is recategorized under the agent origin (see
-      // AnsweredAskUserQuestionCard) — the live interactive prompt is left as-is.
       if (toolName === 'AskUserQuestion') return 'permission.askUserQuestion';
       return 'permission.request';
     }
@@ -145,19 +83,7 @@ export function classifyStandaloneKind(
     return null;
   }
 
-  // AskUserQuestion: elevate the answered Q+A card to a first-order
-  // chat-feed message (no surrounding assistant bubble) when the wrapping
-  // assistant message would only contain the tool_use, and hide the user
-  // message that just carries the matching tool_result. Only fires once
-  // the tool_result has actually landed — while the user is mid-answer
-  // the live `permission.askUserQuestion` prompt is the visible card and
-  // the in-bubble fallback handles the assistant message normally.
-  //
-  // The two returned IDs (`tool.askUserQuestion.answered` and `.result`)
-  // are internal dispatch sentinels for StreamMessage's short-circuit —
-  // they intentionally do NOT have entries in the v2 catalog because
-  // the matching branch returns AnsweredAskUserQuestionCard / null before
-  // the MessageFrame chrome lookup runs.
+  // `tool.askUserQuestion.answered*` are StreamMessage dispatch sentinels, deliberately not in KIND_REGISTRY.
   if (msg.kind === 'assistant') {
     const content = (msg.raw as { message?: { content?: unknown } }).message?.content;
     if (Array.isArray(content)) {
@@ -220,44 +146,27 @@ export function classifyStandaloneKind(
     if (subtype === 'user_prompt_submit') return 'system.userPromptSubmit';
     if (subtype === 'away_summary') return 'system.away_summary';
     if (subtype === 'feedback_draft_queued') return 'system.feedback_draft_queued';
-    // Stream-only CLI bookkeeping — each its own kind so it can be shown or
-    // hidden from Appearance settings (default Never) rather than dropped in
-    // code. The kind id is the subtype.
     if (STREAM_BOOKKEEPING_SUBTYPES.has(subtype)) return `system.${subtype}`;
     if (MOD_LINE_SUBTYPES.has(subtype)) return `system.${subtype}`;
-    // A local slash command's stdout (/usage, /cost, …), which CLI 2.1.283
-    // moved here from a user record (that older form is user.commandOutput).
-    // `/recap`'s is a recap, and shares the Away summary kind.
+    // CLI 2.1.283+ writes slash-command stdout here; older transcripts carry it as user.commandOutput.
     if (subtype === 'local_command') {
       return isRecapCommandRecord(msg.raw) ? 'system.away_summary' : 'system.local_command';
     }
-    // Lost writes on a full disk: an error, drawn in the API error kind.
     if (subtype === 'session_writes_lost') return 'system.api_error';
-    // What the Stop hooks did when a turn ended.
     if (subtype === 'stop_hook_summary') return 'system.stop_hook_summary';
-    // Where a compaction cut the conversation.
     if (subtype === 'compact_boundary') return 'system.compact_boundary';
-    // Fallback: any other system subtype renders as the unknown gray inline strip.
     return 'system.unknown';
   }
 
-  // rate_limit_event: a top-level `type`, not a `system` subtype (see the
-  // JsonlNode doc comment). Its own separately-stylable registry id.
   if (msg.kind === 'rate-limit-event') {
     return 'system.rate_limit';
   }
 
-  // Top-level `progress` record: one id for every `data.type` variant.
   if (msg.kind === 'progress') return 'system.progress';
 
-  // The stream's session-start and turn-end envelopes. Without a kind they
-  // were invisible to Appearance settings and drew a hard-coded badge.
   if (msg.kind === 'cli-stream-init') return 'system.init';
   if (msg.kind === 'cli-stream-result') return 'system.result';
 
-  // Bookkeeping JSONL kinds: the kind id equals the node kind. Returning it
-  // here (rather than null) lets compact-grouping read each kind's registry
-  // `visibility` instead of force-sweeping them into a hidden group.
   if (
     msg.kind === 'permission-mode' ||
     msg.kind === 'last-prompt' ||
@@ -269,32 +178,24 @@ export function classifyStandaloneKind(
     return msg.kind;
   }
 
-  // Synthetic control-change markers (effort/model/permission) → control.<x>.
   if (msg.kind === 'control-change') {
     return `control.${msg.control}`;
   }
 
-  // Injected user records — what the CLI recorded about the message's origin
-  // beats every inference drawn from its text, so this precedes the content
-  // rules below.
+  // The CLI's origin stamp beats any inference from text, so this precedes the content rules.
   if (msg.kind === 'user') {
     const injected = originInjectedKind(msg.raw);
     if (injected) return injected;
   }
 
-  // Subagent prompts: user-role messages synthesized by the Task/Agent tool.
   if (isSubagentPrompt(msg, allMessages)) {
     return 'user.subagentPrompt';
   }
 
-  // Skill-injected user messages.
   if (detectSkillInjection(msg, allMessages)) {
     return 'user.skillInjection';
   }
 
-  // Slash-command echoes / local-command stdout — the CLI wraps these in
-  // <command-name>/<local-command-stdout> tags inside a user-role text
-  // block, so detection is a content match on the whole message.
   if (msg.kind === 'user') {
     const content = (msg.raw as { message?: { content?: unknown } }).message?.content;
     if (!Array.isArray(content)) return null;
@@ -305,14 +206,11 @@ export function classifyStandaloneKind(
         text += block.text;
       }
     }
-    // Same test the classifier keys 'local-command' off, so a renderer that
-    // shows a command card can never disagree with a derivation that treats
-    // it as a prompt.
+    // Same test the classifier keys 'local-command' off, so renderer and derivation never disagree.
     const envelope = commandEnvelopeKind(text);
     if (envelope === 'echo') return 'user.command';
     if (envelope === 'output') return 'user.commandOutput';
 
-    // System-context user messages.
     if (content.length > 0) {
       let sawText = false;
       let allSystemContext = true;

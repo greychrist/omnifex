@@ -1,42 +1,11 @@
 /**
- * The record types the CLI writes into the session JSONL that are not
- * messages — conversation latches and bookkeeping it keeps for itself.
- *
- * The CLI's own merge-strategy map (verified in 2.1.276) is the source of
- * this list. Exactly four types there are marked `"transcript"` — `user`,
- * `assistant`, `system`, `attachment` — and every other entry is per-session
- * state carried across turns, branches and compaction: `"last-wins"` for a
- * latch, `"accumulate"` for a log, `"boundary-cleared"` for something a
- * compaction resets. `atis-latch` is one of the latches: an opaque token the
- * CLI pins to a conversation and re-emits on every branch write, which is why
- * 379 of them landed in twelve sessions and every one drew an orange
- * "Unrecognized record: atis-latch" card.
- *
- * To refresh after a CLI upgrade, read the map out of the bundle:
- *
- *   rg -a -o '\{[^{}]{0,1200}"ended-by-model":"last-wins"[^{}]{0,600}\}' \
- *     ~/.local/share/claude/versions/<version>
- *
- * Deliberately NOT here, though the CLI classifies them the same way:
- *
- *  - `queue-operation`, `last-prompt`, `permission-mode`, `ai-title`,
- *    `custom-title` and `file-history-snapshot` — `classifyJsonlLine` gives
- *    each its own kind and something in the app reads it. `custom-title`
- *    moved out of the list below when the status bar started showing (and
- *    the pencil started writing) a session's name: it is the record a rename
- *    lands as, so hiding it would hide the rename.
- *  - `summary` — it rides the `unknown` kind but `StreamMessage` renders it
- *    as the compaction SummaryWidget. It is a message in all but type.
- *
- * A type the CLI adds later and this list does not know still draws the
- * catch-all card, and that is the intent: an unfamiliar record is worth
- * seeing once. This list is how it stops being worth seeing 379 times.
+ * Non-message JSONL types, from the CLI's merge-strategy map (every type not marked "transcript"). Refresh:
+ *   rg -a -o '\{[^{}]{0,1200}"ended-by-model":"last-wins"[^{}]{0,600}\}' ~/.local/share/claude/versions/<version>
+ * Never add a type classifyJsonlLine gives its own kind, `custom-title` (a rename lands as it), or `summary`
+ * (rendered as the compaction widget).
  */
 export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
-  // Conversation latches — per-session state, last one wins.
   'atis-latch',
-  // Every tool the conversation has called so far (CLI >= 2.1.311),
-  // re-written each time the set grows.
   'tools-used',
   'isolation-latch',
   'mode',
@@ -56,58 +25,30 @@ export const CLI_SIDECHANNEL_RECORD_TYPES: ReadonlySet<string> = new Set([
   'pr-link',
   'artifact-comment-monitor',
   'artifact-autoreact-ledger',
-  // The session's plugin "dev mods" folder (CLI >= 2.1.283).
   'dev-mods',
-  // The signed-in account + org that own the session (CLI >= 2.1.317).
   'session-owner',
-  // Whether the session runs in experimental Code Mode (CLI >= 2.1.318).
-  // Re-appended with the metadata, but not in the merge map.
   'repl-mode',
-  // The organization a "hybrid" sign-in (an org reached through another
-  // provider or a gateway) belongs to (CLI >= 2.1.329). Written with the
-  // metadata and into subagent files; not in the merge map, last-wins by
-  // the CLI's own fallback.
   'hybrid-organization',
-  // One row per Code Mode script call (`ranByToolUseId`), routed to the
-  // agent's file by `agentId` (CLI >= 2.1.330). The CLI's merge maps it
-  // `boundary-cleared` / `ignored` and strips it on hydrate.
   'host-row',
-  // Structural bookkeeping — branch plumbing and file-history deltas.
   'file-history-delta',
   'continued-in',
-  // A checksum (`sum`) vouching for the transcript head a resume loaded
-  // (CLI >= 2.1.319, `boundary-cleared`).
   'resume-head-vouch',
   'content-replacement',
-  // Data-flow provenance per tool call, and the sessions this one was derived
-  // from (CLI >= 2.1.323, behind `tengu_pewter_grebe` + `allow_data_flow`).
-  // The CLI strips all three when it hydrates a transcript.
   'data-flow-records',
   'data-flow-incomplete',
   'derived-from',
   'fork-context-ref',
   'frame-link',
-  // Request replay (CLI >= 2.1.282 behind `tengu_elegant_meadow`; on by
-  // default since 2.1.300):
-  // the exact API request per model call, plus its deduplicated system+tools
-  // shape and message blobs. `api-request-blob` carries a `message`, but it
-  // is a request param, not a turn.
   'api-request',
   'api-request-shape',
   'api-request-blob',
-  // 2.1.328: a paused request picked up again (messageId, pausedRequestId,
-  // resumedRequestId, plus the request params on the main thread). Same
-  // gate and merge strategy as `api-request`.
   'api-request-resumed',
-  // Dropped from the CLI's merge map in 2.1.276. Kept: transcripts written
-  // by 2.1.275 and earlier still carry them, and the list exists to silence
-  // records already on disk.
+  // Dropped from the CLI's map in 2.1.276; older transcripts still carry them.
   'marble-origami-commit',
   'marble-origami-snapshot',
   'marble-origami-reset',
 ]);
 
-/** Whether a raw JSONL record is CLI bookkeeping rather than a message. */
 export function isCliSidechannelRecord(raw: unknown): boolean {
   if (!raw || typeof raw !== 'object') return false;
   const type = (raw as { type?: unknown }).type;

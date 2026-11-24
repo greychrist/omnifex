@@ -1,35 +1,12 @@
-// Message-rendering config — data model, defaults, and live resolver.
-//
-// This module is the source of truth for message-kind styling. It owns:
-//   • KIND_REGISTRY — maps kind id → category + built-in default chrome.
-//   • resolveKind — three-layer merge: category base → registry default →
-//     per-kind user patch (config.kinds[id]). All rendering decisions go
-//     through this single function.
-// The settings screen reads and writes this config via
-// `api.saveSetting(MESSAGE_RENDERING_CONFIG_KEY, ...)`.
-
 import { migrateV5 } from "./renderingConfigMigration";
 import { hexChroma, hexHue, NEUTRAL_CHROMA } from "./colorHue";
 import { isTypefaceId, type Typeface } from "./typefaceCatalog";
 
-/**
- * v6 has a key of its own. The dev build and the installed app share one
- * database, and an installed app from before v6 resets anything under the
- * v5 key that is not v5 — so v6 written there would have wiped the settings
- * for both. The v5 key is only read, to migrate from, and never written.
- */
+// Own key: dev and the installed app share one DB, and a pre-v6 app resets anything non-v5 under the v5 key.
 export const MESSAGE_RENDERING_CONFIG_KEY = "message_rendering_config_v6";
-/** Where v5 lived; read once to migrate, never written. */
 export const LEGACY_MESSAGE_RENDERING_CONFIG_KEY = "message_rendering_config";
 
-// ─── legacy palette names ──────────────────────────────────────────────────
-//
-// Every color is a hex. There used to be a named palette (Appearance ›
-// Palette) that kinds, categories and tab indicators referred to by name; it
-// was retired 2026-10-08, when nothing referenced it but four categories and
-// the built-in defaults. Saved configs and exported files still carry those
-// names, so they are converted on load — through the saved palette's own swatch
-// when it had one, else through this table, which is the palette as shipped.
+// Saved configs and exported files still carry these retired palette names; converted to hex on load.
 
 const LEGACY_PALETTE_SWATCHES: Readonly<Record<string, string>> = {
   primary: "#8b8b8b",
@@ -55,7 +32,6 @@ const LEGACY_PALETTE_SWATCHES: Readonly<Record<string, string>> = {
   black: "#171717",
 };
 
-/** Name → hex for a saved config: its own palette swatches over the shipped ones. */
 function legacySwatches(savedPalette: unknown): Record<string, string> {
   const out: Record<string, string> = { ...LEGACY_PALETTE_SWATCHES };
   if (!isRecord(savedPalette)) return out;
@@ -66,21 +42,14 @@ function legacySwatches(savedPalette: unknown): Record<string, string> {
   return out;
 }
 
-/** A saved color as a hex: kept when it is one, converted when it is a legacy
- *  palette name, undefined otherwise. */
 function savedColor(v: unknown, swatches: Record<string, string>): string | undefined {
   if (isHexColor(v)) return v;
   return typeof v === "string" && Object.prototype.hasOwnProperty.call(swatches, v) ? swatches[v] : undefined;
 }
 
-// ─── icon allow-list ────────────────────────────────────────────────────────
-//
-// Strings only — the renderer maps these to actual components. Keeping an
-// allow-list prevents a config value from bloating the bundle with unused
-// Lucide icons.
+// An allow-list so a config value cannot pull unused Lucide icons into the bundle.
 
 export const ALLOWED_ICONS = [
-  // Originals
   "User",
   "Bot",
   "Terminal",
@@ -100,14 +69,12 @@ export const ALLOWED_ICONS = [
   "Globe",
   "Download",
   "Plug",
-  // People / chat
   "MessageCircle",
   "MessageSquare",
   "Send",
   "Mail",
   "AtSign",
   "CircleHelp",
-  // Status / feedback
   "ShieldCheck",
   "ShieldX",
   "Eye",
@@ -118,7 +85,6 @@ export const ALLOWED_ICONS = [
   "Bookmark",
   "Star",
   "Heart",
-  // Code / tech
   "Code",
   "Code2",
   "Braces",
@@ -128,14 +94,12 @@ export const ALLOWED_ICONS = [
   "Server",
   "GitBranch",
   "GitCommit",
-  // Creative / thinking
   "Sparkles",
   "Lightbulb",
   "Brain",
   "Feather",
   "PenTool",
   "Palette",
-  // Objects / cards
   "Package",
   "Box",
   "Tag",
@@ -143,7 +107,6 @@ export const ALLOWED_ICONS = [
   "ClipboardList",
   "BookOpen",
   "Book",
-  // Fun / personality
   "Rocket",
   "Coffee",
   "Ghost",
@@ -153,7 +116,6 @@ export const ALLOWED_ICONS = [
   "Sun",
   "Wand",
   "Crown",
-  // Misc symbols
   "Circle",
   "Square",
   "Hexagon",
@@ -162,7 +124,6 @@ export const ALLOWED_ICONS = [
   "Flame",
   "Smile",
   "Hourglass",
-  // v2 catalog additions
   "AlertOctagon",
   "AlertTriangle",
   "Bell",
@@ -183,18 +144,15 @@ export const ALLOWED_ICONS = [
   "ImageUp",
   "MonitorCog",
   "Slash",
-  // v3 catalog additions
   "GitPullRequest",
   "ShieldQuestion",
   "MessageCircleQuestion",
-  // Modern step icons (Settings › Chats › Modern)
   "GitCommitHorizontal",
   "FilePen",
   "FolderSearch",
   "ListTodo",
   "Wrench",
   "Workflow",
-  // Unicode fallbacks
   "ℹ",
   "✗",
   "⚠",
@@ -203,55 +161,20 @@ export const ALLOWED_ICONS = [
 
 export type IconName = (typeof ALLOWED_ICONS)[number];
 
-// ─── message kinds ──────────────────────────────────────────────────────────
-
-// ─── category + kind registry model ─────────────────────────────────────────
-//
-// Three-layer model: CATEGORIES carry default styling for all kinds in them;
-// KIND_REGISTRY carries built-in per-kind chrome layered on top; and
-// config.kinds carries sparse user patches as the final layer.
-// resolveKind(config, id) merges all three and is the single source of
-// truth for every kind's effective style.
-
-/**
- * `live` holds the kinds a reload loses: records the CLI sends on stream-json
- * stdout and never writes to the session file, plus OmniFex's own synthetic
- * live-session markers. Which system subtypes those are is decided main-side
- * by stream-forward's JSONL_CARRIED_SYSTEM_SUBTYPES, and liveOnlyKinds.test.ts
- * pins this registry to it. Kind ids keep their `system.` prefix — the
- * section moved, the ids did not, so saved per-kind overrides still apply.
- */
+// `live` is pinned to stream-forward's JSONL_CARRIED_SYSTEM_SUBTYPES by liveOnlyKinds.test.ts. Kind ids keep
+// their `system.` prefix so saved per-kind overrides still apply.
 export const CATEGORIES = ["user", "agent", "system", "live"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
-/** What a kind looks like and whether Standard shows it. Shared by
- *  categories and kind registry entries; identity fields
- *  (id/label/description) are NOT here. */
 export interface KindStyle {
   accentColor: string;
   icon: IconName;
-  /** Drawn in Standard. Expanded draws every record whatever this says. */
   standard: boolean;
-  /** A turn boundary: on screen in Standard whatever `standard` says. */
   alwaysShown?: boolean;
 }
 
-/**
- * How repeats of a kind fold down to the rows worth drawing (see
- * collapseRepeats.ts). Fixed per kind — which field a kind changes on is a
- * fact about the CLI record, not a preference — while whether to apply it is
- * the user's `collapseRepeats` choice.
- *
- *  - `latestInRun`: the record re-sends a whole snapshot; keep the last of
- *    each run, a run ending at the first non-system message.
- *  - `onChange`: the record re-sends one value unchanged; keep a row only
- *    when `field` differs from the kind's previous row.
- */
 export type CollapseRule =
   | { mode: "latestInRun" }
-  /** `onlyIn`: the views the rule applies in; absent means both. Expanded
-   *  is the raw record stream, so a rule that only tidies re-stamped
-   *  bookkeeping leaves it alone. */
   | { mode: "onChange"; field: string; onlyIn?: ViewMode[] };
 
 export interface CategoryStyle extends KindStyle {
@@ -264,20 +187,17 @@ export interface KindDef {
   category: Category;
   label: string;
   description: string;
-  /** Built-in chrome for this kind, layered over the category base. */
   default: Partial<KindStyle>;
   collapse?: CollapseRule;
 }
 
 export const KIND_REGISTRY: Record<string, KindDef> = {
-  // ── agent ──
   "assistant.text": { id: "assistant.text", category: "agent", label: "Assistant text", description: "Claude's reply text.", default: {} },
   "assistant.text.endTurn": { id: "assistant.text.endTurn", category: "agent", label: "Execution complete", description: "Final assistant text that ended the turn.", default: { accentColor: "#22c55e", icon: "CheckCircle2", alwaysShown: true } },
   "assistant.text.live": { id: "assistant.text.live", category: "agent", label: "Live reply", description: "Claude's reply while it is still arriving, a few words at a time. Replaced by the finished message — which may or may not be the one that ends the turn.", default: { accentColor: "#f59e0b" } },
   "assistant.thinking": { id: "assistant.thinking", category: "agent", label: "Thinking", description: "Extended-thinking blocks.", default: { icon: "Brain", standard: true } },
   "assistant.tool-use": { id: "assistant.tool-use", category: "agent", label: "Tool call", description: "Claude invoking a tool.", default: { accentColor: "#9ca3af", icon: "Terminal", standard: true } },
   "assistant.askUserQuestion": { id: "assistant.askUserQuestion", category: "agent", label: "Question (answered)", description: "An answered AskUserQuestion card.", default: { accentColor: "#6366f1", icon: "MessageCircleQuestion", standard: true } },
-  // ── user ──
   "user.prompt": { id: "user.prompt", category: "user", label: "User prompt", description: "What you typed.", default: { alwaysShown: true } },
   "user.command": { id: "user.command", category: "user", label: "Slash command", description: "A `/command` you ran.", default: { icon: "ChevronRight" } },
   "user.commandOutput": { id: "user.commandOutput", category: "user", label: "Command output", description: "Local stdout from a slash command.", default: { standard: false } },
@@ -288,25 +208,10 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   "user.coordinatorMessage": { id: "user.coordinatorMessage", category: "user", label: "Coordinator message", description: "An orchestrator messaging a subagent mid-run.", default: { accentColor: "#f59e0b", icon: "MessageSquare", standard: false } },
   "user.sdkSystemBracket": { id: "user.sdkSystemBracket", category: "user", label: "System notice", description: "CLI bracket notices like [Request interrupted].", default: { icon: "Info" } },
   "user.tool-result": { id: "user.tool-result", category: "user", label: "Tool result", description: "Output returned from a tool call.", default: { standard: false } },
-  // Its own row rather than folding into `user.tool-result`: that kind defaults
-  // to verbose-only visibility, which would bury every screenshot a tool returns. Split
-  // out so images can be styled and shown/hidden independently of ordinary tool
-  // output. Visible in compact by default — a screenshot is usually the point
-  // of the call, not plumbing.
-  // `card`, not the `side-line` that plain tool results use: side-line renders
-  // no header and no footer chip, which is why these read as "not the same
-  // component" next to every other message. A returned screenshot is content
-  // worth framing, so it gets the standard card chrome and a title.
   "user.tool-result.image": { id: "user.tool-result.image", category: "user", label: "Tool result image", description: "A screenshot or image returned by a tool.", default: { accentColor: "#6366f1", icon: "Image", standard: true } },
   "user.image": { id: "user.image", category: "user", label: "Image", description: "A pasted or attached image.", default: { icon: "Image" } },
-  // The CLI writes the /compact summary as a `user` record, so without its own
-  // kind it renders as something you typed — a wall of recap text wearing your
-  // color. Left-aligned and collapsible because it is long by construction
-  // and is reference material, not conversation. Visible in compact view: it
-  // marks where the earlier history stops existing, which is exactly the thing
-  // you are looking for when scanning a long session.
+  // The CLI writes the /compact summary as a `user` record; without its own kind it renders as your prompt.
   "user.compactSummary": { id: "user.compactSummary", category: "user", label: "Compact summary", description: "The recap written when a session is compacted.", default: { accentColor: "#14b8a6", icon: "Scissors", standard: true } },
-  // ── system ──
   "system.notification.info": { id: "system.notification.info", category: "live", label: "Notification (info)", description: "Informational CLI notification.", default: { icon: "Bell", standard: true } },
   "system.notification.warn": { id: "system.notification.warn", category: "live", label: "Notification (warn)", description: "Warning CLI notification.", default: { accentColor: "#f59e0b", icon: "Bell", standard: true } },
   "system.notification.error": { id: "system.notification.error", category: "live", label: "Notification (error)", description: "Error CLI notification.", default: { accentColor: "#ef4444", icon: "Bell", standard: true } },
@@ -320,9 +225,6 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   "system.away_summary": { id: "system.away_summary", category: "system", label: "Away summary", description: "A recap of where the session stands — the CLI's own while you were away, or /recap's (the Recap button and auto-recap).", default: { accentColor: "#9ca3af", icon: "ClipboardList", standard: true } },
   "system.thinking_tokens": { id: "system.thinking_tokens", category: "live", label: "Thinking tokens", description: "Total size of each extended-thinking burst. The live running count is the session widget's activity pill, not this row.", default: { accentColor: "#4b5563", icon: "Brain", standard: true }, collapse: { mode: "latestInRun" } },
   "system.rate_limit": { id: "system.rate_limit", category: "live", label: "Rate limit", description: "A rate_limit_event line reporting usage-window status (allowed/warning/rejected, reset time, overage).", default: { accentColor: "#4b5563", icon: "Shield", standard: false } },
-  // Top-level `progress` record. Shown by default: none has ever been seen on
-  // disk, so if the CLI starts writing them, seeing them is the point. Set it
-  // to Never in Appearance if they turn out to be noise.
   "system.progress": { id: "system.progress", category: "live", label: "Progress", description: "A progress record the CLI wrote to the transcript — hook, agent, skill or bash progress, or a tool heartbeat — with its fields.", default: { accentColor: "#4b5563", icon: "Terminal", standard: true } },
   "system.feedback_draft_queued": { id: "system.feedback_draft_queued", category: "live", label: "Feedback draft", description: "The SendFeedback tool queued a local draft feedback report for you to review with /feedback.", default: { accentColor: "#eab308", icon: "Flag", standard: true } },
   "system.local_command": { id: "system.local_command", category: "system", label: "Local command output", description: "What a slash command that runs in the CLI printed — /usage, /cost, /context. Claude Code 2.1.283+ writes it as a system record; older transcripts use Command output.", default: { icon: "Terminal", standard: true } },
@@ -330,11 +232,6 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   "system.compact_boundary": { id: "system.compact_boundary", category: "system", label: "Compaction", description: "Where a compaction cut the conversation — what triggered it, how far context shrank and how long it took. The recap it wrote is Compact summary.", default: { accentColor: "#14b8a6", icon: "Scissors", standard: true } },
   "system.init": { id: "system.init", category: "live", label: "Session start", description: "The CLI starting a session process: its model and folder. Sent live only, so a reloaded transcript has none.", default: { accentColor: "#4b5563", icon: "Power", standard: false } },
   "system.result": { id: "system.result", category: "live", label: "Turn result", description: "The CLI ending a turn: success or the error it stopped on, how long it ran and how many model calls it took. Sent live only, so a reloaded transcript has none.", default: { accentColor: "#4b5563", icon: "Flag", standard: false } },
-  // ── stream-only CLI bookkeeping ──
-  // Records the CLI sends a stream-json host for its own sake. Nothing to say
-  // in the transcript, so they default to Never — but as settings rather than
-  // hard-coded drops, so each can be switched on to see what the CLI sent.
-  // `showRawPayload` because none carries a narrative field.
   "system.background_tasks_changed": { id: "system.background_tasks_changed", category: "live", label: "Background tasks", description: "Snapshot of every background task running, re-sent on each change. The status bar's agents and shells readouts show the same set.", default: { accentColor: "#4b5563", icon: "ListTree", standard: false }, collapse: { mode: "latestInRun" } },
   "system.dev_intent": { id: "system.dev_intent", category: "live", label: "Dev intent", description: "The CLI's inference of what you are building (e.g. an iOS app), sent once per kind.", default: { accentColor: "#4b5563", icon: "Lightbulb", standard: false } },
   "system.per_turn_effort_changed": { id: "system.per_turn_effort_changed", category: "live", label: "Per-turn effort", description: "Per-turn effort stopped being cache-safe for this model, so an effort change now rewrites the cached prefix.", default: { accentColor: "#4b5563", icon: "Settings", standard: false }, collapse: { mode: "onChange", field: "per_turn_effort_active" } },
@@ -357,10 +254,8 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   "system.unknown": { id: "system.unknown", category: "system", label: "System (other)", description: "Any unrecognized system subtype.", default: { icon: "Info" } },
   "permission.request": { id: "permission.request", category: "system", label: "Permission request", description: "Live tool-permission prompt.", default: { accentColor: "#f59e0b", icon: "ShieldQuestion", standard: true } },
   "permission.askUserQuestion": { id: "permission.askUserQuestion", category: "system", label: "Question (live)", description: "Live AskUserQuestion prompt.", default: { accentColor: "#6366f1", icon: "MessageCircleQuestion", standard: true } },
-  // ── summary / fallback (resolve to system) ──
   "summary.compaction": { id: "summary.compaction", category: "system", label: "Conversation summary", description: "Compaction summary card.", default: { icon: "FileText", standard: true, alwaysShown: true } },
   "unknown": { id: "unknown", category: "system", label: "Unknown", description: "A record OmniFex does not recognize — drawn with its raw payload. Expanded always shows it.", default: { accentColor: "#f97316", icon: "HelpCircle", standard: false } },
-  // ── bookkeeping (real JSONL lines, previously dropped by the renderer) ──
   "cli-state": { id: "cli-state", category: "system", label: "CLI state", description: "Session state the CLI keeps in the transcript for itself — mode, owner, latches, the tools used so far (the list in cliSidechannelRecords.ts). Nothing in it is addressed to you; Expanded shows it with its raw payload.", default: { accentColor: "#93c5fd", icon: "Workflow", standard: false } },
   "task-lifecycle": { id: "task-lifecycle", category: "system", label: "Task progress", description: "A background task or subagent starting, reporting progress, or finishing (task_started / task_progress / task_notification). The agents rows show the same work live; Expanded shows each frame with its raw payload.", default: { accentColor: "#93c5fd", icon: "ListChecks", standard: false } },
   "permission-mode": { id: "permission-mode", category: "system", label: "Permission mode", description: "Permission level changed mid-session.", default: { accentColor: "#f59e0b", icon: "ShieldCheck", standard: true }, collapse: { mode: "onChange", field: "permissionMode", onlyIn: ["standard"] } },
@@ -369,13 +264,6 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   "custom-title": { id: "custom-title", category: "system", label: "Session renamed", description: "Session renamed — by the pencil in the status bar, /rename, or claude.ai.", default: { accentColor: "#9ca3af", icon: "Tag", standard: false }, collapse: { mode: "onChange", field: "customTitle", onlyIn: ["standard"] } },
   "queue-operation": { id: "queue-operation", category: "system", label: "Input queue", description: "The CLI's input queue: a prompt, task notification or agent message arriving (enqueue), a turn starting on it (dequeue, with the wait when there was one), or it being folded into the running turn (remove).", default: { accentColor: "#9ca3af", icon: "ListOrdered", standard: false } },
   "file-history-snapshot": { id: "file-history-snapshot", category: "system", label: "File snapshot", description: "CLI editor undo/redo snapshot.", default: { accentColor: "#4b5563", icon: "Clock", standard: false } },
-  // ── session context sources (attachment channel) ──
-  // What the CLI reports loading into the session: instruction files, nested
-  // memory, MCP servers, agents, skills, deferred tools. Each is one arrival
-  // in the context ledger (see src/lib/contextLedger.ts); the marker is the
-  // arrival's place in the feed and the panel is where content is reviewed.
-  // Only the six in-scope sub-types get an id — the rest of the attachment
-  // channel is per-turn bookkeeping and stays unrendered.
   "attachment.instructions": { id: "attachment.instructions", category: "system", label: "Instructions loaded", description: "Instruction files (CLAUDE.md / AGENTS.md / MEMORY.md) the CLI loaded into this session.", default: { accentColor: "#f59e0b", icon: "FileText", standard: true } },
   "attachment.nested_memory": { id: "attachment.nested_memory", category: "system", label: "Nested memory", description: "A subdirectory CLAUDE.md picked up as Claude navigated the project.", default: { accentColor: "#f59e0b", icon: "FileText", standard: false } },
   "attachment.mcp_instructions_delta": { id: "attachment.mcp_instructions_delta", category: "system", label: "MCP servers changed", description: "MCP server instructions added to or removed from the session context.", default: { accentColor: "#9ca3af", icon: "Server", standard: false } },
@@ -383,16 +271,9 @@ export const KIND_REGISTRY: Record<string, KindDef> = {
   "attachment.deferred_tools_delta": { id: "attachment.deferred_tools_delta", category: "system", label: "Deferred tools changed", description: "Tool schemas deferred behind ToolSearch, added or removed.", default: { accentColor: "#4b5563", icon: "Package", standard: false } },
   "attachment.skill_listing": { id: "attachment.skill_listing", category: "system", label: "Skills listing", description: "The set of skills offered to this session.", default: { accentColor: "#4b5563", icon: "Sparkles", standard: false } },
   "attachment.project_doc_reads": { id: "attachment.project_doc_reads", category: "system", label: "Project docs read", description: "claude.ai project documents read into this session on your behalf.", default: { accentColor: "#f59e0b", icon: "FileText", standard: true } },
-  // ── synthetic control-change markers (live-session only) ──
-  // Unified family: same chrome (Settings icon, info accent); distinct ids so
-  // each stays independently re-stylable. Visible in compact (deliberate user
-  // actions worth seeing).
   "control.effort": { id: "control.effort", category: "live", label: "Effort changed", description: "You changed the reasoning effort level.", default: { accentColor: "#9ca3af", icon: "Settings", standard: true } },
   "control.model": { id: "control.model", category: "live", label: "Model changed", description: "You changed the model.", default: { accentColor: "#9ca3af", icon: "Settings", standard: true } },
-  // Live permission marker. The persisted `permission-mode` JSONL line (above)
-  // covers resume; jsonl-tail never forwards it live, so this synthetic marker
-  // gives immediate feedback. Keeps its own ShieldCheck/amber identity to match
-  // the persisted permission-mode kind.
+  // jsonl-tail never forwards the persisted `permission-mode` line live; this marker covers the live session.
   "control.permission": { id: "control.permission", category: "live", label: "Permission changed (live)", description: "You changed the permission mode.", default: { accentColor: "#f59e0b", icon: "ShieldCheck", standard: true } },
 };
 
@@ -407,16 +288,8 @@ export const DEFAULT_CATEGORIES: Record<Category, CategoryStyle> = {
   live:   { label: "Live-only", description: "Sent on the live stream and never saved — gone after a reload.", accentColor: "#4b5563", icon: "Zap", standard: false },
 };
 
-// ─── style fields ────────────────────────────────────────────────────────────
-
-// The styling fields shared by categories and kind registry entries — everything
-// that drives a card's look. Identity fields (id/label/description) are excluded.
 export const STYLE_FIELDS: (keyof KindStyle)[] = ["accentColor", "icon", "standard", "alwaysShown"];
 
-/**
- * Three-layer merge: category base → KIND_REGISTRY built-in default → user patch.
- * This is the single source of truth for every kind's effective style.
- */
 export function resolveKind(config: MessageRenderingConfig, kindId: string): KindStyle {
   return {
     ...config.categories[categoryOf(kindId)],
@@ -425,15 +298,9 @@ export function resolveKind(config: MessageRenderingConfig, kindId: string): Kin
   };
 }
 
-/** Left out of Standard. A turn boundary never is. */
 export function isHiddenInStandard(style: KindStyle): boolean {
   return !style.alwaysShown && !style.standard;
 }
-
-// ─── typography ─────────────────────────────────────────────────────────────
-//
-// Global typography applied to every message kind. Two style slots — the
-// header row that sits above a card's body, and the content body text.
 
 export type FontSize = "xxs" | "xs" | "sm" | "base" | "lg";
 export type FontWeight =
@@ -448,14 +315,11 @@ export type FontWeight =
   | "black";
 
 export interface TypographyStyle {
-  /** Catalog typeface ID. See src/lib/typefaceCatalog.ts. */
   typeface: Typeface;
   size: FontSize;
   weight: FontWeight;
 }
 
-/** The chat's body text. Modern's answers use it when Settings › Chats sets
- *  their font to "content". */
 export interface Typography {
   content: TypographyStyle;
 }
@@ -463,10 +327,6 @@ export interface Typography {
 export const DEFAULT_TYPOGRAPHY: Typography = {
   content: { typeface: "inter", size: "sm", weight: "normal" },
 };
-
-// ─── tab status indicators ───────────────────────────────────────────────────
-// The per-tab glyph in the tab strip (TabManager) for each non-working state.
-// Icon + color are per-state; size + chip chrome are shared across all four.
 
 export type TabIndicatorKey =
   | "error"
@@ -477,9 +337,7 @@ export type TabIndicatorKey =
 export type TabIndicatorSize = "sm" | "md" | "lg";
 
 export interface TabIndicatorStyle {
-  /** Icon name from ALLOWED_ICONS (rendered via IconRenderer). */
   icon: IconName;
-  /** Hex color. */
   color: string;
 }
 
@@ -488,24 +346,13 @@ export interface TabIndicators {
   permission: TabIndicatorStyle;
   question: TabIndicatorStyle;
   complete: TabIndicatorStyle;
-  /**
-   * Prompt-cache countdown running low on a background session. Unlike the
-   * four above this one is ambient rather than actionable, so it ranks last in
-   * TabManager's precedence chain and renders without the pulse.
-   * Reddens automatically at the critical step; the configured color is the
-   * warn color. See src/lib/cacheExpiry.ts.
-   */
   cacheExpiring: TabIndicatorStyle;
-  /** Shared glyph size: sm/md/lg → 14/16/18px. */
   size: TabIndicatorSize;
-  /** Shared: render each glyph inside a bordered chip. */
   bordered: boolean;
-  /** Shared chip background opacity (0–100); only applies when bordered. */
   bgOpacity: number;
 }
 
 export const DEFAULT_TAB_INDICATORS: TabIndicators = {
-  // Defaults reproduce the hard-coded glyphs the tab strip shipped with.
   error: { icon: "AlertCircle", color: "#ef4444" },
   permission: { icon: "Shield", color: "#eab308" },
   question: { icon: "MessageCircleQuestion", color: "#eab308" },
@@ -516,17 +363,8 @@ export const DEFAULT_TAB_INDICATORS: TabIndicators = {
   bgOpacity: 100,
 };
 
-// ─── hard filters ───────────────────────────────────────────────────────────
-
-// ─── terminal ───────────────────────────────────────────────────────────────
-//
-// Settings for the embedded xterm surface (Codex sign-in and other one-shot terminals).
-
 export type TerminalCursorStyle = "block" | "underline" | "bar";
 
-/** Allowed font-size range (px). Bounds line up with xterm.js's practical
- *  legibility floor and the largest size the picker exposes. Out-of-range
- *  values from saved configs are clamped during merge. */
 export const TERMINAL_FONT_SIZE_MIN = 8;
 export const TERMINAL_FONT_SIZE_MAX = 32;
 
@@ -542,11 +380,8 @@ function clampFontSize(n: number): number {
 }
 
 export interface Terminal {
-  /** Catalog typeface ID. Mono fonts only — the picker filters to family='mono'. */
   typeface: Typeface;
-  /** Font size in CSS pixels. Clamped to [TERMINAL_FONT_SIZE_MIN, TERMINAL_FONT_SIZE_MAX] on load. */
   fontSize: number;
-  /** xterm cursor style — block, underline, or vertical bar. */
   cursorStyle: TerminalCursorStyle;
 }
 
@@ -556,28 +391,10 @@ export const DEFAULT_TERMINAL: Terminal = {
   cursorStyle: "block",
 };
 
-// ─── tab strip ──────────────────────────────────────────────────────────────
-
-/**
- * How much of each tab the strip spends on text.
- *
- * `expanded` is the two-line tab: the project name over the session's own
- * name. `compact` drops the session line, leaving a single row — the tab still
- * carries its glyph, status and close button, it just stops reserving vertical
- * space for a name that is often absent anyway.
- *
- * Purely presentational. The session name is still resolved either way (the
- * hover title uses it), so switching density never changes what a tab knows.
- */
 export type TabDensity = "expanded" | "compact";
 
 export interface TabStrip {
   density: TabDensity;
-  /**
-   * Widest a tab may grow, in CSS px. Tabs still size to content below it;
-   * past it the project and session names truncate to an ellipsis. Without a
-   * cap, a CLI-generated session title set the width of the whole tab.
-   */
   maxWidth: number;
 }
 
@@ -588,87 +405,48 @@ export const DEFAULT_TAB_STRIP: TabStrip = {
   maxWidth: 250,
 };
 
-// ─── hidden events bar ──────────────────────────────────────────────────────
-//
-// The compact-mode "N Hidden Events" expander. It is not a message kind — it
-// wraps a run of them — so it has no KindStyle and no accent. It takes a
-// background and a border independently instead, because the one-color
-// accent tints both at fixed low alphas and the bar blended in. Each is a hex
-// (alpha allowed) or null for the theme's own look — except the two text
-// colors, where null means "automatic": readable against the background.
-
-
-/** Card border opacity out of the box, in percent. */
 export const DEFAULT_CARD_BORDER_OPACITY = 20;
 
-/** Card corner radius out of the box, in px — the theme's `rounded-lg`. */
 export const DEFAULT_CARD_BORDER_RADIUS = 12;
 export const CARD_BORDER_RADIUS_MAX = 24;
 
-// ─── Modern chat format ─────────────────────────────────────────────────────
-//
-// Settings › Chats › Modern. Modern draws its own way — bubbles, prose and the
-// work timeline — rather than through message kinds, so it has a block of its
-// own. Added after ship: the defaults-as-baseline merge covers older configs.
-
-/** A step in Modern's work timeline: a thought, or what a tool call did
- *  (`stepKind` in modernSteps.ts names every tool's). */
 export const MODERN_STEP_KINDS = [
   "thought", "command", "commit", "branch", "read", "edit", "create", "search",
   "explore", "web", "agent", "tasks", "question", "skill", "design", "mcp", "tool",
 ] as const;
 export type ModernStepKind = (typeof MODERN_STEP_KINDS)[number];
 
-/** When a finished or running timeline is open. */
 export type TimelineOpen = "while-running" | "always" | "never";
 const TIMELINE_OPEN: readonly TimelineOpen[] = ["while-running", "always", "never"];
 
-/** Geist, Modern's own face, or Chats › Typography's content typeface. */
 export type ModernFont = "geist" | "content";
 
-/** Answer text sizes in px; the line height follows at ~1.43×. */
 export const MODERN_ANSWER_SIZES = [12, 13, 14, 15, 16, 18] as const;
 
 export interface ModernStyle {
   stepIcons: Record<ModernStepKind, IconName>;
-  /** Hex per step kind for its icon chip and the rule beside its opened
-   *  body, or null for the built-in gray. A failed step stays red. */
   stepColors: Record<ModernStepKind, string | null>;
   timelineOpen: TimelineOpen;
   showThoughts: boolean;
   font: ModernFont;
   answerSize: number;
-  /** Hex, or null for the built-in blue. */
   promptTint: string | null;
-  /** Hex, or null for the theme's destructive red. */
   failedColor: string | null;
-  /** Hex, or null for the built-in emerald. The answer card takes only its
-   *  hue; lightness and chroma stay the stylesheet's, so it stays muted. */
   answerCardColor: string | null;
-  /** Each card's saturation as a percent of its built-in strength, 0–200. */
   promptSaturation: number;
   answerCardSaturation: number;
-  /** Each card's brightness: a percent of its built-in lift off the theme's
-   *  muted color, 0–200 (darker on the light theme, where the lift is down). */
   promptBrightness: number;
   answerCardBrightness: number;
-  /** A soft drop shadow tinted the card's own color. */
   promptShadow: boolean;
   answerCardShadow: boolean;
-  /** Off: the card has no fill or border, and the page shows through. */
   promptColorEnabled: boolean;
   answerCardColorEnabled: boolean;
-  /** The answer that ends a turn: in the card, or with only a bar down its
-   *  left edge in the answer color (Compact's "Execution complete" look). */
   answerStyle: ModernAnswerStyle;
-  /** The user prompt: in its card, or with only a bar down its left edge in
-   *  the prompt color — the answer's Line, for the prompt. */
   promptStyle: ModernAnswerStyle;
 }
 
 export type ModernAnswerStyle = "card" | "line";
 
-/** Saturation and brightness top out at twice the built-in. */
 export const MODERN_PERCENT_MAX = 200;
 
 export const DEFAULT_MODERN: ModernStyle = {
@@ -713,17 +491,11 @@ export const DEFAULT_MODERN: ModernStyle = {
 
 const GEIST_STACK = "'Geist', var(--app-font-stack, ui-sans-serif, system-ui, sans-serif)";
 
-/**
- * The CSS variables styles.css reads for Modern. Null means "leave it to the
- * stylesheet's fallback". Set on :root by MessageRenderingProvider, and inline
- * on the settings sample so it follows the draft.
- */
 export function modernCssVars(m: ModernStyle): Record<string, string | null> {
   return {
     "--modern-font": m.font === "content" ? "var(--chat-content-font)" : GEIST_STACK,
     "--modern-answer-size": `${String(m.answerSize)}px`,
     "--modern-answer-leading": `${String(Math.round(m.answerSize * 1.43))}px`,
-    // Each card: the color tints its shadow, its hue sets fill and border.
     "--modern-prompt-tint": m.promptTint,
     "--modern-prompt-hue": m.promptTint ? hueVar(m.promptTint) : null,
     "--modern-prompt-saturation": cardSaturationVar(m.promptTint, m.promptSaturation),
@@ -740,15 +512,12 @@ function hueVar(hex: string): string | null {
   return h === null ? null : h.toFixed(3);
 }
 
-/** 100% is the stylesheet's own strength, so it sets nothing. A white, grey
- *  or black pick has no hue to show, so it draws untinted whatever the
- *  slider says — taking its hue drew a brown card. */
+/** A neutral pick has no hue to show; taking its hue anyway drew a brown card. */
 function cardSaturationVar(color: string | null, pct: number): string | null {
   if (color && (hexChroma(color) ?? 1) < NEUTRAL_CHROMA) return "0";
   return percentVar(pct);
 }
 
-/** 100% is the stylesheet's own lift, so it sets nothing. */
 function percentVar(pct: number): string | null {
   return pct === 100 ? null : String(pct / 100);
 }
@@ -799,17 +568,8 @@ function mergeModern(saved: Record<string, unknown>, base: ModernStyle): ModernS
   };
 }
 
-// ─── top-level config (v5) ──────────────────────────────────────────────────
-
-/**
- * The two views a transcript can be drawn in (SessionViewToggle), both by the
- * Modern renderer. Standard leaves out what Settings › Chats hides; Expanded
- * draws every record (2026-11-18, replacing Compact / Verbose / All / Modern).
- */
 export type ViewMode = "standard" | "expanded";
 
-/** A saved default from before the two views: Compact and Modern drew what
- *  Standard draws; Verbose and All showed more, as Expanded does. */
 const LEGACY_VIEW_MODES: Record<string, ViewMode> = {
   standard: "standard", expanded: "expanded",
   compact: "standard", modern: "standard", verbose: "expanded", all: "expanded",
@@ -817,14 +577,10 @@ const LEGACY_VIEW_MODES: Record<string, ViewMode> = {
 
 export interface MessageRenderingConfig {
   version: 6;
-  /** The chat format a new session opens in. */
   defaultViewMode: ViewMode;
   categories: Record<Category, CategoryStyle>;
-  /** Per-kind user style patches — the third layer of resolveKind. */
   kinds: Record<string, Partial<KindStyle>>;
-  /** Opacity, 0–100, of every accent-colored card border. */
   cardBorderOpacity: number;
-  /** Corner radius of every card, in px (0–24). */
   cardBorderRadius: number;
   typography: Typography;
   tabIndicators: TabIndicators;
@@ -836,7 +592,6 @@ export interface MessageRenderingConfig {
 export function createDefaultConfig(): MessageRenderingConfig {
   return {
     version: 6,
-    // What sessions opened in before the setting was read.
     defaultViewMode: "standard",
     categories: structuredClone(DEFAULT_CATEGORIES),
     kinds: {},
@@ -850,33 +605,14 @@ export function createDefaultConfig(): MessageRenderingConfig {
   };
 }
 
-// ─── merge / load / validate ────────────────────────────────────────────────
-//
-// Merge strategy: the default config is always the baseline; user patches are
-// applied on top. On a version mismatch the saved config is discarded and
-// defaults are returned (full reset). Unknown kind IDs in saved data are
-// silently dropped. Legacy palette color names are converted to hex.
-
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-/**
- * True when v looks like a CSS hex color: #rgb, #rrggbb, or the
- * 8-digit RGBA variant #rrggbbaa. Permissive enough to accept what an
- * <input type="color"> emits (always 7-char #rrggbb) plus typed-in
- * shorthands and alpha variants. The accent helpers in accentStyle.ts
- * pad/derive border + bg alphas on top of whichever form is stored.
- */
 export function isHexColor(v: unknown): v is string {
   return typeof v === "string" && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v);
 }
 
-/**
- * Validate and coerce a single style field off a raw record. Returns the
- * accepted value, or undefined when the raw value is missing/invalid so the
- * caller can fall back to the inherited default.
- */
 function validateStyleField(
   field: keyof KindStyle,
   raw: Record<string, unknown>,
@@ -897,7 +633,6 @@ function validateStyleField(
   }
 }
 
-/** Validate and clean a saved kinds map, dropping junk entries and unknown fields. */
 function validateKindsMap(raw: unknown, swatches: Record<string, string>): Record<string, Partial<KindStyle>> {
   const out: Record<string, Partial<KindStyle>> = {};
   if (!isRecord(raw)) return out;
@@ -913,7 +648,6 @@ function validateKindsMap(raw: unknown, swatches: Record<string, string>): Recor
   return out;
 }
 
-/** Shallow-merge saved category styles over the defaults already on base. */
 function mergeCategories(
   base: MessageRenderingConfig,
   saved: Record<string, unknown>,
@@ -936,10 +670,7 @@ function mergeCategories(
 
 export function mergeConfig(input: unknown): MessageRenderingConfig {
   const base = createDefaultConfig();
-  // v5 carried the classic formats' settings; it is rewritten as v6 so that
-  // Standard shows what Modern showed (renderingConfigMigration.ts).
   const saved = isRecord(input) && input.version === 5 ? migrateV5(input) : input;
-  // Full reset for anything else that is not a v6 record.
   if (!isRecord(saved) || saved.version !== 6) return base;
   const swatches = legacySwatches(saved.palette);
   mergeCategories(base, saved, swatches);
@@ -947,12 +678,6 @@ export function mergeConfig(input: unknown): MessageRenderingConfig {
   return mergeShared(base, saved, swatches);
 }
 
-/**
- * Merge the shared (non-kind) config blocks — view mode, card border opacity,
- * typography, tabs, hidden-events bar, terminal — from a saved record
- * onto base. A saved `palette` / `hardFilters` / `debug` block (all retired) is
- * ignored.
- */
 function mergeShared(
   base: MessageRenderingConfig,
   saved: Record<string, unknown>,
@@ -997,8 +722,6 @@ function mergeShared(
     if (isTypefaceId(t.typeface)) base.terminal.typeface = t.typeface;
     if (typeof t.fontSize === "number") base.terminal.fontSize = clampFontSize(t.fontSize);
     if (isTerminalCursorStyle(t.cursorStyle)) base.terminal.cursorStyle = t.cursorStyle;
-    // Unknown / wrong-typed fields fall through to the defaults already on
-    // base.terminal from createDefaultConfig() above.
   }
 
   if (isRecord(saved.modern)) base.modern = mergeModern(saved.modern, base.modern);
@@ -1025,9 +748,6 @@ function mergeTypographyStyle(
   if (!isRecord(saved)) return base;
   const raw = saved;
 
-  // Migration path: legacy records have a family field. Map it to a
-  // sensible default typeface so the user's intent (sans vs serif vs mono)
-  // is preserved across the schema change.
   let typeface: Typeface = base.typeface;
   if (typeof raw.typeface === "string" && isTypefaceId(raw.typeface)) {
     typeface = raw.typeface;
@@ -1083,8 +803,7 @@ function mergeTabIndicators(
     permission: mergeTabIndicatorStyle(s.permission, base.permission, swatches),
     question: mergeTabIndicatorStyle(s.question, base.question, swatches),
     complete: mergeTabIndicatorStyle(s.complete, base.complete, swatches),
-    // Added after ship; the defaults-as-baseline merge supplies it for saved
-    // configs, so no version bump (which would reset the whole config).
+    // Fields added after ship rely on the defaults-as-baseline merge: a version bump would reset the whole config.
     cacheExpiring: mergeTabIndicatorStyle(s.cacheExpiring, base.cacheExpiring, swatches),
     size: TAB_INDICATOR_SIZES.includes(s.size as TabIndicatorSize)
       ? (s.size as TabIndicatorSize)

@@ -10,49 +10,19 @@ export interface Tab {
   id: string;
   type: 'chat' | 'projects' | 'mcp' | 'settings' | 'claude-md' | 'claude-file' | 'lima' | 'brain' | 'cost-report';
   title: string;
-  /**
-   * Which agent engine powers this tab's session. Defaults to `'claude'`
-   * everywhere — including for non-chat tabs where it's never read — so
-   * the field stays required and Tab construction doesn't have to know
-   * about agent semantics. Persistence restores tabs missing this field
-   * (saved by pre-Codex builds) with `'claude'`.
-   */
   agent: AgentKind;
-  sessionId?: string;  // for chat tabs
-  sessionData?: any; // for chat tabs - stores full session object
-  claudeFileId?: string; // for claude-file tabs
-  initialProjectPath?: string; // for chat tabs
-  /**
-   * Set when a chat tab backs out to the projects view: the project whose
-   * sessions page the projects tab should open. Consumed (cleared) as soon as
-   * the panel opens it, so it never outlives the hand-off.
-   */
+  sessionId?: string;
+  sessionData?: any;
+  claudeFileId?: string;
+  initialProjectPath?: string;
   returnToProjectPath?: string;
-  /**
-   * First prompt to send once this tab's auto-started session is up. Set by
-   * launchers that mean "open a session AND do this" — currently the Updates
-   * popover's changelog-drift warning. AgentSession sends it after
-   * startPersistentSession() resolves and clears it from the tab, so a
-   * restored tab never re-sends on the next app launch.
-   */
+  /** Sent once the auto-started session is up, then cleared so a restored tab never re-sends. */
   initialPrompt?: string;
-  /**
-   * Pre-filled session configuration for a chat tab that was started from
-   * the project view's inline new-session form. ClaudeCodeSession seeds its
-   * state with these values and auto-starts the session, so the user doesn't
-   * have to click "Start Session" again.
-   */
   initialSessionConfig?: {
     model: string;
     effort: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     permissionMode: string;
-    /**
-     * Account override selected by the user on the project landing page.
-     * When present, ClaudeCodeSession seeds its accountResolution from this
-     * snapshot instead of re-resolving from the auto-rules — guarantees the
-     * session spawns under the chosen account even when the override wasn't
-     * persisted via "Remember for this project".
-     */
+    /** Seeds accountResolution instead of re-resolving, so the session spawns under the chosen account even when not persisted. */
     accountResolution?: {
       account: {
         name: string;
@@ -65,43 +35,16 @@ export interface Tab {
       match_detail: string;
     };
   };
-  projectPath?: string; // for chat tabs
-  accountName?: string; // for chat tabs - resolved account name
-  accountColor?: string | null;  // for chat tabs - resolved account color
-  accountIcon?: string | null;   // for chat tabs - resolved account icon
+  projectPath?: string;
+  accountName?: string;
+  accountColor?: string | null;
+  accountIcon?: string | null;
   status: 'active' | 'idle' | 'running' | 'complete' | 'error';
-  /**
-   * Is the agent doing work right now? Driven by ClaudeCodeSession from
-   * the same rollup as TabStatusSummary.promptStatus (mainTurnInFlight
-   * OR active task OR running subagent). 'ready' when quiet.
-   * Drives the TabManager spinner and (indirectly via TabStatusSummary)
-   * the popover badge + upgrade gate. Independent of `status` (lifecycle).
-   */
   promptStatus?: 'working' | 'ready';
-  /**
-   * How many of this chat tab's subagents are still running, mirrored from
-   * the session's derived subagent rows (the same count usePublishTabStatus
-   * publishes as TabStatusSummary.activeAgents). Drives the TabManager's
-   * agent glyph, which outranks the generic working spinner: a backgrounded
-   * agent outlives the turn that launched it, so without this a tab waiting
-   * on one looks identical to a tab mid-sentence.
-   */
+  /** Outranks the working spinner: a background agent outlives the turn that launched it. */
   activeAgents?: number;
-  /**
-   * Which "waiting on the human" state this chat tab is in, mirrored from
-   * the session's pending permission (see deriveWaitingFor). Drives the
-   * TabManager per-tab indicator: 'permission' → shield, 'question' →
-   * question mark. null/undefined when nothing is waiting on the user.
-   */
   waitingFor?: TabWaitingFor;
-  /**
-   * Prompt-cache clock, mirrored from the session so the tab strip can warn
-   * that a background session's cache is about to expire. `cacheAnchorMs` is
-   * the last assistant turn's timestamp, `cacheTtlMs` the TTL the CLI actually
-   * used (observed from usage.cache_creation). Both null when no turn has
-   * written cache, or when the timer is disabled. TabManager owns the clock —
-   * these two values only change once per turn. See src/lib/cacheExpiry.ts.
-   */
+  /** `cacheTtlMs` is the TTL the CLI actually used (usage.cache_creation). TabManager owns the clock. */
   cacheAnchorMs?: number | null;
   cacheTtlMs?: number | null;
   hasUnsavedChanges: boolean;
@@ -126,16 +69,8 @@ interface TabContextType {
 
 const TabContext = createContext<TabContextType | undefined>(undefined);
 
-// const STORAGE_KEY = 'greychrist_tabs'; // No longer needed - persistence disabled
 const MAX_TABS = 20;
 
-/**
- * Last non-empty path segment of an absolute project path. Strips trailing
- * slashes and accepts both POSIX and Windows separators. Returns undefined
- * for paths that resolve to nothing meaningful (empty string, "/", "//").
- * Used by the session-name registry mirror so the Log tab can render
- * `session: <project> - <guid7>` even after the tab is closed.
- */
 function generateTabId(): string {
   return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
@@ -167,32 +102,24 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const isInitialized = useRef(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
-  // Stable ref for tabs — used by lookup functions so they don't need
-  // tabs in their dependency arrays (which would cascade new references
-  // through useTabState on every tabs change and cause infinite loops).
+  // Lookups read tabs through a ref: a tabs dependency cascades new references through useTabState into infinite loops.
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
 
-  // Load tabs from storage on mount
   useEffect(() => {
     const loadTabs = async () => {
     if (isInitialized.current) return;
     isInitialized.current = true;
 
-    // Migrate from old format if needed
     TabPersistenceService.migrateFromOldFormat();
 
-    // Try to load saved tabs
     const { tabs: savedTabs, activeTabId: savedActiveTabId } = TabPersistenceService.loadTabs();
     
     if (savedTabs.length > 0) {
-      // For chat tabs, restore session data
       const restoredTabs = await Promise.all(savedTabs.map(async (tab) => {
         if (tab.type === 'chat' && tab.sessionId) {
-          // Check if session can be restored
           const sessionData = SessionPersistenceService.loadSession(tab.sessionId);
           if (sessionData) {
-            // Create a Session object for the tab
             const session = SessionPersistenceService.createSessionFromRestoreData(sessionData);
             return {
               ...tab,
@@ -207,7 +134,6 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setTabs(restoredTabs);
       setActiveTabId(savedActiveTabId);
     } else {
-      // Check if any accounts exist — if not, default to Settings
       let defaultType: Tab['type'] = 'projects';
       let defaultTitle = 'Projects';
       try {
@@ -217,7 +143,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           defaultTitle = 'Settings';
         }
       } catch {
-        // If account check fails, fall back to projects
+        // Fall back to Projects.
       }
 
       const defaultTab = makeDefaultTab(defaultType, defaultTitle);
@@ -229,20 +155,16 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logAndForget('tab-context:load-tabs', loadTabs());
   }, []);
 
-  // Save tabs to localStorage with debounce
   useEffect(() => {
-    // Don't save if not initialized
     if (!isInitialized.current) return;
     
-    // Clear existing timeout
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
 
-    // Debounce saving to avoid excessive writes
     saveTimeoutRef.current = setTimeout(() => {
       TabPersistenceService.saveTabs(tabs, activeTabId);
-    }, 500); // Wait 500ms after last change before saving
+    }, 500);
 
     return () => {
       if (saveTimeoutRef.current) {
@@ -251,15 +173,6 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [tabs, activeTabId]);
 
-  // Mirror each chat tab's identifying fields (title, project basename,
-  // Claude session id) into the persistent session-name registry so the
-  // Log tab's Category column can render `session: <project> - <guid7>`
-  // — including for tabs that have since been closed (tab state is
-  // in-memory; the registry is the only place a closed tab's identity
-  // still lives). The registry merges partial updates, so it's safe to
-  // call this each render — fields that aren't known yet (e.g. the
-  // sessionId before the CLI has emitted its `init` message) just stay
-  // absent until the next render writes them.
   useEffect(() => {
     for (const tab of tabs) {
       if (tab.type !== 'chat') continue;
@@ -272,7 +185,6 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [tabs]);
 
-  // Save tabs immediately when window is about to close
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (isInitialized.current && tabs.length > 0) {
@@ -284,7 +196,6 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      // Save one final time when component unmounts
       if (isInitialized.current && tabs.length > 0) {
         TabPersistenceService.saveTabs(tabs, activeTabId);
       }
@@ -299,10 +210,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newTab: Tab = {
       ...tabData,
       id: generateTabId(),
-      // Placeholder: the real index is assigned inside the updater below.
-      // Reading `tabs.length` here takes a render-time snapshot, so two adds
-      // batched into one render both claimed the same `order` — which made
-      // `order` disagree with the array it is supposed to index.
+      // Placeholder: the real index is assigned in the updater; a render-time snapshot gave batched adds the same `order`.
       order: 0,
       createdAt: new Date(),
       updatedAt: new Date()
@@ -314,24 +222,18 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [tabs.length]);
 
   const removeTab = useCallback((id: string) => {
-    // There is no empty state: closing the last tab lands on Projects, the
-    // same page a cold start with no saved tabs opens. Built outside the
-    // updater so a StrictMode double-invoke reuses one id rather than minting
-    // a second that the active id would then disagree with.
+    // Built outside the updater so a StrictMode double-invoke reuses one id.
     const replacementTab = makeDefaultTab('projects', 'Projects');
     setTabs(prevTabs => {
       const removedTab = prevTabs.find(tab => tab.id === id);
       const filteredTabs = prevTabs.filter(tab => tab.id !== id);
-      // Closing a lone Projects tab would only swap it for another one,
-      // remounting the page and resetting its search, sort and scroll.
+      // A lone Projects tab would only be swapped for another, resetting its search, sort and scroll.
       if (filteredTabs.length === 0 && removedTab?.type === 'projects') return prevTabs;
 
-      // Reorder remaining tabs
       const reorderedTabs = filteredTabs.length > 0
         ? filteredTabs.map((tab, index) => ({ ...tab, order: index }))
         : [replacementTab];
 
-      // Update active tab if necessary
       if (filteredTabs.length === 0) {
         setActiveTabId(replacementTab.id);
       } else if (activeTabId === id) {
@@ -340,13 +242,8 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveTabId(reorderedTabs[newActiveIndex].id);
       }
 
-      // Tab close is the only path that should end a CLI session. React
-      // unmount alone must NOT — Cmd+R reload, StrictMode double-invoke, and
-      // tab visibility flips all trigger unmounts but should keep the live
-      // session so rebind can claim it. Even a close only releases: the
-      // daemon stops the session when this was the last client holding it,
-      // so closing a tab in the browser leaves the app's copy running. It is
-      // a no-op for a tab with no session.
+      // Only tab close ends a CLI session, never unmount (reload, StrictMode) — rebind must be able to claim it.
+      // Even close only releases: the daemon stops it when no client holds it.
       if (removedTab?.type === 'chat') {
         logAndForget(
           `tab-context:release-session-on-close:${id}`,
@@ -363,12 +260,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       let changed = false;
       const nextTabs = prevTabs.map(tab => {
         if (tab.id !== id) return tab;
-        // Shallow-equal each updated key against the existing value. If
-        // nothing differs, return the same tab reference so the tabs
-        // array reference also stays stable. Prevents an unstable caller
-        // (e.g. an inline callback prop re-fired by a parent re-render)
-        // from amplifying into a sustained render loop — see
-        // ClaudeCodeSession's onProjectPathChange ref-capture fix.
+        // Same reference when nothing differs, so an unstable caller cannot become a render loop.
         const keys = Object.keys(updates) as (keyof Tab)[];
         const allEqual = keys.every((k) => tab[k] === updates[k]);
         if (allEqual) return tab;
@@ -382,7 +274,6 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setActiveTab = useCallback((id: string) => {
     if (tabsRef.current.find(tab => tab.id === id)) {
       setActiveTabId(id);
-      // Clear unread badge when switching to a tab
       setTabs(prev => prev.map(tab =>
         tab.id === id && tab.hasUnreadResult
           ? { ...tab, hasUnreadResult: false }
@@ -391,10 +282,6 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  // Route native-notification clicks back to the originating tab.
-  // The main process sends `notification-clicked` with `{ tabId }`; if the tab
-  // still exists, switch to it. Window focus is already handled in the main
-  // process so no extra work is needed here when the tab is gone.
   useEffect(() => {
     const unsubscribe = window.electronAPI.onEvent(
       'notification-clicked',
@@ -411,8 +298,6 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const reorderTabs = useCallback((startIndex: number, endIndex: number) => {
     setTabs(prevTabs => {
-      // Nothing to do — and returning prevTabs keeps the context value stable,
-      // so a drag that ends where it started costs no render at all.
       if (startIndex === endIndex) return prevTabs;
       if (startIndex < 0 || startIndex >= prevTabs.length) return prevTabs;
 
@@ -420,19 +305,9 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const [removed] = newTabs.splice(startIndex, 1);
       newTabs.splice(endIndex, 0, removed);
 
-      // Re-number, but only re-create the tabs that actually moved.
-      //
-      // `order` has to stay correct — tabPersistence sorts restored tabs by it
-      // and TabStatusPopover orders its list by it — but rebuilding all N tab
-      // objects to fix two of them changed the props of every mounted
-      // TabPanel, defeating its React.memo. A drag fires this once per
-      // neighbour crossed, so that re-rendered every open session's
-      // unvirtualised transcript between drag frames. That was the hiccup.
-      //
-      // Whether the move happened is decided by the indices, NOT by whether
-      // any `order` field changed: if the array had drifted out of sync with
-      // its order fields, a real move could leave every field already equal to
-      // its index and we would silently swallow the drag.
+      // Re-create only the tabs that moved: rebuilding all N defeats TabPanel's memo and re-renders every
+      // transcript per drag crossing. Decide the move by indices, not by changed `order` fields — drifted
+      // fields would swallow a real move.
       return newTabs.map((tab, index) =>
         tab.order === index ? tab : { ...tab, order: index },
       );
@@ -447,10 +322,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return tabsRef.current.filter(tab => tab.type === type);
   }, []);
 
-  // Memoize so the provider value identity only changes when tabs/activeTabId
-  // change — the callbacks are already useCallback-stable. Without this, every
-  // setTabs (which fires on every stream-driven updateTab) produced a fresh
-  // value object and re-rendered every useTabContext()/useTabState() consumer.
+  // Memoized: every stream-driven updateTab would otherwise re-render every consumer.
   const value: TabContextType = useMemo(() => ({
     tabs,
     activeTabId,

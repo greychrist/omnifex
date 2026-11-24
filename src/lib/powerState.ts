@@ -1,9 +1,4 @@
-/**
- * Main → renderer: whether the machine is in use. `{ awake: false }` on screen
- * lock and suspend, `{ awake: true }` on unlock and resume. Emitted by
- * daemon/power-state.ts; read by useGitWatchVisibility to pause git polling
- * nobody can see.
- */
+/** `{ awake: false }` on lock and suspend, `{ awake: true }` on unlock and resume. */
 export const POWER_STATE_CHANNEL = 'system-power-state';
 
 export interface PowerState {

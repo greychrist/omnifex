@@ -1,11 +1,3 @@
-/**
- * Typeface catalog — single source of truth for every font OmniFex bundles.
- *
- * Each entry pairs a stable storage `id` with a CSS `font-family` string
- * (already wrapped in fallbacks) and a `family` tag used to group typefaces
- * in pickers and to filter the App-font picker down to sans-only choices.
- */
-
 export type Typeface =
   | "inter"
   | "geist"
@@ -26,13 +18,9 @@ export type FamilyTag = "sans" | "display-sans" | "serif" | "humanist" | "mono";
 export interface TypefaceMeta {
   /** Stable storage ID used in persisted settings. Never rename. */
   id: Typeface;
-  /** Human-readable name shown in pickers. */
   label: string;
-  /** Full CSS font-family value, including fallback tail. */
   cssFamily: string;
-  /** Grouping tag — drives picker section headers and App-font filtering. */
   family: FamilyTag;
-  /** System fallback stack tail (informational; cssFamily already includes it). */
   fallback: string;
 }
 
@@ -154,7 +142,6 @@ export function isTypefaceId(value: unknown): value is Typeface {
   return typeof value === "string" && VALID_IDS.has(value);
 }
 
-/** Look up a typeface by id, falling back to Inter when unknown. */
 export function resolveTypeface(id: string): TypefaceMeta {
   return isTypefaceId(id) ? TYPEFACE_BY_ID[id] : TYPEFACE_BY_ID.inter;
 }

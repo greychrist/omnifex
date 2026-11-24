@@ -1,22 +1,6 @@
 /**
- * A `window.electronAPI` that talks to the daemon.
- *
- * The renderer funnels every backend call through
- * `window.electronAPI.invoke(channel, params)` and every subscription through
- * `window.electronAPI.onEvent(channel, cb)`, with channel names from the
- * Electron IPC era (the name stuck; Electron did not). Rather than touch the
- * ~230 call sites, this object keeps that surface and changes what is behind
- * it:
- *
- *  - session lifecycle channels become the typed protocol methods;
- *  - everything else becomes `rpc.invoke`, except channels that only the
- *    native app can serve, which go to its bridge when there is one;
- *  - protocol pushes are re-emitted on the legacy channel names the renderer
- *    already subscribes to, with the daemon's `sessionId` mapped back to the
- *    renderer's `tabId`.
- *
- * The tabId ⇄ sessionId map is the one piece of state. It is persisted so a
- * reload can re-attach (`session_rebind` → `session.resume`).
+ * `window.electronAPI` over the daemon: session channels become typed protocol methods, everything else `rpc.invoke` (native-only ones go to the bridge),
+ * and pushes are re-emitted on the legacy channel names with the daemon's `sessionId` mapped back to the renderer's `tabId`.
  */
 import type { ProtocolClient, ConnectionState } from '@/protocol/interfaces';
 import type { ServerMessage, SessionSummary } from '@/protocol';
@@ -36,7 +20,6 @@ export interface StorageLike {
   setItem(key: string, value: string): void;
 }
 
-/** A `claude-notification` payload as the daemon sends it. */
 interface NotificationPayload {
   title?: string;
   body?: string;
@@ -48,23 +31,16 @@ interface NotificationPayload {
 
 export interface ShimOptions {
   client: ProtocolClient;
-  /** The native app's bridge on the Mac; null on the web. */
   native: NativeBridge | null;
   storage?: StorageLike | null;
   log?: (message: string, meta?: Record<string, unknown>) => void;
-  /** Web only: raise a browser Notification for a daemon-side notification. */
   webNotify?: (title: string, body: string) => void;
 }
 
 export const TAB_MAP_STORAGE_KEY = 'omnifex.remote.tabSessions';
 
-// Legacy tab-scoped channel prefixes the daemon turns into session pushes:
-// agent-output, agent-error, agent-complete, claude-output-extra,
-// session-status, session-turn, session-init, session-account-mismatch,
-// elicitation-request. Routing is by push, not by subscription, so the shim
-// needs no table of them.
+// Tab-scoped channels route by push, not by subscription, so the shim needs no table of them.
 
-/** Channels the shim answers with a typed method rather than rpc.invoke. */
 const TYPED = new Set([
   'session_start',
   'session_rebind',
@@ -76,28 +52,14 @@ const TYPED = new Set([
   'session_interrupt',
 ]);
 
-/**
- * Baked in by `vite.web.config.ts` (and by vitest). The Vite dev server the
- * dev app loads defines nothing here — it has the native app to ask — so the
- * guard is that path, not a defensive branch.
- */
+/** Baked in by `vite.web.config.ts` and vitest; the dev server defines none, and that path is the guard. */
 declare const __APP_VERSION__: string | undefined;
 const BUILD_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'web';
 
-/**
- * Native-only channels the renderer calls unprompted at boot or on a timer.
- * On the web these have a benign answer rather than an error: the Updates
- * button reads "up to date", and nothing logs a red stack for a capability
- * that was never going to exist. Channels absent from this table still
- * reject, loudly, so a real gap shows. (The `tab_status_*` channels are not
- * here: the web page keeps its own, see `webTabStatus` below.)
- */
+/** Native-only channels called at boot or on a timer: on the web they get a benign answer, not an error. Absent channels still reject. */
 const WEB_FALLBACKS: Record<string, unknown> = {
   'updater:check': null,
-  // The daemon served this page, so the page has a version: the build it came
-  // from. The popover compares it against the daemon's.
   'get_app_version': BUILD_VERSION,
-  // No app behind the page: a dropped file has no path, so it is copied.
   'drop:paths': [],
 };
 
@@ -116,8 +78,6 @@ function stripUndefined(o: Record<string, unknown>): Record<string, unknown> {
 
 export type ShimHandle = ElectronApiLike & {
   dispose(): void;
-  /** Whether this client currently holds a daemon subscription for `sessionId`.
-   *  See the `subscribed` set: distinct from, and not implied by, socket state. */
   isSessionSubscribed(sessionId: string): boolean;
 };
 
@@ -126,23 +86,13 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
   const log = opts.log ?? (() => {});
   const storage = opts.storage === undefined ? (typeof localStorage === 'undefined' ? null : localStorage) : opts.storage;
 
-  // ---------------------------------------------------------------- tab map
   const tabToSession = new Map<string, string>();
   const sessionToTabs = new Map<string, Set<string>>();
   const lastSeq = new Map<string, number>();
-  /** The daemon run those seqs belong to. */
   let bootId: string | undefined = client.welcome?.bootId;
   const pendingPermission = new Map<string, string>();
   const lastState = new Map<string, { sessionStatus?: string; turn?: { status: string; since: string | null } }>();
-  /**
-   * Sessions this client currently holds a daemon subscription for.
-   *
-   * Connectivity is global — one socket per client — but *delivery* is not:
-   * the daemon fans a session out only to the clients that subscribed to it.
-   * So "the socket is up" and "this session is reaching me" are different
-   * facts, and the second is the one that was false for three hours. The
-   * status bar reads both; a green link alone would have looked fine.
-   */
+  /** Delivery is per session, not per socket: the daemon fans a session out only to clients that subscribed. */
   const subscribed = new Set<string>();
 
   function markSubscribed(sessionId: string, on: boolean): void {
@@ -194,7 +144,6 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
   }
   loadMap();
 
-  // -------------------------------------------------------------- listeners
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
 
   function emit(channel: string, ...args: unknown[]): void {
@@ -209,16 +158,12 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
     }
   }
 
-  // Sessions already reported as unroutable. An unmapped session emits on
-  // every push of a live turn, so this says it once and then shuts up.
   const unroutable = new Set<string>();
 
   function emitForSession(sessionId: string, prefix: string, ...args: unknown[]): void {
     const tabs = sessionToTabs.get(sessionId);
     if (!tabs) {
-      // A push the daemon sent us for a session we have no tab for. Silence
-      // here is indistinguishable from "the daemon never sent anything",
-      // which is exactly what made the missing-subscribe bug a forensics job.
+      // Log it: silence here is indistinguishable from the daemon never sending anything.
       if (!unroutable.has(sessionId)) {
         unroutable.add(sessionId);
         log('dropping pushes for an unmapped session', { sessionId, prefix });
@@ -229,12 +174,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
     for (const tab of tabs) emit(`${prefix}:${tab}`, ...args);
   }
 
-  /**
-   * `id` and `deliver_at` come only on a mod's notification (CLI 2.1.321):
-   * the id lets the notification centre replace or take it back, deliverAt
-   * books it for later. The web cannot book one, so it drops a delayed
-   * notice rather than raise it early.
-   */
+  /** `id` and `deliver_at` come only on a mod's notification; the web drops a delayed notice rather than raise it early. */
   function notifyNative(p: NotificationPayload, tabId: string | null): void {
     const title = p.title ?? 'OmniFex';
     const body = p.body ?? '';
@@ -273,14 +213,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
             notifyNative(p, tab);
           }
         } else {
-          // `notification` is two things on the wire: the OS-notification
-          // channel above, and the bridge's catch-all for any tab-scoped
-          // channel it has no case for (daemon/remote/bridge.ts).
-          // Routing the catch-all by kind once rang the notification sound
-          // on every cost tick, with an empty body and no banner when the
-          // window was focused. Branch on the channel, which every push
-          // carries. (`session-cost` itself no longer rides here: it is
-          // keyed by CLI session, not tab, so the bridge broadcasts it.)
+          // `notification` is also the bridge's catch-all for unhandled tab-scoped channels: branch on the channel, never the kind.
           emitForSession(m.sessionId, prefix, m.payload);
         }
         return;
@@ -298,7 +231,6 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
       case 'permission.request': {
         lastSeq.set(m.sessionId, m.seq);
         pendingPermission.set(m.sessionId, m.permissionId);
-        // The daemon carried the renderer's own card payload whole.
         emitForSession(m.sessionId, 'agent-output', m.payload ?? {
           type: 'permission_request',
           request_id: m.permissionId,
@@ -310,13 +242,9 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
       }
       case 'channel':
         emit(m.channel, m.payload);
-        // A notification that belongs to no session (a rate-limit threshold)
-        // is broadcast rather than routed; it still deserves the banner.
         if (m.channel === 'claude-notification') {
           notifyNative((m.payload ?? {}), null);
         }
-        // A mod's notification taken back, shown or still booked. Ids are
-        // global, so it is broadcast rather than routed to a tab.
         if (m.channel === 'claude-notification-remove' && native) {
           const ids = (m.payload as { ids?: unknown } | null)?.ids;
           if (Array.isArray(ids)) void native.invoke('notify:remove', { ids }).catch(() => {});
@@ -333,62 +261,32 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
 
   const unsubPush = client.onPush(onPush);
 
-  // ---------------------------------------------------------- reconnection
   const unsubState = client.onStateChange((s: ConnectionState) => {
     emit('remote-connection', { state: s });
     if (s === 'connected') void resubscribeAll();
   });
 
-  // Subscribing is not the same thing as starting a session, and gating the
-  // first on the second is what cost three hours of answers once: a launch
-  // that restored tabs from the map never told the daemon it wanted their
-  // events, so `pushToSession` fanned every one of them out to an empty
-  // subscriber set. Nothing looked wrong from here — `sessionToTabs` was
-  // populated, `emitForSession` would have routed fine — and nothing healed
-  // it, because `resubscribeAll` only ran on a *re*connect and the send path's
-  // rebind fallback only fires on SESSION_NOT_RUNNING. A healthy CLI meant
-  // every send succeeded, which is exactly what skipped the repair.
-  //
-  // Two ways the initial connect is missed, one per client:
-  //   - Electron: `bootstrap.ts` awaits `client.connect()` BEFORE building the
-  //     shim, and `onStateChange` does not replay current state to a new
-  //     listener — so the transition is already gone. Hence this check.
-  //   - Web: the shim predates `connect()`, so the listener above catches it.
-  //
-  // Live-only in both cases (`resubscribeAll` sends no `fromSeq` when it has
-  // never seen one): the renderer loads its own history from disk, so a replay
-  // from 0 would double every row.
+  // Subscribe on the initial connect too, not only on reconnect: restored tabs otherwise never receive their events.
+  // Live-only: the renderer loads its own history from disk, so a replay from 0 would double every row.
   if (client.state === 'connected') void resubscribeAll();
 
   async function resubscribeAll(): Promise<void> {
-    // A different daemon run: seqs restart with the process and events are
-    // never persisted, so every seq held here names some other event now.
-    // Forget them all; each session below subscribes live and reloads.
+    // A different daemon run: every held seq names some other event now.
     const nowBootId = client.welcome?.bootId;
     const restarted = bootId !== undefined && nowBootId !== undefined && nowBootId !== bootId;
     if (nowBootId !== undefined) bootId = nowBootId;
     if (restarted) lastSeq.clear();
 
-    // Nothing mapped: no subscriptions to restore, and the reconcile below is
-    // about sessions this client already holds, so it has nothing to say
-    // either. Bail before spending a round trip on every launch.
     if (sessionToTabs.size === 0) return;
 
     for (const sessionId of sessionToTabs.keys()) {
-      // Only the tab map survives a reload; `lastSeq` does not. A restored
-      // tab that has not rebound yet therefore has no seq, and asking for
-      // `fromSeq: 0` made the daemon replay its ENTIRE log — every
-      // transcript row a second time, and one notification per logged
-      // notification event. Unknown means live-only, the same call
-      // `startSession` makes: the renderer loads its own history from disk.
+      // No seq means live-only: `fromSeq: 0` would replay the daemon's entire log.
       const from = lastSeq.get(sessionId);
       try {
         const r = await client.request('session.subscribe', from === undefined ? { sessionId } : { sessionId, fromSeq: from });
         markSubscribed(sessionId, true);
         if (from === undefined || r.resync) lastSeq.set(sessionId, r.lastSeq);
         if (restarted || r.resync) {
-          // What this client missed is gone from the daemon. The transcript
-          // is on disk in the CLI's JSONL; the tab reloads it from there.
           emitForSession(sessionId, 'remote-resync', { sessionId });
           continue;
         }
@@ -399,11 +297,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
         log('resubscribe failed', { sessionId, error: String(err) });
       }
     }
-    // Replay covers what the daemon logged. It does not cover the daemon
-    // itself having restarted, which kills every CLI child without a
-    // `stopped` ever being written. Reconcile against what it reports now so
-    // the badge is honest and the next send takes the renderer's own
-    // stopped → resume path.
+    // A daemon restart kills every CLI child without writing `stopped`: reconcile against what it reports now.
     try {
       const summaries = await client.request('session.list', {});
       for (const summary of summaries) {
@@ -415,13 +309,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
           (prev?.sessionStatus === 'started' || prev?.sessionStatus === 'starting');
         lastState.set(summary.sessionId, { sessionStatus: summary.sessionStatus });
         emitForSession(summary.sessionId, 'session-status', { sessionStatus: summary.sessionStatus });
-        // A session this client had live and the daemon no longer has: its
-        // CLI child went down with the daemon. Say so on its own channel so
-        // the tab can resume itself — the renderer owns that, because
-        // reviving the CLI without re-attaching the tab's stream listeners
-        // would leave an invisible session burning tokens. Only sessions
-        // that were actually live are announced; a tab that was already
-        // stopped stays stopped, as at launch.
+        // The renderer owns the resume: reviving the CLI without re-attaching the tab's listeners would leave an invisible session burning tokens.
         if (diedWithDaemon) emitForSession(summary.sessionId, 'remote-session-died', { sessionId: summary.sessionId });
       }
     } catch (err) {
@@ -429,7 +317,6 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
     }
   }
 
-  // ------------------------------------------------------------ session ops
   function announce(tabId: string, summary: SessionSummary, projectPath: string): void {
     lastState.set(summary.sessionId, { sessionStatus: summary.sessionStatus });
     emit(`session-status:${tabId}`, { sessionStatus: summary.sessionStatus });
@@ -456,8 +343,6 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
         summary = await client.request('session.resume', { sessionId: resumeId });
       } catch (err) {
         if ((err as { code?: string }).code !== 'NOT_FOUND') throw err;
-        // A transcript the daemon never saw (started by the desktop app before
-        // the daemon existed, or by `claude` in a terminal). Adopt it.
         summary = await client.request('session.create', {
           projectId: project.projectId,
           options: { ...options, resumeSessionId: resumeId },
@@ -467,8 +352,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
       summary = await client.request('session.create', { projectId: project.projectId, options });
     }
     link(tabId, summary.sessionId);
-    // Live only. The renderer loads what is already on disk through
-    // `load_session_history`; replaying the log here would double every row.
+    // Live only: the renderer loads history via `load_session_history`; a replay would double every row.
     await client.request('session.subscribe', { sessionId: summary.sessionId });
     markSubscribed(summary.sessionId, true);
     lastSeq.set(summary.sessionId, summary.lastSeq);
@@ -494,18 +378,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
     }
   }
 
-  /**
-   * Send a turn, and if the daemon reports no live process for the session,
-   * wake it and send once more.
-   *
-   * A daemon swap (upgrade, Restart button, crash + relaunch) ends every CLI
-   * process while the client stays mapped and connected, so the next prompt
-   * gets SESSION_NOT_RUNNING — advice the user could only follow by restarting
-   * the daemon by hand. `rebind` is exactly "follow the advice": the same
-   * session.resume + subscribe the app does at boot. One retry, then the
-   * original error stands; a session the daemon cannot resume is not one more
-   * attempt away.
-   */
+  /** A daemon swap ends every CLI process: on SESSION_NOT_RUNNING, rebind and retry once. */
   async function sendTurn(tabId: unknown, content: string | Record<string, unknown>[]): Promise<void> {
     const sessionId = requireSession(tabId);
     try {
@@ -531,7 +404,6 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
       case 'session_rebind':
         return rebind(String(p.tabId));
       case 'session_send_message': {
-        // A string on the wire; String() keeps any other shape from reaching sendTurn raw.
         const prompt = (p.prompt ?? p.message ?? '') as string;
         await sendTurn(p.tabId, String(prompt));
         return null;
@@ -566,9 +438,6 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
         return null;
       }
       case 'session_release': {
-        // The tab closed. Another tab in this page may still show the session;
-        // otherwise let the daemon decide — it stops the session only if no
-        // other client (the app, a browser) still has it open.
         const tabId = String(p.tabId);
         const sid = tabToSession.get(tabId);
         if (!sid) return null;
@@ -585,11 +454,6 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
     }
   }
 
-  // ------------------------------------------------------ web tab statuses
-  // The Mac app aggregates its tabs' summaries natively (TabStatusStore.swift).
-  // A browser has no app, but its Sessions popover still needs its own tabs —
-  // without them it listed none. A page's tabs live and die with the page, so
-  // an in-memory map is the whole store. Insertion order, as the app's is.
   const webTabStatus = new Map<string, Record<string, unknown>>();
 
   function webTabStatusInvoke(channel: string, p: Record<string, unknown>): unknown {
@@ -605,7 +469,6 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
     return null;
   }
 
-  // --------------------------------------------------------------- surface
   const api: ShimHandle = {
     async invoke(channel, params) {
       const p = params ?? {};
@@ -619,9 +482,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
           return await native.invoke(channel, p);
         }
         if (TYPED.has(channel)) return await typed(channel, p);
-        // Other session_* channels are tabId-keyed on the daemon too, where
-        // tabId === sessionId. Rewrite; leave params that carry a CLI
-        // sessionId (`session_cost_*`, `session_subagent_meta`) alone.
+        // Daemon tabId === sessionId; leave params carrying a CLI sessionId (`session_cost_*`, `session_subagent_meta`) alone.
         let rpcParams = p;
         if (channel.startsWith('session_') && typeof p.tabId === 'string') {
           const sid = tabToSession.get(p.tabId);

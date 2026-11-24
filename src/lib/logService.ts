@@ -6,7 +6,6 @@ type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 const FLUSH_INTERVAL_MS = 2000;
 const FLUSH_BATCH_SIZE = 50;
 
-// Patterns to filter out noisy messages
 const NOISE_PATTERNS = [
   /Download the React DevTools/,
   /\[HMR\]/,
@@ -17,11 +16,7 @@ const NOISE_PATTERNS = [
   /\[PostHog\.js\]/,
 ];
 
-// Plain `JSON.stringify(new Error('boom'))` returns `'{}'` because
-// Error.message and Error.stack are non-enumerable. That dropped every
-// stream-render exception on the floor and made the renderer's runaway-CPU
-// regression invisible. Format Errors explicitly at the top level and via a
-// replacer so nested Errors also surface.
+// Error.message and .stack are non-enumerable, so JSON.stringify(err) is '{}'; format Errors explicitly.
 function formatError(e: Error): string {
   const head = `${e.name}: ${e.message}`;
   return e.stack ? `${head}\n${e.stack}` : head;
@@ -74,7 +69,6 @@ class LogService {
     if (this.initialized) return;
     this.initialized = true;
 
-    // Wrap console methods
     console.error = (...args: unknown[]) => {
       this.originalConsole.error(...args);
       this.captureConsole('error', args);
@@ -92,7 +86,6 @@ class LogService {
       this.captureConsole('debug', args);
     };
 
-    // Listen for backend log events
     try {
       this.backendLogUnlisten = window.electronAPI.onEvent('backend-log', (payload: unknown) => {
         const { level, category, message, timestamp } = payload as {
@@ -113,14 +106,9 @@ class LogService {
       // electronAPI not available — skip backend events
     }
 
-    // Start periodic flush. We can't import fireAndLog here because this
-    // service IS the logging substrate fireAndLog calls into; instead,
-    // catch the rejection inline so a failed flush doesn't bubble out
-    // and re-trigger a console.error → captureConsole loop.
+    // Not fireAndLog: this service is its substrate, and a failed flush must not re-enter console capture.
     this.flushTimer = setInterval(() => {
       this.flush().catch((err: unknown) => {
-        // Use the original (un-wrapped) console.error so we don't
-        // re-enter capture and cause a feedback loop.
         this.originalConsole.error('[logService] flush failed:', err);
       });
     }, FLUSH_INTERVAL_MS);
@@ -129,7 +117,6 @@ class LogService {
   private captureConsole(level: LogLevel, args: unknown[]): void {
     const message = formatLogArgs(args);
 
-    // Filter noise
     if (NOISE_PATTERNS.some((p) => p.test(message))) return;
 
     this.addEntry({

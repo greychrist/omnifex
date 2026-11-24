@@ -1,12 +1,3 @@
-/**
- * Claude Design runs in the Modern work timeline.
- *
- * A design takes a dozen calls — read the guide, list the types, create from
- * one, write the canvas files into the scratchpad, publish — and drawn one
- * step each they bury the one thing worth seeing, the page. A run of them
- * folds into a single Design step that opens onto those calls and links to
- * the published page. Pure, so the folding is tested without rendering.
- */
 import type { WorkEntry } from './modernGrouping';
 import { isArtifactTool, type StepState } from './modernSteps';
 
@@ -26,46 +17,30 @@ function str(v: unknown): string {
   return typeof v === 'string' ? v : '';
 }
 
-/** A ToolSearch that loads Claude Design's tools — the run's first move. */
 function loadsArtifactTools(e: WorkEntry): boolean {
   return e.type === 'tool' && e.name === 'ToolSearch' && /claude-artifacts|\bArtifact/.test(str(e.input.query));
 }
 
-/** File work in the session's scratchpad, where a design's files are written
- *  before they are published. */
 function touchesScratchpad(e: ToolEntry): boolean {
   if (!['Write', 'Edit', 'MultiEdit', 'Read', 'Bash'].includes(e.name)) return false;
   return (str(e.input.file_path) || str(e.input.command)).includes('/scratchpad/');
 }
 
-/** Todo bookkeeping: says how far along the work is, never what it is, so
- *  it neither starts nor ends a run. (Progress reports never reach here —
- *  modernGrouping leaves them out.) */
 function isBookkeeping(e: ToolEntry): boolean {
   return e.name === 'TodoWrite' || /^Task[A-Z]/.test(e.name);
 }
 
-/** What may sit between two design calls and still belong to the run. */
 function belongsInside(e: WorkEntry): boolean {
   if (e.type === 'thinking') return true;
   return isArtifactTool(e.name) || loadsArtifactTools(e) || touchesScratchpad(e) || isBookkeeping(e);
 }
 
-/** What just before a run's first design call is the run's own set-up: the
- *  tool loading, and the files it is about to publish. */
 function opensRun(e: TimelineEntry): boolean {
   return e.type === 'tool' && (loadsArtifactTools(e) || touchesScratchpad(e));
 }
 
 const isDesignCall = (e: WorkEntry): e is ToolEntry => e.type === 'tool' && isArtifactTool(e.name);
 
-/**
- * Folds each run of Claude Design calls into one DesignRun. A run spans its
- * first design call to its last, taking the thoughts, tool loading,
- * scratchpad file work and bookkeeping between them, plus the tool loading
- * and scratchpad files just before it.
- * Anything else ends the run, and thoughts after its last call stay outside.
- */
 export function foldDesignRuns(entries: WorkEntry[]): TimelineEntry[] {
   if (!entries.some(isDesignCall)) return entries;
   const out: TimelineEntry[] = [];
@@ -76,8 +51,6 @@ export function foldDesignRuns(entries: WorkEntry[]): TimelineEntry[] {
       i += 1;
       continue;
     }
-    // Take back the set-up that opened the run, reaching past bookkeeping
-    // but not starting on it.
     const lead: WorkEntry[] = [];
     while (out.length > 0) {
       const prev = out[out.length - 1];
@@ -102,15 +75,12 @@ export function foldDesignRuns(entries: WorkEntry[]): TimelineEntry[] {
 }
 
 export interface DesignRunSummary {
-  /** What was made, by its title; null until something names it. */
   title: string | null;
-  /** The published page; null until a publish answers with one. */
   url: string | null;
   state: StepState;
 }
 
-/** Calls whose answer is the artifact itself — a listing of types carries
- *  links too, to the types' own pages, which are not this design. */
+/** A types listing carries links too, to the types' own pages, not this design. */
 const OWN_ANSWER = /(?:^|__)(?:publish_files|publish_version|edit_version|create_from_type)$|^Artifact$/;
 
 function field(text: string, key: string): string | null {
@@ -118,7 +88,6 @@ function field(text: string, key: string): string | null {
   return m ? m[1] : null;
 }
 
-/** The run's title, its page, and whether it is going, done or failed. */
 export function designRunSummary(entries: WorkEntry[]): DesignRunSummary {
   const calls = entries.filter(isDesignCall);
   let title: string | null = null;

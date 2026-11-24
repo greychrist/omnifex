@@ -1,33 +1,11 @@
-/**
- * Saved Settings › Chats from before Standard and Expanded (config v5) into
- * v6. Greg's rule, 2026-11-18: what Modern showed is what Standard shows,
- * whatever the old Always / Verbose / Never labels said.
- *
- * v5 hid a record two ways, and Modern honored them differently:
- *  - Never dropped a record of any kind before grouping;
- *  - Verbose hid only the records Modern drew as a line (recaps, bookkeeping,
- *    system records) — and only under Compact's record rules. Thinking, tool
- *    calls, answers and the other records Modern draws as its own items
- *    (MODERN_ITEM_KINDS) stayed on screen. A tool result is not one of them:
- *    its work row reads it from the whole transcript, and the record itself
- *    is a line when its call is missing — which Verbose hid.
- * Each kind's v6 `standard` is that outcome. It is written on the category
- * where the category decided it, and on a kind only where the kind's v6
- * default would otherwise come out different — so a saved category choice
- * stays one choice. standardVisibility.golden.test.ts checks every kind.
- *
- * v5's defaults are frozen here, as they were on 2026-11-18: the registry
- * now carries v6 defaults, and a v5 record that never set a kind means
- * "whatever v5's default was".
- */
+// v5's defaults are frozen here: the registry now carries v6 defaults, and a kind v5 never set means v5's default.
+// standardVisibility.golden.test.ts checks every kind.
 import { CATEGORIES, KIND_REGISTRY, categoryOf, type Category } from './messageRenderingConfig';
 
 type V5Visibility = 'always' | 'verbose' | 'never';
 type V5RecordRules = 'compact' | 'verbose' | 'all';
 
-/** Kinds Modern draws as its own items, never as a line: v5's Verbose did
- *  not hide them. Also the kinds Settings › Chats leaves out of the kinds
- *  list, since the step settings style them. */
+/** Also the kinds Settings › Chats leaves out of its kinds list. */
 export const MODERN_ITEM_KINDS: ReadonlySet<string> = new Set([
   'assistant.text',
   'assistant.text.endTurn',
@@ -133,7 +111,6 @@ function visibilityOf(raw: unknown): V5Visibility | undefined {
   if (!isRecord(raw)) return undefined;
   const v = raw.visibility;
   if (v === 'always' || v === 'verbose' || v === 'never') return v;
-  // Saved before the three-way setting.
   if (typeof raw.hiddenInCompact === 'boolean') return raw.hiddenInCompact ? 'verbose' : 'always';
   return undefined;
 }
@@ -145,7 +122,6 @@ function pick(raw: unknown, fields: readonly string[]): Record<string, unknown> 
   return out;
 }
 
-/** Whether v5 Modern drew a record of this kind. */
 function shownInV5(visibility: V5Visibility, alwaysShown: boolean, item: boolean, rules: V5RecordRules): boolean {
   if (alwaysShown || rules === 'all') return true;
   if (visibility === 'never') return false;
@@ -153,7 +129,6 @@ function shownInV5(visibility: V5Visibility, alwaysShown: boolean, item: boolean
   return visibility === 'always';
 }
 
-/** A v5 record, rewritten as a v6 one for mergeConfig to validate. */
 export function migrateV5(saved: Record<string, unknown>): Record<string, unknown> {
   const savedModern = isRecord(saved.modern) ? saved.modern : {};
   const r = savedModern.recordRules;
@@ -182,8 +157,7 @@ export function migrateV5(saved: Record<string, unknown>): Record<string, unknow
     const visibility = visibilityOf(patch) ?? V5_KIND_VISIBILITY[id] ?? categoryVisibility[category];
     const savedLock = isRecord(patch) && typeof patch.compactBoundaryLocked === 'boolean' ? patch.compactBoundaryLocked : undefined;
     const alwaysShown = savedLock ?? V5_ALWAYS_SHOWN.has(id);
-    // An unrecognized record had no kind in v5, so no setting reached it:
-    // Compact's rules hid it as a line, Verbose's and All's drew it.
+    // An unrecognized record had no kind in v5: Compact hid it, Verbose and All drew it.
     const target = id === 'unknown'
       ? rules !== 'compact'
       : shownInV5(visibility, alwaysShown, MODERN_ITEM_KINDS.has(id), rules);

@@ -45,22 +45,13 @@ type View =
   | "agent-execution"
   | "agent-run-view"
   | "mcp"
-  | "tabs"; // New view for tab-based interface
+  | "tabs";
 
-/**
- * AppContent component - Contains the main app logic, wrapped by providers
- */
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
   const { createSettingsTab, createLimaTab, createBrainTab, createCostReportTab } = useTabState();
   const { tabs, activeTabId, setActiveTab, updateTab, addTab } = useTabContext();
-  // OmniFex Remote: narrow/touch/web facts, and the keyboard inset that keeps
-  // the composer above a software keyboard. Both no-ops under Electron.
-  //
-  // Called for the subscription, not the value: the root is where the layout
-  // store gets started, which is what mirrors `omnifex-narrow` / `-touch` /
-  // `-web` onto <html> for the plain-CSS rules in styles.css. Components that
-  // need the value call the hook themselves.
+  // Called for the subscription: the root starts the store that mirrors `omnifex-narrow`/`-touch`/`-web` onto <html>.
   useLayoutMode();
   useKeyboardInset();
   useNotifications(activeTabId, setActiveTab, updateTab);
@@ -81,21 +72,14 @@ function AppContent() {
     duration?: number;
   } | null>(null);
 
-  // Load projects on mount when in projects view
   useEffect(() => {
     if (view === "projects") {
       logAndForget('app:load-projects', loadProjects());
     } else if (view === "welcome") {
-      // Reset loading state for welcome view
       setLoading(false);
     }
   }, [view]);
 
-  // Subscribe to error-level log entries from the main process so the user
-  // can correlate "the app just flashed an error" with whatever they were
-  // doing. Suppression is handled main-side via `log_error_toast_enabled`;
-  // we additionally dedupe here so repeated identical errors within a short
-  // window only flash one toast instead of stacking.
   useEffect(() => {
     const lastShown = { key: '', at: 0 };
     const DEDUPE_MS = 2000;
@@ -107,29 +91,16 @@ function AppContent() {
       if (key === lastShown.key && now - lastShown.at < DEDUPE_MS) return;
       lastShown.key = key;
       lastShown.at = now;
-      // Trim long lines — single-line preview keeps the toast compact.
       const preview = e.message.split('\n')[0].slice(0, 120);
       setToast({
         type: 'error',
         message: `[${e.source}] ${preview}`,
-        // 6s gives time to read + reach the action button.
         duration: 6000,
         action: {
           label: 'View in Log',
           onClick: () => {
             setToast(null);
-            // The sessionStorage seed is what carries a COLD open: if no
-            // Settings tab exists, createSettingsTab() schedules a mount and
-            // Settings reads the seed on first render, opening on `log`
-            // instead of `general`.
-            //
-            // The event below cannot do that job. `Settings` is React.lazy
-            // (TabContent.tsx), so on a cold open its chunk is still loading
-            // when this fires and nothing is listening yet — an earlier
-            // comment here claimed the opposite, and believing it is how the
-            // seed's StrictMode bug went unnoticed. The event covers only the
-            // WARM case, where Settings is already mounted and its inner state
-            // has to change without a remount.
+            // The seed carries a cold open (lazy Settings is not listening yet); the event only reaches a mounted Settings.
             seedInitialSettingsTab('log');
             createSettingsTab();
             setTimeout(() => {
@@ -142,7 +113,6 @@ function AppContent() {
     return unsubscribe;
   }, [createSettingsTab]);
 
-  // Keyboard shortcuts for tab navigation
   useEffect(() => {
     if (view !== "tabs") return;
     
@@ -161,7 +131,6 @@ function AppContent() {
             e.preventDefault();
             window.dispatchEvent(new CustomEvent('close-current-tab'));
             break;
-          // Cmd+[ / Cmd+] — the Magic Keyboard has no Ctrl+Tab habit.
           case '[':
             e.preventDefault();
             window.dispatchEvent(new CustomEvent('switch-to-previous-tab'));
@@ -179,7 +148,6 @@ function AppContent() {
             }
             break;
           default:
-            // Handle number keys 1-9
             if (e.key >= '1' && e.key <= '9') {
               e.preventDefault();
               const index = parseInt(e.key) - 1;
@@ -194,9 +162,7 @@ function AppContent() {
     return () => { window.removeEventListener('keydown', handleKeyDown); };
   }, [view]);
 
-  // OmniFex Remote deep link: a Web Push notification tap lands on
-  // `/#session=<id>`. Focus the tab that already shows that session, or open
-  // one for it — the daemon knows the project the session belongs to.
+  // A Web Push notification tap lands on `/#session=<id>`.
   useEffect(() => {
     const client = window.__omnifexRemote?.client;
     if (!client) return;
@@ -234,7 +200,6 @@ function AppContent() {
       } catch (err) {
         console.warn('[remote] deep link failed:', err);
       } finally {
-        // Consume the hash so a reload does not re-open the session.
         if (location.hash.includes('session=')) history.replaceState(null, '', location.pathname + location.search);
       }
     };
@@ -246,7 +211,6 @@ function AppContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Listen for Claude not found events
   useEffect(() => {
     const handleClaudeNotFound = () => {
       setShowClaudeBinaryDialog(true);
@@ -259,9 +223,6 @@ function AppContent() {
   }, []);
 
 
-  /**
-   * Loads all projects from the ~/.claude/projects directory
-   */
   const loadProjects = async () => {
     try {
       setLoading(true);
@@ -276,9 +237,6 @@ function AppContent() {
     }
   };
 
-  /**
-   * Handles project selection and loads its sessions
-   */
   const handleProjectClick = async (project: Project) => {
     try {
       setLoading(true);
@@ -288,10 +246,6 @@ function AppContent() {
       setSelectedProject(project);
     } catch (err) {
       console.error("Failed to load sessions:", err);
-      // NO_ACCOUNT_FOR_PROJECT is a structured signal from the main process
-      // that no path rule / project override binds this folder to a Claude
-      // account. Surface a prominent, actionable banner — never fall back to
-      // a "default" account. See daemon/services/claude.ts (NoAccountError).
       const code = (err as { code?: string } | null)?.code;
       const msg = err instanceof Error ? err.message : String(err);
       if (code === 'NO_ACCOUNT_FOR_PROJECT') {
@@ -309,10 +263,6 @@ function AppContent() {
     }
   };
 
-  /**
-   * Pin/unpin a project. Optimistic so the row reorders instantly; on failure
-   * we roll back and refetch.
-   */
   const handleTogglePin = async (project: Project, pinned: boolean) => {
     const previous = projects;
     setProjects((prev) =>
@@ -329,11 +279,6 @@ function AppContent() {
     }
   };
 
-  /**
-   * Re-fetch the session list for the currently-selected project. Triggered
-   * by the SessionList refresh button when the user wants to pick up new
-   * sessions that were created in a different tab / since the page rendered.
-   */
   const handleRefreshSessions = async () => {
     if (!selectedProject) return;
     try {
@@ -347,30 +292,13 @@ function AppContent() {
     }
   };
 
-  /**
-   * Opens the project directory picker
-   */
   const handleOpenProject = async () => {
-    // Get home directory before showing picker
     const homeDir = await api.getHomeDirectory();
     setHomeDirectory(homeDir);
     setShowProjectPicker(true);
   };
 
-  /**
-   * Opens a new Claude Code session in the interactive UI
-   */
-  // New session creation is handled by the tab system via titlebar actions
-
-  /**
-   * Opens a session in the OmniFex checkout running the Claude Code changelog
-   * review, launched from the Updates popover's drift warning.
-   *
-   * When no Claude account routes the checkout the tab still opens — without
-   * an auto-start config — so the user gets the normal routing guidance
-   * instead of a session spawned with no account (see the multi-account rules:
-   * there is no default-account fallback).
-   */
+  // Unrouted: the tab opens without auto-start, never on a default account.
   const handleCliReviewLaunch = useCallback(
     (request: CliReviewLaunchRequest) => {
       logAndForget('app:cli-review-launch', (async () => {
@@ -391,11 +319,7 @@ function AppContent() {
     [addTab, setActiveTab],
   );
 
-  /**
-   * Handles view changes with navigation protection
-   */
   const handleViewChange = (newView: View) => {
-    // No need for navigation protection with tabs since sessions stay open
     setView(newView);
   };
 
@@ -406,7 +330,6 @@ function AppContent() {
         return (
           <div className="flex items-center justify-center p-4" style={{ height: "100%" }}>
             <div className="w-full max-w-4xl">
-              {/* Welcome Header */}
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -419,9 +342,7 @@ function AppContent() {
                 </h1>
               </motion.div>
 
-              {/* Navigation Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
-                {/* CC Agents Card */}
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -438,7 +359,6 @@ function AppContent() {
                   </Card>
                 </motion.div>
 
-                {/* Projects Card */}
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -493,12 +413,7 @@ function AppContent() {
       case "tabs":
         return (
           <div className="h-full flex flex-col">
-            {/* Always present, at every width. A narrow screen used to treat
-                a session as a pushed view and hide this, leaving the session's
-                own "Back to Project page" button as the only way out — which
-                means shrinking the window loses every other open tab. The
-                strip already scrolls horizontally (`overflow-x-auto` in
-                TabManager), so narrow costs it nothing. */}
+            {/* Present at every width: hiding it when narrow strands every other open tab. */}
             <TabManager className="flex-shrink-0" />
             <div className="flex-1 overflow-hidden">
               <TabContent />
@@ -518,7 +433,6 @@ function AppContent() {
 
   return (
     <div className={`${APP_ROOT_HEIGHT} flex flex-col`}>
-      {/* Custom Titlebar */}
       <CustomTitlebar
         onLimaClick={() => createLimaTab()}
         onBrainClick={() => createBrainTab()}
@@ -529,25 +443,21 @@ function AppContent() {
       <RemoteConnectionBanner />
       <PushEnableBar />
 
-      {/* Main Content */}
       <div className="flex-1 overflow-hidden">
         {renderContent()}
       </div>
 
 
-      {/* Claude Binary Dialog */}
       <ClaudeBinaryDialog
         open={showClaudeBinaryDialog}
         onOpenChange={setShowClaudeBinaryDialog}
         onSuccess={() => {
           setToast({ message: "Claude binary path saved successfully", type: "success" });
-          // Trigger a refresh of the Claude version check
           window.location.reload();
         }}
         onError={(message) => { setToast({ message, type: "error" }); }}
       />
 
-      {/* File picker modal for selecting project directory */}
       {showProjectPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="w-full max-w-2xl h-[600px] bg-background border rounded-lg shadow-lg">
@@ -556,14 +466,9 @@ function AppContent() {
               onSelect={fireAndLog('app:select', async (entry) => {
                 if (entry.is_directory) {
                   try {
-                    // Resolve per-engine routing. An all-null pair means
-                    // neither Claude nor Codex has an override or path rule
-                    // for this folder — prompt the user to pick an account.
-                    // A non-null pair lets us open directly; no silent
-                    // default-account fallback.
+                    // All-null pair: ask for an account; never a silent default.
                     const pair = await api.resolveAccountForProject(entry.path);
                     if (pair.claude === null && pair.codex === null) {
-                      // No matching rule — prompt user to pick account
                       setPendingProjectPath(entry.path);
                       setShowProjectPicker(false);
                       setShowAccountPicker(true);
@@ -601,7 +506,6 @@ function AppContent() {
         })}
       />
       
-      {/* Toast Container */}
       <ToastContainer>
         {toast && (
           <Toast
@@ -618,12 +522,8 @@ function AppContent() {
   );
 }
 
-/**
- * Main App component - Wraps the app with providers
- */
 function App() {
   const [showIntro, setShowIntro] = useState(() => {
-    // Read cached preference synchronously to avoid any initial flash
     try {
       const cached = typeof window !== 'undefined'
         ? window.localStorage.getItem('app_setting:startup_intro_enabled')
@@ -632,7 +532,7 @@ function App() {
       if (cached === 'false') return false;
     // eslint-disable-next-line no-empty -- empty block intentional (no-op cleanup / placeholder).
     } catch (_ignore) {}
-    return true; // default if no cache
+    return true;
   });
 
   useEffect(() => {
@@ -642,14 +542,11 @@ function App() {
         const pref = await api.getSetting('startup_intro_enabled');
         const enabled = pref === null ? true : pref === 'true';
         if (enabled) {
-          // keep intro visible and hide after duration
           timer = window.setTimeout(() => { setShowIntro(false); }, 2000);
         } else {
-          // user disabled intro: hide immediately to avoid any overlay delay
           setShowIntro(false);
         }
       } catch {
-        // On failure, show intro once to keep UX consistent
         timer = window.setTimeout(() => { setShowIntro(false); }, 2000);
       }
     })());

@@ -1,10 +1,4 @@
-/**
- * Pull-to-refresh on a scrolling list, touch only.
- *
- * Returns the pull progress (0–1+) for an indicator and whether a refresh is
- * running. The list itself is not moved — that fights the browser's own
- * overscroll — only the indicator reacts.
- */
+/** The list itself is not moved (that fights the browser's own overscroll); only the indicator reacts. */
 import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import { pullProgress } from '@/lib/touchGestures';

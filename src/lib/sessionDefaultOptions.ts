@@ -7,9 +7,7 @@ export interface DropdownOption {
 }
 
 export const MODEL_OPTIONS: Record<AccountEngine, DropdownOption[]> = {
-  // Only the codex list is consulted today — Claude surfaces use the dynamic
-  // catalog (src/lib/modelCatalog.tsx). The claude key exists to satisfy the
-  // Record type and mirrors FALLBACK_MODELS there.
+  // Only the codex list is consulted; Claude uses the dynamic catalog (modelCatalog.tsx).
   claude: [
     { id: 'default', label: 'Account Default' },
     { id: 'claude-fable-5[1m]', label: 'Fable 5' },

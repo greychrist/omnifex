@@ -1,17 +1,11 @@
-// Mid-session model-change plumbing, extracted from AgentSession so the
-// staleness contract is testable: `sessionControlSummary` prefers the live
-// model signal (`contextUsage.model`) over the picker selection, so any
-// confirmed model change MUST also update that live signal or the header
-// keeps naming the old model until the next turn's result refreshes it.
+// A confirmed change must also update contextUsage.model: the control summary prefers it over the selection.
 
 import type { JsonlNode } from '@/types/jsonl';
 import type { SessionContextUsage } from '@/lib/api';
 
 export interface ChangeSessionModelDeps {
   tabId: string;
-  /** True when a CLI session is running and can take control requests. */
   hasLiveSession: boolean;
-  /** The picker's model before this change, restored if the switch is refused. */
   previous: string;
   api: {
     sessionSetModel(tabId: string, model: string): Promise<string | null>;
@@ -23,17 +17,7 @@ export interface ChangeSessionModelDeps {
   onError(err: unknown): void;
 }
 
-/**
- * Apply a model change from the popover picker. Updates the selection
- * synchronously; on a live session, pushes the switch to the CLI via
- * set_model — restoring `previous` if the CLI refuses — drops a
- * control-change transcript marker naming what an alias resolved to (model
- * changes are out-of-band control requests that never reach the JSONL, so the
- * live-only marker is the only scrollback record), then refreshes context
- * usage —
- * get_context_usage reports the new model as soon as set_model resolves
- * (verified against CLI 2.1.217), which keeps the header summary honest.
- */
+/** Model changes never reach the JSONL, so the live marker is the only scrollback record. */
 export async function changeSessionModel(
   newModel: string,
   deps: ChangeSessionModelDeps,

@@ -1,9 +1,4 @@
-// Canonical taxonomy for the app log stream (renderer mirror).
-//
-// Mirrors `daemon/services/log-sources.ts`. Both files exist because
-// the renderer Vite bundle can't import from the electron tree at
-// runtime, but type-safety / single-source-of-truth is preserved by the
-// drift-detector test in `__tests__/logSources.drift.test.ts`.
+// Mirrors daemon/services/log-sources.ts; a drift test holds them together.
 
 export const LOG_SOURCES = [
   'frontend',
@@ -22,11 +17,6 @@ export const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
-/**
- * Display labels and accent classes for the log dropdown / row chips.
- * Add an entry here when adding a new source — the LogTab generates its
- * dropdown from this map's keys.
- */
 export const LOG_SOURCE_DISPLAY: Record<LogSource, { label: string; chipClass: string }> = {
   frontend: { label: 'Frontend', chipClass: 'bg-sky-500/20 text-sky-300' },
   backend: { label: 'Backend', chipClass: 'bg-slate-500/20 text-slate-300' },

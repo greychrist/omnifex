@@ -1,19 +1,3 @@
-/**
- * Records when the renderer's main thread stops running timers.
- *
- * Built after 2026-10-16: after a /compact the window stopped processing its
- * WebSocket for ~2 minutes, the daemon dropped it as an unresponsive client
- * (`~/Library/Logs/omnifex-server.log`), and nothing on the renderer side said
- * a word — the only trace was a burst of `connection lost` errors once it
- * woke up. It recurred three times in a week, each ~35s after a compaction,
- * and none left enough evidence to say what was running.
- *
- * The method is timer drift: a tick due every `intervalMs` that arrives
- * `thresholdMs` late means the thread was busy (or starved) for that long.
- * A hidden window is skipped — a gap there is throttling or sleep, not a
- * stall. The report names the active tab and every tab's transcript size,
- * since every open tab is mounted and the busy one need not be on screen.
- */
 import { api } from './api';
 import { TabPersistenceService } from '@/services/tabPersistence';
 import { useClaudeSessionStore } from '@/stores/claudeSessionStore';
@@ -28,7 +12,6 @@ export interface StallWatchdogDeps {
   intervalMs: number;
   thresholdMs: number;
   now: () => number;
-  /** Calls `fn` every interval; returns the canceller. */
   every: (fn: () => void) => () => void;
   isVisible: () => boolean;
   onStall: (stall: Stall) => void;
@@ -57,11 +40,7 @@ export function createStallWatchdog(deps: StallWatchdogDeps): () => void {
   });
 }
 
-/**
- * Tries `write` until it succeeds. The stall worth recording is the one long
- * enough for the daemon to drop the socket, so the first attempt usually
- * lands on a dead connection — and `logService` drops a failed batch.
- */
+/** The stall worth recording usually outlasts the socket, so the first write lands on a dead connection. */
 export async function writeWithRetry(
   write: () => Promise<unknown>,
   opts: { retryMs: number; attempts: number },
@@ -78,7 +57,6 @@ export async function writeWithRetry(
   return false;
 }
 
-/** Active tab plus each chat tab's transcript length, largest first. */
 export function stallContext(): Record<string, unknown> {
   const { tabs, activeTabId } = TabPersistenceService.loadTabs();
   const sessions = useClaudeSessionStore.getState().tabs;

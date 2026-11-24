@@ -1,10 +1,4 @@
-/**
- * Web Push, client side. Web only — Electron has native notifications.
- *
- * Needs a secure origin (the `tailscale serve` HTTPS front from Phase 4) and
- * a user gesture to ask for permission. `enablePush()` is that gesture's
- * handler: ask, subscribe with the daemon's VAPID key, POST the subscription.
- */
+/** Web only. Needs a secure origin and a user gesture: `enablePush()` is that gesture's handler. */
 
 export type PushSupport = 'unsupported' | 'insecure' | 'denied' | 'default' | 'granted';
 
@@ -32,7 +26,6 @@ async function postJson(path: string, body: unknown): Promise<unknown> {
   return res.json();
 }
 
-/** Ask, subscribe, register with the daemon. Resolves to the final permission. */
 export async function enablePush(): Promise<PushSupport> {
   const support = pushSupport();
   if (support !== 'default' && support !== 'granted') return support;
@@ -58,7 +51,6 @@ export async function disablePush(): Promise<void> {
   await sub.unsubscribe();
 }
 
-/** `#session=<id>` in the URL — what a notification tap lands on. */
 export function deepLinkedSessionId(hash: string = typeof location === 'undefined' ? '' : location.hash): string | null {
   const m = /[#&]session=([^&]+)/.exec(hash);
   return m ? decodeURIComponent(m[1]) : null;

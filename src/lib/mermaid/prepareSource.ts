@@ -1,23 +1,7 @@
 import type { ThemeMode } from '@/contexts/ThemeContext';
 import { THEME_SURFACES } from './mermaidTheme';
 
-/**
- * Rewrites model-written mermaid before it is drawn, for the two things in it
- * that defeat the theme. The Source view and every copy keep the original;
- * only the drawing sees this.
- *
- * 1. HTML in labels. Labels are SVG text (`htmlLabels: false`, so PNG export
- *    works in Safari), which prints `<b> IDEA </b>` literally. Mermaid's own
- *    markdown strings — "`**IDEA**`" — do render bold and italic there, so in
- *    flowcharts the tags become one. Other diagram types have no markdown
- *    strings; the tags are dropped so they are at least not printed.
- *
- * 2. Colors. `classDef` / `style` colors override any theme — pastel fills
- *    with navy text on a dark card. The color-coding is worth keeping, so each
- *    color is snapped to the nearest of OmniFex's accent hues and redrawn the
- *    way the app draws a tinted chip: a faint fill of the hue, a stronger 1px
- *    border of it, the theme's own text. Greys go back to the theme.
- */
+/** Only the drawing sees this rewrite; the Source view and copies keep the original. Labels are SVG text, so HTML tags would print literally. */
 
 type Rgb = [number, number, number];
 
@@ -53,8 +37,6 @@ function rewriteLabels(source: string): string {
   });
 }
 
-// ── colors ─────────────────────────────────────────────────────────────────
-
 const NAMED: Record<string, string> = {
   red: '#ff0000', orange: '#ffa500', yellow: '#ffff00', gold: '#ffd700', green: '#008000',
   lime: '#00ff00', teal: '#008080', cyan: '#00ffff', blue: '#0000ff', navy: '#000080',
@@ -80,7 +62,6 @@ function parseColor(value: string): Rgb | null {
   return null;
 }
 
-/** A color this module defines itself, so it always parses. */
 function constColor(value: string): Rgb {
   const c = parseColor(value);
   if (!c) throw new Error(`unparseable built-in color: ${value}`);
@@ -103,7 +84,6 @@ function hsl([r, g, b]: Rgb): [number, number, number] {
 const toHex = (c: Rgb) => `#${c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
 const mix = (a: Rgb, b: Rgb, t: number): Rgb => [0, 1, 2].map((i) => a[i] * t + b[i] * (1 - t)) as Rgb;
 
-/** Tailwind's -500s for the hues the app's chips and readouts use. */
 const ACCENT_500: Record<string, string> = {
   red: '#fb2c36', orange: '#ff6900', amber: '#fe9a00', emerald: '#00bc7d', teal: '#00bba7',
   sky: '#00a6f4', blue: '#2b7fff', indigo: '#615fff', violet: '#8e51ff', pink: '#f6339a',
@@ -119,15 +99,12 @@ const ACCENTS: (Accent & { hue: number })[] = Object.entries(ACCENT_500).map(([n
   return {
     name,
     hue: hsl(c)[0],
-    // `bg-<hue>-500/10`-ish over the node surface, a `/50` border, and text
-    // that keeps the theme's contrast with only a hint of the hue.
     fill: { gray: toHex(mix(c, surface('gray'), 0.16)), light: toHex(mix(c, surface('light'), 0.1)) },
     stroke: { gray: toHex(mix(c, surface('gray'), 0.6)), light: toHex(mix(c, surface('light'), 0.5)) },
     text: { gray: toHex(mix(c, text('gray'), 0.12)), light: toHex(mix(c, text('light'), 0.15)) },
   };
 });
 
-/** The OmniFex accent nearest `color`, or null for greys and unparseable colors. */
 export function accentFor(color: string): Accent | null {
   const rgb = parseColor(color);
   if (!rgb) return null;
@@ -151,7 +128,6 @@ function rewriteStyleLine(line: string, theme: ThemeMode): string {
     const i = raw.indexOf(':');
     return i === -1 ? null : { key: raw.slice(0, i).trim().toLowerCase(), value: raw.slice(i + 1).trim(), raw: raw.trim() };
   });
-  // Not the `key:value` list we understand — draw it as written.
   if (segments.some((s) => s === null)) return line;
   const props = segments as { key: string; value: string; raw: string }[];
   const get = (k: string) => props.find((p) => p.key === k)?.value ?? '';
@@ -160,8 +136,7 @@ function rewriteStyleLine(line: string, theme: ThemeMode): string {
   const colors = accent
     ? [`fill:${accent.fill[theme]}`, `stroke:${accent.stroke[theme]}`, 'stroke-width:1px', `color:${accent.text[theme]}`]
     : [];
-  // A classDef with no properties is a parse error, and dropping the line
-  // would orphan its `class` statements; 1px is the theme's own border.
+  // An empty classDef is a parse error, and dropping it would orphan its `class` statements.
   const all = [...colors, ...kept];
   return `${m[1]}${all.length ? all.join(',') : 'stroke-width:1px'}`;
 }
@@ -173,7 +148,6 @@ function rewriteColors(source: string, theme: ThemeMode): string {
     .join('\n');
 }
 
-/** `source` as it should be drawn under `theme`. */
 export function prepareSource(source: string, theme: ThemeMode): string {
   return rewriteColors(rewriteLabels(source), theme);
 }

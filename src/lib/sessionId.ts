@@ -1,8 +1,3 @@
-// Helpers for validating user-pasted Claude Code session GUIDs before we
-// round-trip them to disk. Claude Code session IDs are UUIDv4 — 8-4-4-4-12
-// hex with dashes — so a quick shape check catches typos and trims junk
-// before the IPC call.
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export type SessionIdValidation =

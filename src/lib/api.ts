@@ -5,32 +5,15 @@ import type { HooksConfiguration } from '@/types/hooks';
 import type { SideChat, SideChatAskResult } from '@/lib/sideChat';
 import type { TaskOutputTail } from '@/lib/backgroundShells';
 
-/** Drop `undefined` optional params before an object crosses the IPC
- *  boundary — the main process can't distinguish `undefined` from missing. */
+/** The daemon can't tell `undefined` from missing. */
 function stripUndefined(obj: object): Record<string, unknown> {
   return Object.fromEntries(Object.entries(obj as Record<string, unknown>).filter(([, v]) => v !== undefined));
 }
 
-/**
- * Which agent engine drives a session. Mirrors the backend `AgentKind` in
- * `daemon/services/agents/types.ts`. The renderer can't import from
- * `daemon/` directly, so this is a parallel literal-union type kept in
- * sync by hand. `'claude'` is the default everywhere (back-compat with
- * pre-Codex callers and persisted tab records that pre-date the field).
- */
+/** Mirrors `AgentKind` in daemon/services/agents/types.ts. */
 export type AgentKind = 'claude' | 'codex';
 
-/**
- * Per-agent message envelope sent from main to renderer. Mirrors the
- * backend `AgentMessage` in `daemon/services/agents/types.ts`. Only the
- * Codex side currently consumes this type renderer-side — Claude tabs
- * still flow through `ClaudeStreamMessage` because `payload.method`
- * dispatching doesn't apply there.
- *
- * `payload` is the engine-native body: `{ method, params }` for Codex
- * notifications. Kept as `unknown` so callers narrow at the dispatch site
- * the same way the main process does.
- */
+/** Mirrors `AgentMessage` in daemon/services/agents/types.ts. */
 export interface AgentMessage {
   agent: AgentKind;
   tabId: string;
@@ -39,109 +22,59 @@ export interface AgentMessage {
   payload: unknown;
 }
 
-/**
- * Status of Codex authentication. Mirrors the backend `CodexAuthStatus` in
- * `daemon/services/auth/codex-auth.ts`.
- *
- * - `mode: 'oauth'` — `~/.codex/auth.json` is present; `email` may be set
- *   when the file carries an account email (some Codex versions omit it).
- * - `mode: 'apikey'` — no auth file, but the user has `OPENAI_API_KEY` in
- *   their environment. No email is available in this mode.
- * - `authenticated: false` with no `mode` — user has neither.
- */
+/** Mirrors `CodexAuthStatus` in daemon/services/auth/codex-auth.ts. */
 export interface CodexAuthStatus {
   authenticated: boolean;
   email?: string;
   mode?: 'oauth' | 'apikey';
 }
 
-/**
- * Represents a project in the ~/.claude/projects directory
- */
 export interface Project {
-  /** The project ID (derived from the directory name) */
   id: string;
-  /** The original project path (decoded from the directory name) */
   path: string;
-  /** List of session IDs (JSONL file names without extension) */
   sessions: string[];
-  /** Unix timestamp when the project directory was created */
   created_at: number;
-  /** Unix timestamp of the newest Claude session JSONL mtime for this
-   *  project (undefined if the project has no sessions yet). The
-   *  Projects list surfaces this as "Last activity" — i.e. when you
-   *  last *talked to Claude* about this project, not when files in
-   *  the working tree last changed. */
+  /** Newest session JSONL mtime: when Claude was last used here, not when files changed. */
   most_recent_session?: number;
-  /** Account ID this project belongs to */
   account_id?: number;
-  /** Account name for display */
   account_name?: string;
-  /** True when pinned to the top of the Projects list. Stamped by
-   *  list_projects from the pins table, so it can't drift from the rows. */
   pinned: boolean;
 }
 
-/**
- * Represents a Claude account (e.g., personal, work)
- */
 export interface SessionDefaults {
   model?: string;
   permissionMode?: string;
   effort?: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
-/** Which CLI engine an account drives. Mirrors backend AccountEngine. */
+/** Mirrors backend AccountEngine. */
 export type AccountEngine = AgentKind;
 
 export interface Account {
   id: number;
   name: string;
   config_dir: string;
-  // No is_default field — there is no default account. See migration v8 in
-  // daemon/services/database.ts. Resolution is path rule / project override
-  // only; failure raises NoAccountError.
-  /** Which CLI engine this account drives. Immutable post-create. */
+  // No is_default: there is no default account; an unresolved project raises NoAccountError.
+  /** Immutable after create. */
   engine: AccountEngine;
-  /** Free-text subscription tier label (e.g. 'Max', 'Pro', 'Plus'). */
   subscription_label: string;
-  /** Whether usage on this account costs money (false for e.g. Max). */
   has_cost: boolean;
   color: string | null;
   icon: string | null;
   session_defaults?: SessionDefaults;
-  /**
-   * Optional per-account override for which `claude` binary or wrapper to
-   * spawn. Defaults to whatever `findClaudeBinary` resolves on PATH when null.
-   * Shell aliases are not supported — paste a resolved path.
-   */
   cli_path: string | null;
-  /**
-   * The email this config dir is expected to be authenticated as. Null means
-   * no verification is performed for this account — sessions skip the check
-   * entirely and Settings shows no badge.
-   */
+  /** Null skips identity verification for this account. */
   expected_email: string | null;
   created_at: string;
   updated_at: string;
-  /** Per-session summary opt-in. Default false. */
   summarizeOnClose?: boolean;
-  /** Model id used for summarization (e.g. 'haiku', 'sonnet'). Null
-   *  means no model selected — feature stays off regardless of toggle. */
+  /** Null means no model: summaries stay off whatever the toggle says. */
   summaryModel?: string | null;
 }
 
-/**
- * Structured form of the rich `/usage` output captured by spawning claude in
- * a PTY (see `daemon/services/usage-runner.ts`). Mirrors the parser shape.
- */
+/** Mirrors the /usage parser shape in daemon/services/usage-runner.ts. */
 export interface UsageRunData {
-  /**
-   * True when the CLI replayed last-known bars because the usage endpoint was
-   * rate-limited or a refresh failed ("Showing last-known usage as of …",
-   * Claude Code 2.1.208+). The numbers describe an earlier observation, not
-   * the moment of the scrape.
-   */
+  /** The CLI replayed last-known bars; the numbers predate the scrape. */
   stale: boolean;
   session: {
     cost_usd: number;
@@ -160,32 +93,12 @@ export interface UsageRunData {
     resets_at_label: string;
   }[];
   contributing: { headline: string; detail: string }[];
-  /**
-   * Tabular breakdowns Claude shows under "What's contributing" — three
-   * separate ranked lists. Each row has the entry name (which Claude
-   * truncates with a unicode ellipsis to fit its TUI column, e.g.
-   * `/superpowers:subagent-drive…`) and the percentage of total usage.
-   * `more_count` is the integer from a trailing `… N more` line if Claude
-   * decided not to render the long tail; null when fully enumerated.
-   */
+  /** Names arrive truncated by the CLI; `more_count` is null when fully enumerated. */
   skills: { rows: { name: string; pct_used: number }[]; more_count: number | null };
   subagents: { rows: { name: string; pct_used: number }[]; more_count: number | null };
   plugins: { rows: { name: string; pct_used: number }[]; more_count: number | null };
-  /**
-   * MCP-server usage breakdown. Rendered by enterprise/Console accounts (and
-   * any account using MCP servers). Names can contain spaces, e.g.
-   * "claude.ai Atlassian".
-   */
   mcp_servers: { rows: { name: string; pct_used: number }[]; more_count: number | null };
-  /**
-   * `/loop` breakdown (Claude Code 2.1.243+), rendered after `mcp_servers`.
-   * Only `runs` is numeric — `tokens` / `per_run` keep the CLI's own
-   * abbreviated form (`480.2k`, `–`) because the abbreviation is lossy and
-   * re-deriving an integer would invent precision the render never had.
-   * `per_run` is null on narrow terminals, where the CLI drops that column.
-   * Empty on any CLI that doesn't draw the section, and on accounts with no
-   * `/loop` history.
-   */
+  /** `tokens`/`per_run` stay the CLI's abbreviated strings: parsing them would invent precision. */
   loops: {
     rows: {
       prompt: string;
@@ -210,7 +123,6 @@ export interface ProjectRepo {
   /** Relative to the project folder. */
   name: string;
   watched: boolean;
-  /** Saved as watched but no longer a repo on disk. */
   missing: boolean;
 }
 
@@ -224,7 +136,6 @@ export interface ProjectRepos {
 
 export interface BranchColor {
   id: number;
-  /** The repo's main checkout. */
   repo_path: string;
   branch_name: string;
   color: string;
@@ -232,9 +143,6 @@ export interface BranchColor {
   created_at: number;
 }
 
-/**
- * Represents a path prefix rule that maps directories to accounts
- */
 export interface PathRule {
   id: number;
   account_id: number;
@@ -244,9 +152,6 @@ export interface PathRule {
   priority: number;
 }
 
-/**
- * Represents an explicit project-to-account override
- */
 export interface ProjectOverride {
   project_path: string;
   engine: AccountEngine;
@@ -254,106 +159,61 @@ export interface ProjectOverride {
   account_name: string;
 }
 
-/** One resolved routing target for a single engine. */
 export interface ResolveSlot {
   account: Account;
-  /**
-   * `on_disk` means the project's session directory was found under exactly
-   * one account's config dir — evidence, not a default. Mirrors
-   * `ResolveMatchType` in `daemon/services/accounts.ts`.
-   */
+  /** `on_disk`: the session dir exists under exactly one account's config dir. Mirrors `ResolveMatchType`. */
   matchType: 'override' | 'path_rule' | 'on_disk';
   matchDetail: string;
 }
 
-/**
- * Per-engine resolution result. A null slot means no override and no matching
- * path rule for that engine; an all-null pair MUST be surfaced as an error,
- * not a default-account fallback.
- */
+/** An all-null pair is an error, never a default-account fallback. */
 export interface ResolvePair {
   claude: ResolveSlot | null;
   codex: ResolveSlot | null;
 }
 
-/** Engine-tagged config dir from discovery/scan. */
 export interface DiscoveredConfigDir {
   dirName: string;
   configDir: string;
   engine: AccountEngine;
 }
 
-/**
- * Represents a session with its metadata
- */
 export interface Session {
-  /** The session ID (UUID) */
   id: string;
-  /** The project ID this session belongs to */
   project_id: string;
-  /** The project path */
   project_path: string;
-  /** Optional todo data associated with this session */
   todo_data?: any;
-  /** Unix timestamp when the session file was created */
   created_at: number;
-  /** First user message content (if available) */
-  /** The CLI's own name for the session, from the `ai-title` records it
-   *  writes into the transcript. Absent on older transcripts. */
   ai_title?: string;
-  /** A rename — the transcript's `custom-title`. Outranks `ai_title`; resolve
-   *  the two with `pickSessionTitle` rather than reading either directly. */
+  /** Outranks `ai_title`; resolve both via `pickSessionTitle`. */
   custom_title?: string;
-  /** ISO timestamp of the first JSONL entry that has a `timestamp` field. */
   first_timestamp?: string;
-  /** ISO timestamp of the last JSONL entry that has a `timestamp` field. */
   last_timestamp?: string;
   /** @deprecated Filesystem mtime fallback. Prefer `last_timestamp`. */
   message_timestamp?: string;
-  /** Size of the session JSONL in bytes (from fs.stat). Used by the
-   *  summary refresh button to decide whether anything has changed since
-   *  the last summary generation. */
   file_size_bytes?: number;
 }
 
-/**
- * Represents the settings from ~/.claude/settings.json
- */
 export type ClaudeSettings = Record<string, any>;
 
-/**
- * Branch + working-tree status snapshot for one path (project or worktree).
- */
 export interface PathSnapshot {
   path: string;
   branch: string | null;
   changed: number;
   untracked: number;
-  /**
-   * Latest error from `git status` / branch read for this path, or `null` if
-   * the read succeeded. Surface this to the user so a wedged worktree is
-   * visible rather than silently stuck at 0/0.
-   */
   error: string | null;
 }
 
-/** One watched repo: its own checkout and its sibling worktrees. */
 export interface RepoSnapshot {
   /** Relative to the project folder; '' for the project folder itself. */
   name: string;
   root: PathSnapshot;
-  /** Sibling worktrees, sorted by path. */
   worktrees: PathSnapshot[];
 }
 
-/**
- * Combined per-tab git snapshot — every repo the project watches, with its
- * worktrees, in a single payload emitted on `session-git-changed:<watchId>`.
- */
 export interface SessionGitSnapshot {
   /** The project folder's repo first (when it is one), then watched sub-repos. */
   repos: RepoSnapshot[];
-  /** Repos discovered in the project and not watched. */
   foundCount: number;
 }
 
@@ -363,7 +223,6 @@ function isIpcRecord(value: unknown): value is IpcRecord {
   return value !== null && typeof value === 'object';
 }
 
-/** Defensive normalizer for a path snapshot crossing the IPC boundary. */
 function normalizePathSnapshot(raw: unknown, fallbackPath: string): PathSnapshot {
   const data = isIpcRecord(raw) ? raw : undefined;
   return {
@@ -375,7 +234,6 @@ function normalizePathSnapshot(raw: unknown, fallbackPath: string): PathSnapshot
   };
 }
 
-/** A worktree attached to the same repository as the currently-open project. */
 export type GitChangedFileStatus =
   | 'modified'
   | 'added'
@@ -383,25 +241,20 @@ export type GitChangedFileStatus =
   | 'renamed'
   | 'untracked';
 
-/** One entry from `git status --porcelain` with its path kept. */
 export interface GitChangedFile {
   /** Repo-relative path, forward slashes, as git reports it. */
   path: string;
   status: GitChangedFileStatus;
-  /** True when the index differs from HEAD for this path. */
   staged: boolean;
-  /** Previous path, present only on renames. */
   origPath?: string;
 }
 
 export interface WorktreeInfo {
-  /** Absolute path of the worktree directory (realpath-resolved). */
+  /** Realpath-resolved. */
   path: string;
-  /** Short branch name, or null if the worktree has a detached HEAD. */
   branch: string | null;
 }
 
-/** Lima VM (parsed from `limactl list --json`). */
 export interface LimaVm {
   name: string;
   status: string;
@@ -412,7 +265,6 @@ export interface LimaVm {
   dir: string;
 }
 
-/** Container in a Lima VM (parsed from `docker ps -a --format=json`). */
 export interface LimaDockerContainer {
   id: string;
   name: string;
@@ -422,88 +274,52 @@ export interface LimaDockerContainer {
   ports: string;
 }
 
-/**
- * Whether the installed Claude CLI has moved past the changelog watermark
- * OmniFex was last reviewed against. Mirrors `CliReviewStatus` in
- * `daemon/services/claude-cli-review.ts`.
- */
+/** Mirrors `CliReviewStatus` in daemon/services/claude-cli-review.ts. */
 export interface CliReviewStatus {
-  /** Installed CLI version, or null when the binary can't be found/probed. */
   installed_version: string | null;
-  /** The release whose changelog this build was reviewed against. */
   reviewed_version: string;
-  /**
-   * Newest release marked as checked (app_settings, floored at
-   * `reviewed_version`). Ahead of it means read but not yet shipped in a build.
-   */
+  /** Floored at `reviewed_version`; ahead of it means read but not yet shipped in a build. */
   checked_version: string;
-  /** True when the installed CLI is strictly newer than `checked_version`. */
+  /** Strictly newer than `checked_version`. */
   unreviewed: boolean;
-  /** Newest release on npm, or null when the registry was unreachable. */
   latest_version: string | null;
-  /**
-   * True when `latest_version` is newer than what's installed. Separate from
-   * `unreviewed` on purpose — see `CliReviewStatus` in the service.
-   */
+  /** Deliberately separate from `unreviewed`. */
   upgrade_available: boolean;
-  /**
-   * OmniFex source checkout the changelog review should run in, or null when
-   * none could be resolved. Gates whether the drift warning is clickable.
-   */
   repo_dir: string | null;
 }
 
-/** One account's `claude update` run. Mirrors `CliAccountUpdateResult`. */
+/** Mirrors `CliAccountUpdateResult`. */
 export interface CliAccountUpdateResult {
   account: string;
   ok: boolean;
   message: string;
 }
 
-/** Outcome of a forced CLI update. Mirrors `CliUpdateResult` in the service. */
+/** Mirrors `CliUpdateResult`. */
 export interface CliUpdateResult {
-  /** Version before the run, or null when the binary couldn't be probed. */
   from: string | null;
-  /** Version after the run, same null caveat. */
   to: string | null;
-  /** True only when `to` is strictly newer than `from`. */
   upgraded: boolean;
-  /** One entry per Claude account, in run order. */
   accounts: CliAccountUpdateResult[];
 }
 
-/** app_settings key for the auto-run-on-launch toggle. Mirrors
- *  `CLI_AUTO_UPDATE_SETTING_KEY` in
- *  `daemon/services/claude-cli-review.ts`. */
+/** Mirrors `CLI_AUTO_UPDATE_SETTING_KEY` in daemon/services/claude-cli-review.ts. */
 export const CLI_AUTO_UPDATE_SETTING_KEY = 'claude_cli_auto_update_on_launch';
 
-/** app_settings key for the OmniFex-checkout override the review launches in.
- *  Mirrors `CLI_REVIEW_REPO_DIR_SETTING_KEY` in
- *  `daemon/services/claude-cli-review.ts`. */
+/** Mirrors `CLI_REVIEW_REPO_DIR_SETTING_KEY` in daemon/services/claude-cli-review.ts. */
 export const CLI_REVIEW_REPO_DIR_SETTING_KEY = 'cli_review_repo_dir';
 
-/** app_settings key for the newest CLI release marked as checked. Mirrors
- *  `CLI_CHECKED_VERSION_SETTING_KEY` in
- *  `daemon/services/claude-cli-review.ts`. */
+/** Mirrors `CLI_CHECKED_VERSION_SETTING_KEY` in daemon/services/claude-cli-review.ts. */
 /** Notification id prefix for a new Claude Code release; the click handler matches on it. */
 export const CLI_RELEASE_NOTICE_ID_PREFIX = 'claude-cli-update:';
 export const CLI_CHECKED_VERSION_SETTING_KEY = 'claude_cli_checked_version';
 
-/**
- * Represents the Claude Code version status
- */
 export interface ClaudeVersionStatus {
-  /** Whether Claude Code is installed and working */
   is_installed: boolean;
-  /** The version string if available */
   version?: string;
-  /** The full output from the command */
   output: string;
 }
 
-/**
- * Represents a file or directory entry
- */
 export interface FileEntry {
   name: string;
   path: string;
@@ -512,21 +328,13 @@ export interface FileEntry {
   extension?: string;
 }
 
-/**
- * Represents a Claude installation found on the system
- */
 export interface ClaudeInstallation {
-  /** Full path to the Claude binary */
   path: string;
-  /** Version string if available */
   version?: string;
-  /** Source of discovery (e.g., "nvm", "system", "homebrew", "which") */
   source: string;
-  /** Type of installation */
   installation_type: "System" | "Custom";
 }
 
-// Usage Dashboard types
 export interface UsageEntry {
   project: string;
   timestamp: string;
@@ -586,9 +394,7 @@ export interface AccountUsageStats {
   stats: UsageStats;
 }
 
-/** Live per-session cost snapshot, computed from the on-disk JSONL transcript
- *  (main session + subagent transcripts). Mirrors the backend
- *  `SessionCostSnapshot` in `daemon/services/cost/session-cost-core.ts`. */
+/** Mirrors `SessionCostSnapshot` in daemon/services/cost/session-cost-core.ts. */
 export interface SessionCostSnapshot {
   totalUsd: number;
   estimated: boolean;
@@ -596,21 +402,19 @@ export interface SessionCostSnapshot {
   subagentUsd: number;
   byModel: { model: string; usd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }[];
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
-  /** `subagentUsd` per agent, keyed by agent id (`agent-<id>.jsonl`). */
+  /** Keyed by agent id (`agent-<id>.jsonl`). */
   bySubagent: Record<string, SubagentCost>;
 }
 
-/** Mirrors the backend `SubagentCost` in session-cost-core.ts. */
+/** Mirrors `SubagentCost` in session-cost-core.ts. */
 export interface SubagentCost {
   usd: number;
   estimated: boolean;
-  /** The latest request's full prompt plus output — what the context holds now. */
   contextTokens: number;
   model: string;
 }
 
-/** One aggregated period row from the durable cost-history table. Mirrors
- *  the backend `CostHistoryPeriod` in `daemon/services/cost/cost-history.ts`. */
+/** Mirrors `CostHistoryPeriod` in daemon/services/cost/cost-history.ts. */
 export interface CostHistoryPeriod {
   period: string;
   cost_usd: number;
@@ -628,12 +432,10 @@ export interface CostHistoryPeriod {
   is_estimated: number;
 }
 
-/** One period x model bucket, for the Cost Report's stacked-area chart. */
 export interface CostHistoryPeriodModel extends CostHistoryPeriod {
   model: string;
 }
 
-/** Shared token/cost sums on every grouped Cost Report row. */
 interface CostGroupSums {
   cost_usd: number;
   request_count: number;
@@ -656,8 +458,6 @@ export interface CostByProjectModel extends CostByModel {
   project_path: string | null;
 }
 
-/** Spend split by what it bought. `context_share` is the headline: the
- *  fraction that is re-sent context rather than generated output. */
 export interface CostComponents {
   cost_usd: number;
   input_usd: number;
@@ -674,8 +474,7 @@ export interface CachingRoi {
   cache_read_usd: number;
   cache_write_usd: number;
   read_write_ratio: number;
-  /** Caching pays for itself somewhere around 2 reads per write. Below that it
-   *  costs more than it saves and the UI must say so, not just print a number. */
+  /** Below ~2 reads per write caching costs more than it saves; the UI must say so. */
   below_break_even: boolean;
   saved_usd: number;
   premium_1h_usd: number;
@@ -689,26 +488,20 @@ export interface SubagentSplitRow {
   usd_per_request: number;
 }
 
-/** A model priced by the fallback rate rather than a table entry. Surfaced so
- *  a newly released model cannot be billed at Sonnet rates unnoticed. */
 export interface UnpricedModel {
   model: string;
   request_count: number;
   cost_usd: number;
 }
 
-// The pricing row shape lives in `src/lib/pricing.ts` — the pure module both
-// processes import — and is re-exported here so components keep importing
-// types from `api`. Declaring it again would be a third copy to drift.
+// Re-exported from the shared pricing module; redeclaring it here would drift.
 export type { ModelPricingInput, ModelPricingRow } from '@/lib/pricing';
 import type { ModelPricingInput, ModelPricingRow } from '@/lib/pricing';
 import type { CostFilterState } from '@/lib/costReportFilters';
 import type { PrintMeasurement } from '@/lib/costReportPrintMeasure';
 import { buildPrintHash } from '@/lib/costReportPrint';
 
-/** Range-wide totals. Separate from the period rows because `session_count`
- *  must be counted once over the range, not summed per period — a session
- *  spanning two days would otherwise count twice. */
+/** `session_count` is counted once over the range, never summed per period. */
 export interface CostTotals {
   cost_usd: number;
   request_count: number;
@@ -719,7 +512,6 @@ export interface CostTotals {
   cache_write_tokens: number;
 }
 
-/** Distinct values for the Cost Report's filter controls. */
 export interface CostFacets {
   accounts: string[];
   models: string[];
@@ -728,8 +520,7 @@ export interface CostFacets {
   maxDate: string | null;
 }
 
-/** One session's aggregated cost row from the durable cost-history table.
- *  Mirrors the backend `CostSessionRow` in `daemon/services/cost/cost-history.ts`. */
+/** Mirrors `CostSessionRow` in daemon/services/cost/cost-history.ts. */
 export interface CostSessionRow {
   session_id: string;
   account_name: string;
@@ -743,37 +534,28 @@ export interface CostSessionRow {
   cache_write_tokens: number;
 }
 
-/** Shared filter shape for every cost-history query.
- *
- *  The multi-valued fields accept a single string or an array; an array ORs
- *  its values and an EMPTY array means "no filter", so clearing every checkbox
- *  in the filter bar shows everything rather than nothing. */
+/** An array ORs its values; an empty array means no filter. */
 export interface CostHistoryFilterParams {
   startDate?: string;
   endDate?: string;
   accountName?: string | string[];
   projectPath?: string | string[];
   model?: string | string[];
-  /** Case-insensitive substring of the project path. */
-  /** Omit to include both the main loop and subagents. */
   isSubagent?: boolean;
 }
 
-/** Latest rate-limit snapshot for one (account, rate-limit-type) pair. */
 export interface RateLimitSnapshot {
   account_name: string;
-  /** 'five_hour' | 'seven_day' | 'seven_day_opus' | 'seven_day_sonnet' | 'overage' */
   rate_limit_type: string;
   status: 'allowed' | 'allowed_warning' | 'rejected';
-  /** 0–100. May be null when the CLI didn't include it. */
+  /** 0–100. */
   utilization: number | null;
-  /** Unix epoch seconds. May be null. */
+  /** Unix epoch seconds. */
   resets_at: number | null;
-  /** Unix epoch ms — when GreyChrist saw this snapshot. */
+  /** Unix epoch ms. */
   observed_at: number;
 }
 
-/** User-configurable rate-limit settings. */
 export interface RateLimitSettings {
   notifications_enabled: boolean;
   five_hour_thresholds_pct: number[];
@@ -782,45 +564,24 @@ export interface RateLimitSettings {
   sound_enabled: boolean;
 }
 
-/**
- * Represents an MCP server configuration
- */
 export interface MCPServer {
-  /** Server name/identifier */
   name: string;
-  /** Transport type: "stdio" or "sse" */
   transport: string;
-  /** Command to execute (for stdio) */
   command?: string;
-  /** Command arguments (for stdio) */
   args: string[];
-  /** Environment variables */
   env: Record<string, string>;
-  /** URL endpoint (for SSE) */
   url?: string;
-  /** Configuration scope: "local", "project", or "user" */
   scope: string;
-  /** Whether the server is currently active */
   is_active: boolean;
-  /** Server status */
   status: ServerStatus;
 }
 
-/**
- * Server status information
- */
 export interface ServerStatus {
-  /** Whether the server is running */
   running: boolean;
-  /** Last error message if any */
   error?: string;
-  /** Last checked timestamp */
   last_checked?: number;
 }
 
-/**
- * Live MCP server status from the CLI during an active session.
- */
 export interface SessionMcpServerStatus {
   name: string;
   status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled';
@@ -828,12 +589,11 @@ export interface SessionMcpServerStatus {
   error?: string;
   config?: Record<string, unknown>;
   scope?: string;
-  /** CLI ≥2.1.309: reached through the cloud session's MCP proxy (or a claude.ai connector); its sign-in is held there. */
+  /** Reached through the cloud session's MCP proxy; its sign-in is held there. */
   sessionProxied?: boolean;
   tools?: { name: string; description?: string }[];
 }
 
-/** A Claude sign-in in progress (`claude_auth_begin`). */
 export interface ClaudeSignInFlow {
   flowId: string;
   /** Shows a code to paste back — works from any device. */
@@ -842,56 +602,39 @@ export interface ClaudeSignInFlow {
   automaticUrl: string;
 }
 
-/** Who the CLI says signed in. */
 export interface ClaudeSignedInAccount {
   email?: string;
   organization?: string;
   subscriptionType?: string;
 }
 
-/** What `mcp_authenticate` answers; mirrors McpAuthResult in daemon/services/sessions/types.ts. */
+/** Mirrors McpAuthResult in daemon/services/sessions/types.ts. */
 export interface McpAuthResult {
   authUrl: string | null;
   requiresUserAction: boolean;
   callbackExpected: boolean;
 }
 
-/**
- * Loaded plugin in an active session, enriched with .claude-plugin/plugin.json
- * manifest fields when available.
- */
 export interface SessionPluginInfo {
   name: string;
   path: string;
   source?: string;
-  /** `builtin`: shipped inside Claude Code (`path: "builtin"`). */
   scope: 'user' | 'project' | 'local' | 'builtin' | 'unknown';
   version?: string;
   description?: string;
   author?: string;
   authorEmail?: string;
-  /** Non-null when the plugin holds mod code (hooks.json `modules`).
-   *  `inspection` is null when `claude plugin validate` could not read it. */
+  /** `inspection` is null when `claude plugin validate` could not read it. */
   mod: { modules: string[]; inspection: ModInspection | null } | null;
 }
 
-/**
- * Per-subagent metadata read from disk: the model the subagent ran on plus
- * authoritative end-of-run totals from the parent Task's `toolUseResult`.
- * Surfaced in the subagent rows; keyed by the Task `tool_use_id`.
- */
 export interface SubagentMetaEntry {
   agentId?: string;
   agentType?: string;
-  /** The subagent's own description, from its sidecar — the only label a
-   *  nested row has, since its dispatch never reaches the main stream. */
   description?: string;
   model?: string;
-  /** The subagent's own reasoning effort, when it differs from the session
-   *  default. Undefined otherwise. */
   effort?: string;
-  /** agentId of the dispatching subagent — set only for nested subagents
-   *  (spawnDepth >= 2), which the main stream never mentions. */
+  /** Set only for nested subagents, which the main stream never mentions. */
   parentAgentId?: string;
   spawnDepth?: number;
   totalTokens?: number;
@@ -900,73 +643,43 @@ export interface SubagentMetaEntry {
   status?: string;
 }
 
-/**
- * MCP configuration for project scope (.mcp.json)
- */
 export interface MCPProjectConfig {
   mcpServers: Record<string, MCPServerConfig>;
 }
 
-/**
- * Individual server configuration in .mcp.json
- */
 export interface MCPServerConfig {
   command: string;
   args: string[];
   env: Record<string, string>;
 }
 
-/**
- * Represents a custom slash command
- */
 export interface SlashCommand {
-  /** Unique identifier for the command */
   id: string;
-  /** Command name (without prefix) */
   name: string;
-  /** Full command with prefix (e.g., "/project:optimize") */
   full_command: string;
-  /** Command scope: "project" or "user" */
   scope: string;
-  /** Optional namespace (e.g., "frontend" in "/project:frontend:component") */
   namespace?: string;
-  /** Path to the markdown file */
   file_path: string;
-  /** Command content (markdown body) */
   content: string;
-  /** Optional description from frontmatter */
   description?: string;
-  /** Allowed tools from frontmatter */
   allowed_tools: string[];
-  /** Whether the command has bash commands (!) */
   has_bash_commands: boolean;
-  /** Whether the command has file references (@) */
   has_file_references: boolean;
-  /** Whether the command uses $ARGUMENTS placeholder */
   accepts_arguments: boolean;
 }
 
-/**
- * Result of adding a server
- */
 export interface AddServerResult {
   success: boolean;
   message: string;
   server_name?: string;
 }
 
-/**
- * Import result for multiple servers
- */
 export interface ImportResult {
   imported_count: number;
   failed_count: number;
   servers: ImportServerResult[];
 }
 
-/**
- * Result for individual server import
- */
 export interface ImportServerResult {
   name: string;
   success: boolean;
@@ -983,64 +696,35 @@ export interface LogEntry {
   metadata?: string;
 }
 
-/** Columns the Log tab can sort on. Mirrors LogOrderBy in daemon/services/logging.ts. */
+/** Mirrors LogOrderBy in daemon/services/logging.ts. */
 export type LogOrderBy = 'timestamp' | 'level' | 'source' | 'category' | 'message';
 export type LogOrderDir = 'asc' | 'desc';
 
-/**
- * Connection axis of the session. See `docs/session-lifecycle.md`.
- * Mirrors `SessionStatus` in `daemon/services/sessions/types.ts` —
- * keep both unions in sync.
- */
+/** Mirrors `SessionStatus` in daemon/services/sessions/types.ts. */
 export type SessionStatus =
   | 'starting'
   | 'started'
   | 'error'
   | 'stopped';
 
-/**
- * The session's turn axis, mirrored from main (`session-turn:<tabId>`).
- * `running` from prompt hand-off to the CLI's result row or process exit.
- * Mirrors `TurnState` in `daemon/services/sessions/types.ts`. See
- * docs/session-lifecycle.md.
- */
+/** Mirrors `TurnState` in daemon/services/sessions/types.ts. */
 export interface TurnState { status: 'idle' | 'running'; since: string | null }
 
-/**
- * Turn axis of the session. Derived by the renderer from JSONL content +
- * task/subagent stores (see src/lib/sessionDerivedState.ts). Defined here
- * for renderer components that still need the type; the main process no longer
- * produces or tracks this value.
- *
- * @deprecated Import from `src/lib/sessionDerivedState.ts` instead. This
- *   re-export will be removed once all renderer imports are migrated.
- */
+/** @deprecated Import from `src/lib/sessionDerivedState.ts`. */
 export type ConversationStatus = import('./sessionDerivedState').ConversationStatus;
 
 export interface LogQueryFilters {
-  /** Any of these log levels (OR-joined). Omit to match all levels. */
   levels?: string[];
-  /** Any of these sources (OR-joined). Omit to match all sources. */
   sources?: string[];
-  /** Case-insensitive LIKE match on message. */
   search?: string;
-  /** ISO timestamp lower bound (inclusive). */
   since?: string;
-  /** ISO timestamp upper bound (inclusive). */
   until?: string;
   limit: number;
   offset: number;
-  /**
-   * Column to sort by. Defaults to `timestamp` server-side. `level`
-   * sorts by severity (error > warn > info > debug); other columns
-   * sort alphabetically.
-   */
   orderBy?: LogOrderBy;
-  /** Sort direction. Defaults to `desc` server-side. */
   orderDir?: LogOrderDir;
 }
 
-/** Filters accepted by logCount(). Same shape as LogQueryFilters but limit/offset are meaningless. */
 export interface LogCountFilters {
   levels?: string[];
   sources?: string[];
@@ -1054,10 +738,6 @@ export interface LogQueryResult {
   total: number;
 }
 
-// Wave 2 — CLI query-method return shapes (mirrored so the renderer
-// doesn't have to import the CLI types directly). Kept loose so minor CLI
-// additions don't break the frontend.
-
 export interface SessionAccountInfo {
   email?: string;
   organization?: string;
@@ -1067,11 +747,7 @@ export interface SessionAccountInfo {
   apiProvider?: 'firstParty' | 'bedrock' | 'vertex' | 'foundry' | 'anthropicAws' | 'mantle';
 }
 
-/**
- * Identity cached in `<configDir>/.claude.json`. Cheap to read — safe to call
- * once per account row. May be stale after a logout, since the CLI leaves
- * `oauthAccount` behind.
- */
+/** From `.claude.json`; may be stale after logout, as the CLI leaves `oauthAccount` behind. */
 export interface AccountIdentity {
   email: string | null;
   displayName: string | null;
@@ -1079,11 +755,7 @@ export interface AccountIdentity {
   organizationType: string | null;
 }
 
-/**
- * The CLI's own answer from `claude auth status --json`. Authoritative, and
- * distinguishes logged-out from stale — but costs a process spawn, so only
- * call it from an explicit user action.
- */
+/** Authoritative, but costs a process spawn: explicit user action only. */
 export interface AccountAuthStatus {
   loggedIn: boolean;
   email: string | null;
@@ -1091,24 +763,15 @@ export interface AccountAuthStatus {
   apiProvider: string | null;
   orgName: string | null;
   subscriptionType: string | null;
-  /** When the stored claude.ai sign-in ends (ISO), CLI >= 2.1.318. */
   loginExpiresAt: string | null;
 }
 
-/** When a config dir's stored claude.ai sign-in ends, as the daemon last read it. */
 export interface LoginExpiry {
-  /** ISO; null when the CLI reports no end (API key, older CLI). */
   expiresAt: string | null;
   checkedAt: string;
 }
 
-/**
- * Verdict of an account identity check.
- *
- * `unverified` (the user set no expected email) and `unknown-account` (no
- * account row owns this config dir) are deliberately distinct: only the first
- * is a choice, the second is a bug worth surfacing.
- */
+/** `unknown-account` is a bug to surface; `unverified` is the user's choice. */
 export type IdentityStatus =
   | 'verified'
   | 'mismatch'
@@ -1123,11 +786,7 @@ export interface IdentityVerdict {
   configDir: string;
 }
 
-/**
- * Emitted on `session-account-mismatch:<tabId>` when a session's config dir is
- * authenticated as somebody other than the account's `expected_email`.
- * `detected: null` means nobody is signed in.
- */
+/** `detected: null` means nobody is signed in. */
 export interface AccountMismatch {
   expected: string;
   detected: string | null;
@@ -1135,16 +794,7 @@ export interface AccountMismatch {
   source: 'oauth-file' | 'session-init';
 }
 
-/**
- * Where a permission rule comes from, per the CLI's own taxonomy.
- *
- * Renderer mirror of `CliPermissionRuleSource` in
- * `daemon/services/sessions/types.ts` — the renderer can't import from
- * `daemon/`, so the two must be kept in step by hand.
- *
- * OmniFex's own settings-file reader models only the first three. `flagSettings`
- * is where OmniFex's own rule push lands, as a source of its own.
- */
+/** Mirrors `CliPermissionRuleSource` in daemon/services/sessions/types.ts. */
 export type CliPermissionRuleSource =
   | 'userSettings'
   | 'projectSettings'
@@ -1158,18 +808,13 @@ export type CliPermissionRuleSource =
   | 'mcpServerPolicy'
   | 'hostCredential';
 
-/**
- * The CLI's plain-language reading of a rule, split so the emphasised fragment
- * can be bolded the way the terminal does. `emphasis` is rule content and may
- * carry invisible characters by design — never render it unescaped.
- */
+/** `emphasis` is rule content and may carry invisible characters: never render it unescaped. */
 export interface CliPermissionRuleDescription {
   prefix: string;
   emphasis?: string;
   suffix?: string;
 }
 
-/** One permission rule as the live session holds it. */
 export interface CliPermissionRule {
   behavior: 'allow' | 'deny' | 'ask';
   source: CliPermissionRuleSource;
@@ -1177,17 +822,14 @@ export interface CliPermissionRule {
   rule: string;
   description?: CliPermissionRuleDescription;
   editability: 'persistent' | 'session' | 'readonly';
-  /** True when managed settings pin policy-only mode and this rule is ignored. */
   notInEffect?: boolean;
 }
 
-/** One additional working directory in the session's permission scope. */
 export interface CliWorkspaceDirectory {
   path: string;
   source: string;
 }
 
-/** The session's live permission state, as `list_permission_rules` reports it. */
 export interface CliPermissionRulesState {
   rules: CliPermissionRule[];
   workspaceDirectories: CliWorkspaceDirectory[];
@@ -1197,8 +839,7 @@ export interface CliPermissionRulesState {
 }
 
 export interface SessionContextUsageCategory {
-  /** Stable row id (CLI 2.1.304+), e.g. "messages", "free_space". Absent
-   *  from older CLIs; a later CLI may add values. */
+  /** Absent from older CLIs; a later CLI may add values. */
   id?: string;
   name: string;
   tokens: number;
@@ -1215,12 +856,6 @@ export interface SessionContextUsage {
   model: string;
 }
 
-/**
- * Per-tab status summary the renderer publishes up to main. Both the status
- * popover and the install-gate read from the aggregated list. The renderer
- * is the canonical interpreter — it knows messages, subagents, and tasks —
- * so main treats this as opaque pass-through with a few well-known fields.
- */
 export interface TabStatusTasks {
   total: number;
   completed: number;
@@ -1231,37 +866,14 @@ export interface TabStatusSummary {
   tabId: string;
   title: string;
   projectPath: string | null;
-  /**
-   * The CLI session GUID this tab is bound to, or null before one exists.
-   *
-   * Distinct from `tabId`, which is a renderer-local `tab-<ts>-<rand>` and
-   * means nothing outside this window. The GUID is what identifies a session
-   * to the daemon, to `--resume`, and to the user reading a transcript path —
-   * so it is what the popover shows and what reopening a closed tab needs.
-   */
+  /** The CLI session GUID, not the renderer-local `tabId`; null before one exists. */
   sessionId: string | null;
-  /** True iff a persistent CLI session is alive for this tab. */
   sessionStarted: boolean;
-  /** Roll-up: mainTurnInFlight || activeAgents > 0 || in-progress task, plus a
-   *  pending permission. Mirrors the header/TabManager spinner (in_progress
-   *  tasks only — pending todos do not count as working). */
+  /** Includes a pending permission; pending todos don't count. */
   busy: boolean;
-  /**
-   * Is Claude currently doing work on this session?
-   *  - 'working' (yellow) if ANY of: waiting on a Claude response,
-   *    active task in_progress, or running subagent.
-   *  - 'ready'   (green)  if all three are quiet.
-   *
-   * Independent of `status` (which is the lifecycle: starting / idle /
-   * error / etc.) — promptStatus is purely "is the agent busy", and
-   * drives the tab spinner, the popover badge, and the upgrade-gate
-   * warning. Distinct from `busy` (which folds in `waitingFor`) by
-   * design: a session waiting on the user is not "working" — it's
-   * waiting on you.
-   */
+  /** Unlike `busy`, a session waiting on the user is not working. */
   promptStatus: 'working' | 'ready';
   mainTurnInFlight: boolean;
-  /** Running, un-dismissed subagents (Agent / Task / run_in_background:Bash). */
   activeAgents: number;
   tasks: TabStatusTasks;
   contextUsage: {
@@ -1272,16 +884,8 @@ export interface TabStatusSummary {
   branch: string | null;
   filesChanged: number;
   filesUntracked: number;
-  /** High-level status for the badge in the popover. */
   status: 'not-started' | 'starting' | 'idle' | 'busy' | 'error';
-  /**
-   * Set when the session is paused waiting on the user — a permission grant
-   * or an AskUserQuestion answer. The TabStatusPopover overrides the badge
-   * label/color when this is non-null so background tabs that need the user
-   * are obvious at a glance. Null when nothing is waiting.
-   */
   waitingFor: 'permission' | 'question' | null;
-  /** Wall-clock ms when this summary was published. */
   updatedAt: number;
 }
 
@@ -1291,7 +895,7 @@ export interface SessionSlashCommand {
   argumentHint: string;
 }
 
-// Sidecar mirror — keep in sync with daemon/services/sessions-summary.ts.
+// Mirrors daemon/services/sessions-summary.ts.
 export interface SessionSummary {
   version: number;
   headline: string;
@@ -1302,41 +906,21 @@ export interface SessionSummary {
   model: string;
   accountName: string;
   truncated?: boolean;
-  /** FNV-1a hash of the prompt template that produced this summary.
-   *  A mismatch with the current prompt's hash invalidates the size-
-   *  change gate so a refresh click regenerates with the new prompt. */
   promptHash?: string;
   /** @deprecated older sidecars used a numeric version; kept for read-back only. */
   promptVersion?: number;
 }
 
-/** app_settings key under which the user-editable prompt template is
- *  stored. Mirrors the backend constant in sessions-summary.ts. */
+/** Mirrors the backend constant in sessions-summary.ts. */
 export const PROMPT_TEMPLATE_SETTING_KEY = 'sessionsSummary.promptTemplate';
 
-/** app_settings key for the master "summaries on/off" toggle. When
- *  off, sessions list rows show no summary — just the name, or "No name" —
- *  instead of any cached sidecar, the manual refresh button is hidden, and the auto-on-close
- *  lifecycle hook also bails (it gates on enabled AND autoOnClose).
- *  Mirrors the backend constant in sessions-summary.ts. Stored as
- *  `'true'` or `'false'`. */
+/** Mirrors sessions-summary.ts; stored as `'true'` or `'false'`. */
 export const ENABLED_SETTING_KEY = 'sessionsSummary.enabled';
 
-/** app_settings key for the "auto-summarize on session close" toggle.
- *  Only gates the lifecycle hook — the manual refresh button is
- *  unaffected. Mirrors the backend constant in sessions-summary.ts.
- *  Stored as `'true'` or `'false'`. */
+/** Mirrors sessions-summary.ts; stored as `'true'` or `'false'`. */
 export const AUTO_ON_CLOSE_SETTING_KEY = 'sessionsSummary.autoOnClose';
 
-/**
- * Discriminated result of `summaryGenerate`. Mirrors
- * `SummaryGenerateResult` in daemon/services/sessions-summary.ts.
- *
- * The renderer uses the tag to differentiate "succeeded but no change",
- * "skipped because the account isn't configured", "model returned
- * gibberish", etc. — so the manual refresh button can give honest
- * feedback instead of silently failing.
- */
+/** Mirrors `SummaryGenerateResult` in daemon/services/sessions-summary.ts. */
 export type SummaryGenerateResult =
   | { status: 'generated'; summary: SessionSummary }
   | { status: 'unchanged'; summary: SessionSummary }
@@ -1346,15 +930,13 @@ export type SummaryGenerateResult =
     }
   | { status: 'malformed-response' };
 
-/** Mirrors `CliStatusReport` in daemon/services/sessions/types.ts. Values
- *  are the CLI's own rendered text — display them, don't parse them. */
+/** Mirrors `CliStatusReport`. Values are the CLI's rendered text — display them, don't parse them. */
 export interface SessionStatusReport {
   sections: { title: string; rows: { label?: string; value: string }[] }[];
 }
 
 export interface SessionModelInfo {
   value: string;
-  /** The concrete id the CLI maps this picker value to (`claude-opus-5-5[1m]`). */
   resolvedModel?: string;
   displayName: string;
   description: string;
@@ -1379,23 +961,15 @@ export type BrainNoteType = 'Project' | 'Subsystem' | 'Topic' | 'Session' | 'Not
 export interface BrainVaultStatus {
   accountId: number;
   configured: boolean;
-  /** The stored path, exactly as it was set. Null when unconfigured. */
   path: string | null;
   exists: boolean;
-  /** The scaffolded layout is present (config/notes.json). */
   initialized: boolean;
   noteCount: number;
-  /** Rows in the FTS index, or null when there is no readable index. */
   indexedCount: number | null;
   gitAvailable: boolean;
   lastGitError: string | null;
-  /** Why this vault cannot be opened, when it cannot be. */
   conflict: string | null;
-  /**
-   * Files a macOS file provider has evicted to contentless stubs, or null when
-   * that could not be determined. Null is not zero — see
-   * daemon/services/brain/offloaded.ts.
-   */
+  /** Null means not determined, never zero. */
   offloadedCount: number | null;
 }
 
@@ -1404,29 +978,19 @@ export interface BrainSourceSummary {
   accountId: number;
   sourceId: string;
   itemKey: string;
-  /** Display name: a session's id, or a file-backed item's file name. */
   name: string;
-  /** True when this row is a session open in OmniFex right now. Indexing one
-   *  is refused by the backend — the transcript is still being written. */
   inUse: boolean;
-  /**
-   * What the last model-backed run on this item cost, straight from the CLI's
-   * own accounting. Null means nothing has ever been spent on it — which is
-   * not the same as a run that was free.
-   */
+  /** Null means nothing was ever spent, not a free run. */
   costUsd: number | null;
   inputTokens: number | null;
   outputTokens: number | null;
   cacheReadTokens: number | null;
   cacheCreationTokens: number | null;
-  /** The project folder, absolute. Grouping and exclusion key. */
   label: string;
   mtimeMs: number;
-  /** Bytes on disk — the best single predictor of what indexing will cost. */
   size: number;
   admitted: boolean;
   reason: string;
-  /** True when this item's project is excluded from the Brain. */
   excluded: boolean;
   /** Mirrors `SourceStatus` in daemon/services/brain/sources/state.ts. */
   status: 'pending' | 'indexed' | 'skipped' | 'failed' | 'blocked' | null;
@@ -1449,11 +1013,6 @@ export interface BrainSessionMetadata {
   terminalStatus: 'completed' | 'error' | 'unknown';
 }
 
-/**
- * Whether the Brain MCP server is written into this account's Claude config.
- * `available` is false for an account with no vault, which is when the toggle
- * should not be offered at all.
- */
 export interface BrainMcpStatus {
   registered: boolean;
   available: boolean;
@@ -1472,11 +1031,7 @@ export interface BrainArtifactMetadata {
   file: string;
 }
 
-/**
- * Mirrors `ItemMetadata` in daemon/services/brain/sources/types.ts. The
- * discriminant is what lets a Sources pane render a capture without inventing
- * session fields it does not have.
- */
+/** Mirrors `ItemMetadata` in daemon/services/brain/sources/types.ts. */
 export type BrainItemMetadata =
   | ({ kind: 'session' } & BrainSessionMetadata)
   | ({ kind: 'capture' } & BrainCaptureMetadata)
@@ -1486,9 +1041,7 @@ export type BrainItemMetadata =
 export interface BrainSourcePreview {
   itemKey: string;
   prose: string;
-  /** Null for a translating source — there is no distillation behind it. */
   metadata: BrainItemMetadata | null;
-  /** Notes a translating source would write. Empty for a distilled item. */
   notePaths: string[];
   truncated: boolean;
   admitted: boolean;
@@ -1519,9 +1072,7 @@ export interface BrainQueueEntry {
 /** Mirrors the backend `IndexResult` in daemon/services/brain/registry.ts. */
 export interface BrainIndexResult {
   itemKey: string;
-  /** Vault-relative paths written, in the order they were written. */
   notesWritten: string[];
-  /** True when nothing was indexed — gate rejection or a recorded failure. */
   skipped: boolean;
   reason: string;
 }
@@ -1540,13 +1091,10 @@ export interface BrainRun {
   total: number;
   /** Items FINISHED, not started. */
   completed: number;
-  /** The item in flight: the `completed + 1`-th. */
   item: string;
-  /** What a person would call `item` — a session's project, not its UUID. */
   label: string;
-  /** Which stage of the current item is running. */
   phase: BrainRunPhase;
-  /** When the CURRENT ITEM started, epoch ms. Restamped per item. */
+  /** Epoch ms when the current item started; restamped per item. */
   startedAt: number;
   written: number;
   skipped: number;
@@ -1563,7 +1111,6 @@ export interface BrainRunResult {
 /** Mirrors the backend `CurateResult` in daemon/services/brain/registry.ts. */
 export interface BrainCurateResult {
   notePath: string;
-  /** True when nothing was spent: the note vanished, or stopped qualifying. */
   skipped: boolean;
   reason: string;
 }
@@ -1579,7 +1126,6 @@ export interface BrainVaultStats {
   /** Derived from a bytes/4 ratio. Always label these as estimates in the UI. */
   estimatedTokens: { median: number; largest: number; vault: number };
   timelineBuckets: { label: string; count: number }[];
-  /** What indexing this vault has cost so far, in USD, summed per account. */
   spentUsd: number;
   qualifyingCount: number;
 }
@@ -1587,14 +1133,11 @@ export interface BrainVaultStats {
 /** Mirrors the backend `NoteMeta` in daemon/services/brain/note-meta.ts. */
 export interface BrainNoteMeta {
   relPath: string;
-  /** Basename without `.md`. */
   title: string;
   type: BrainNoteType;
-  /** Display name of the owning project, or null when the note has none. */
   project: string | null;
   created: string;
   updated: string;
-  /** ISO date of the last curation pass, or null if never curated. */
   curatedAt: string | null;
 }
 
@@ -1613,14 +1156,7 @@ export interface BrainNote {
   body: string;
 }
 
-/**
- * API client for interacting with the Rust backend
- */
 export const api = {
-  /**
-   * Gets the user's home directory path
-   * @returns Promise resolving to the home directory path
-   */
   async getHomeDirectory(): Promise<string> {
     try {
       return await apiCall<string>("get_home_directory");
@@ -1630,10 +1166,6 @@ export const api = {
     }
   },
 
-  /**
-   * Lists all projects in the ~/.claude/projects directory
-   * @returns Promise resolving to an array of projects
-   */
   async listProjects(): Promise<Project[]> {
     try {
       return await apiCall<Project[]>("list_projects");
@@ -1643,11 +1175,6 @@ export const api = {
     }
   },
 
-  /**
-   * Pins or unpins a project to the top of the Projects list.
-   * @param projectPath - The project's decoded path (the pin key)
-   * @param pinned - Desired state; idempotent in both directions
-   */
   async setProjectPinned(projectPath: string, pinned: boolean): Promise<void> {
     try {
       await apiCall<null>('set_project_pinned', { projectPath, pinned });
@@ -1657,11 +1184,6 @@ export const api = {
     }
   },
 
-  /**
-   * Creates a new project for the given directory path
-   * @param path - The directory path to create a project for
-   * @returns Promise resolving to the created project
-   */
   async createProject(path: string): Promise<Project> {
     try {
       return await apiCall<Project>('create_project', { path });
@@ -1671,11 +1193,6 @@ export const api = {
     }
   },
 
-  /**
-   * Retrieves sessions for a specific project
-   * @param projectId - The ID of the project to retrieve sessions for
-   * @returns Promise resolving to an array of sessions
-   */
   async getProjectSessions(projectId: string, projectPath?: string): Promise<Session[]> {
     try {
       const params: Record<string, string> = { projectId };
@@ -1687,12 +1204,6 @@ export const api = {
     }
   },
 
-  /**
-   * Permanently delete a session — its JSONL file and any ride-along
-   * sidecars (`*.summary.json`, `*.todo.json`). Throws when the session
-   * file isn't found or the project's config dir can't be resolved;
-   * the caller should catch and surface a toast/inline error.
-   */
   async deleteSession(
     sessionId: string,
     projectId: string,
@@ -1703,14 +1214,7 @@ export const api = {
     await apiCall<unknown>('delete_session', params);
   },
 
-  /**
-   * Permanently delete a project's `<configDir>/projects/<projectId>` folder
-   * for the given account — this removes every session JSONL, summary, and
-   * todo sidecar OmniFex/Claude has stored under that account for that
-   * project. Idempotent: a missing directory resolves quietly. Bound to
-   * `accountId` rather than path resolution so deleting from one account
-   * cannot cascade to a sibling account whose path rule happens to match.
-   */
+  /** Bound to `accountId`, not path resolution, so it cannot cascade to a sibling account. */
   async deleteClaudeProject(args: {
     accountId: number;
     projectId: string;
@@ -1721,12 +1225,7 @@ export const api = {
     });
   },
 
-  /**
-   * The model an "Account Default" session actually starts on, and where that
-   * value came from. Not the same as `getClaudeSettings().model`: since Claude
-   * Code 2.1.236 an exported `ANTHROPIC_DEFAULT_MODEL` outranks the
-   * settings.json pin, and every OmniFex spawn inherits the environment.
-   */
+  /** Not `getClaudeSettings().model`: an exported `ANTHROPIC_DEFAULT_MODEL` outranks the settings.json pin. */
   async getClaudeDefaultModel(opts?: { configDir?: string }): Promise<{
     model: string | null;
     source: 'ANTHROPIC_MODEL' | 'ANTHROPIC_DEFAULT_MODEL' | 'settings' | 'none';
@@ -1740,10 +1239,6 @@ export const api = {
     return result ?? { model: null, source: 'none' };
   },
 
-  /**
-   * Reads the Claude settings file
-   * @returns Promise resolving to the settings object
-   */
   async getClaudeSettings(opts?: { projectPath?: string; configDir?: string }): Promise<ClaudeSettings> {
     try {
       const params: Record<string, unknown> = {};
@@ -1751,13 +1246,10 @@ export const api = {
       if (opts?.configDir !== undefined) params.configDir = opts.configDir;
       const result = await apiCall<{ data: ClaudeSettings }>("get_claude_settings", params);
 
-      // The Rust backend returns ClaudeSettings { data: ... }
-      // We need to extract the data field
       if (result && typeof result === 'object' && 'data' in result) {
         return result.data;
       }
 
-      // If the result is already the settings object, return it
       return result;
     } catch (error) {
       console.error("Failed to get Claude settings:", error);
@@ -1765,10 +1257,6 @@ export const api = {
     }
   },
 
-  /**
-   * Reads the CLAUDE.md system prompt file
-   * @returns Promise resolving to the system prompt content
-   */
   async getSystemPrompt(): Promise<string> {
     try {
       return await apiCall<string>("get_system_prompt");
@@ -1778,10 +1266,6 @@ export const api = {
     }
   },
 
-  /**
-   * Checks if Claude Code is installed and gets its version
-   * @returns Promise resolving to the version status
-   */
   async checkClaudeVersion(): Promise<ClaudeVersionStatus> {
     try {
       return await apiCall<ClaudeVersionStatus>("check_claude_version");
@@ -1791,11 +1275,6 @@ export const api = {
     }
   },
 
-  /**
-   * Saves the CLAUDE.md system prompt file
-   * @param content - The new content for the system prompt
-   * @returns Promise resolving when the file is saved
-   */
   async saveSystemPrompt(content: string): Promise<string> {
     try {
       return await apiCall<string>("save_system_prompt", { content });
@@ -1805,11 +1284,6 @@ export const api = {
     }
   },
 
-  /**
-   * Saves the Claude settings file
-   * @param settings - The settings object to save
-   * @returns Promise resolving when the settings are saved
-   */
   async saveClaudeSettings(settings: ClaudeSettings, opts?: { projectPath?: string; configDir?: string }): Promise<string> {
     try {
       const params: Record<string, unknown> = { settings };
@@ -1823,11 +1297,6 @@ export const api = {
   },
 
 
-  /**
-   * Reads a specific CLAUDE.md file
-   * @param filePath - The absolute path to the file
-   * @returns Promise resolving to the file content
-   */
   async readClaudeMdFile(filePath: string): Promise<string> {
     try {
       return await apiCall<string>("read_claude_md_file", { filePath });
@@ -1837,12 +1306,6 @@ export const api = {
     }
   },
 
-  /**
-   * Saves a specific CLAUDE.md file
-   * @param filePath - The absolute path to the file
-   * @param content - The new content for the file
-   * @returns Promise resolving when the file is saved
-   */
   async saveClaudeMdFile(filePath: string, content: string): Promise<string> {
     try {
       return await apiCall<string>("save_claude_md_file", { filePath, content });
@@ -1853,9 +1316,6 @@ export const api = {
   },
 
 
-  /**
-   * Reveals a path in the system file manager (Finder on macOS).
-   */
   async revealPathInFinder(path: string): Promise<void> {
     try {
       await apiCall<void>('reveal_path_in_finder', { path });
@@ -1865,28 +1325,16 @@ export const api = {
     }
   },
 
-  /**
-   * Loads a session's JSONL transcript from disk.
-   */
   async loadSessionHistory(sessionId: string, projectId: string, projectPath?: string): Promise<any[]> {
     const params: Record<string, string> = { sessionId, projectId };
     if (projectPath) params.projectPath = projectPath;
     return apiCall("load_session_history", params);
   },
 
-  // ─── Persistent Session API ───────────────────────────────────────
-
   async startSession(tabId: string, projectPath: string, model: string, permissionMode: string, resumeSessionId?: string, configDir?: string, effort?: string, manualAccountOverride?: boolean, agent?: AgentKind): Promise<void> {
     return apiCall("session_start", { tabId, projectPath, model, permissionMode, resumeSessionId, configDir, effort, manualAccountOverride, agent });
   },
 
-  /**
-   * Re-claim ownership of an in-flight session for this window without
-   * restarting it. Returns true if the main process had a live session for
-   * this tabId (and rebound event routing to this window), false otherwise.
-   * Use after a renderer reload (Cmd+R) to avoid tearing down a healthy CLI
-   * query and replacing it with a fresh resume.
-   */
   async sessionRebind(tabId: string): Promise<boolean> {
     return apiCall("session_rebind", { tabId });
   },
@@ -1899,17 +1347,12 @@ export const api = {
     return apiCall("session_send_structured_message", { tabId, content });
   },
 
-  // The main process resolves the session's single in-flight permission prompt
-  // via a FIFO queue (sessions/permissions.ts), NOT by request id — so no
-  // requestId is sent. Don't reintroduce one expecting request-targeted
-  // dispatch; that contract doesn't exist until the queue matches by id.
+  // Resolved by a FIFO queue, not by request id, so no requestId is sent.
   async respondPermission(tabId: string, behavior: string, updatedInput?: unknown, updatedPermissions?: unknown[]): Promise<void> {
     return apiCall("session_respond_permission", { tabId, behavior, updatedInput, updatedPermissions });
   },
 
-  // Unlike respondPermission, this IS request-targeted: main drops an answer
-  // whose requestId is no longer at the head of the queue (the CLI withdrew
-  // it while the dialog was open), so it cannot land on the next request.
+  // Request-targeted: main drops an answer whose requestId is no longer at the queue head.
   async respondElicitation(tabId: string, action: 'accept' | 'decline' | 'cancel', content?: Record<string, unknown>, requestId?: string): Promise<void> {
     return apiCall("session_respond_elicitation", {
       tabId,
@@ -1923,10 +1366,7 @@ export const api = {
     return apiCall("session_stop", { tabId });
   },
 
-  /**
-   * The tab is closing: let go of its session. Unlike `stopSession`, the
-   * daemon ends the session only if no other client still has it open.
-   */
+  /** Unlike `stopSession`, ends the session only if no other client still has it open. */
   async releaseSession(tabId: string): Promise<void> {
     return apiCall("session_release", { tabId });
   },
@@ -1940,117 +1380,71 @@ export const api = {
     sessionId: string | null;
     sessionStatus: SessionStatus;
     turn: TurnState;
-    /** The mode the CLI was spawned with — decides whether Bypass is
-     *  reachable mid-session. Absent from a daemon older than this field. */
+    /** Decides whether Bypass is reachable mid-session. */
     launchPermissionMode?: string | null;
-    /** The mode the session is in now. Absent from a daemon older than this field. */
     permissionMode?: string | null;
   }> {
     return apiCall("session_get_health", { tabId });
   },
 
-  // ─── Wave 2: Query-method passthroughs ──────────────────────────
-
-  /** Interrupt the current assistant turn without ending the session. */
   async sessionInterrupt(tabId: string): Promise<void> {
     return apiCall("session_interrupt", { tabId });
   },
 
-  /** Switch the model used for subsequent turns in an active session. */
-  /** Resolves to the model id the CLI reports the switch landed on, or null. */
   async sessionSetModel(tabId: string, model?: string): Promise<string | null> {
     return apiCall("session_set_model", { tabId, model });
   },
 
-  /**
-   * Rename the session. Goes out as the CLI's `rename_session` control
-   * request, which persists a `custom-title` record in the transcript —
-   * resolves false when there was no live session to take it.
-   */
   async sessionSetTitle(tabId: string, title: string): Promise<boolean> {
     return apiCall("session_set_title", { tabId, title });
   },
 
-  /**
-   * Ask a side question (the CLI's `/btw`). Resolves once it is pending; the
-   * answer arrives on `session-side-chat:<tabId>`.
-   */
+  /** The answer arrives on `session-side-chat:<tabId>`. */
   async sessionSideChatAsk(tabId: string, question: string): Promise<SideChatAskResult> {
     return apiCall("session_side_chat_ask", { tabId, question });
   },
 
-  /** Discard the side chat, cancelling a pending question. */
   async sessionSideChatClose(tabId: string): Promise<void> {
     return apiCall("session_side_chat_close", { tabId });
   },
 
-  /** The current side chat, to seed a panel after a reload. */
   async sessionGetSideChat(tabId: string): Promise<SideChat> {
     return apiCall("session_get_side_chat", { tabId });
   },
 
-  /**
-   * Ask the CLI to propose a name from `description` (the first prompt).
-   * `generate_session_title` with `persist: false` — nothing is written;
-   * the user saves it via `sessionSetTitle` if they like it. Null when the
-   * session is not live or the CLI had no suggestion.
-   */
   async sessionSuggestTitle(tabId: string, description: string): Promise<string | null> {
     return apiCall("session_suggest_title", { tabId, description });
   },
 
-  /** Switch permission mode mid-session. */
   async sessionSetPermissionMode(tabId: string, mode: string): Promise<void> {
     return apiCall("session_set_permission_mode", { tabId, mode });
   },
 
-  /** Change the effort level for subsequent turns in an active session. */
   async sessionSetEffort(tabId: string, level: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void> {
     return apiCall("session_set_effort", { tabId, level });
   },
 
-  /** Get the CLI-reported authenticated account for an active session. */
   async sessionAccountInfo(tabId: string): Promise<SessionAccountInfo | null> {
     return apiCall("session_account_info", { tabId });
   },
 
-  /**
-   * Who is signed in to a config dir, per `<configDir>/.claude.json`. Cheap —
-   * no CLI spawn — so it's safe to call once per account row.
-   */
   async readAccountIdentity(configDir: string): Promise<AccountIdentity | null> {
     return apiCall("account_identity_read", { configDir });
   },
 
-  /**
-   * Ask the CLI directly (`claude auth status --json`). Authoritative but
-   * costs a process spawn — call only from an explicit user action.
-   */
+  /** Costs a process spawn: explicit user action only. */
   async probeAccountAuthStatus(configDir: string): Promise<AccountAuthStatus | null> {
     return apiCall("account_identity_probe", { configDir });
   },
 
-  /**
-   * Full identity verdict for a config dir. Main owns the comparison, so no
-   * renderer surface re-implements what "verified" means. Cheap — no spawn.
-   */
   async accountIdentityVerdict(configDir: string): Promise<IdentityVerdict | null> {
     return apiCall("account_identity_verdict", { configDir });
   },
 
-  /**
-   * When the stored sign-in for a config dir ends. The daemon caches the CLI's
-   * answer for hours; `refresh` asks again (after a sign-in). Null = unknown.
-   */
   async accountLoginExpiry(configDir: string, refresh = false): Promise<LoginExpiry | null> {
     return apiCall("account_login_expiry", refresh ? { configDir, refresh } : { configDir });
   },
 
-  /**
-   * Fires when a config dir's signed-in account actually changes on disk — a
-   * logout/login done in a terminal, say. Main only broadcasts on a real
-   * change, so this is quiet in the common case. Returns an unsubscribe fn.
-   */
   subscribeAccountIdentity(
     configDir: string,
     cb: (verdict: IdentityVerdict) => void,
@@ -2061,81 +1455,52 @@ export const api = {
         const payload = args[0] as
           | { configDir?: string; verdict?: IdentityVerdict }
           | undefined;
-        // The broadcast goes to every window; filter to the dir we care about.
         if (payload?.configDir !== configDir || !payload.verdict) return;
         cb(payload.verdict);
       },
     );
   },
 
-  /** Get the current context-window usage for an active session. */
   async sessionContextUsage(tabId: string): Promise<SessionContextUsage | null> {
     return apiCall("session_context_usage", { tabId });
   },
 
-  /** Tail of a background shell / Monitor task's output (CLI 2.1.287+); null
-   *  when the session is not live, the task is unknown, or the CLI is older. */
   async sessionTaskOutput(tabId: string, taskId: string): Promise<TaskOutputTail | null> {
     return apiCall("session_get_task_output", { tabId, taskId });
   },
 
-  /** The person is typing a prompt for this session (CLI 2.1.326+ may get
-   *  the next request ready). A hint: resolves whatever the CLI says. */
   async sessionPromptDraftActivity(tabId: string): Promise<void> {
     return apiCall("session_prompt_draft_activity", { tabId });
   },
 
-  /** Stop one background task. Rejects with the CLI's message. */
   async sessionStopTask(tabId: string, taskId: string): Promise<void> {
     return apiCall("session_stop_task", { tabId, taskId });
   },
 
-  /** Move a running foreground Bash call or subagent to the background;
-   *  false when it had already finished. */
   async sessionBackgroundTask(tabId: string, toolUseId: string): Promise<boolean> {
     return apiCall("session_background_task", { tabId, toolUseId });
   },
 
-  /** The CLI's `/status` rows for a live session (CLI 2.1.280+); null when
-   *  there is no live session or the CLI predates `get_status`. */
   async sessionCliStatus(tabId: string): Promise<SessionStatusReport | null> {
     return apiCall("session_cli_status", { tabId });
   },
 
-  /** Get the list of slash commands the CLI knows about for this session. */
   async sessionSupportedCommands(tabId: string): Promise<SessionSlashCommand[]> {
     return apiCall("session_supported_commands", { tabId });
   },
 
-  /** Get the list of models the CLI knows about for this session. */
   async sessionSupportedModels(tabId: string): Promise<SessionModelInfo[]> {
     return apiCall("session_supported_models", { tabId });
   },
 
-  /**
-   * Get the CLI's model catalog for a given account without starting a session.
-   * Spins up an ephemeral query() scoped to `configDir` just long enough to
-   * read the init handshake.
-   */
   async listSupportedModels(configDir: string): Promise<SessionModelInfo[]> {
     return apiCall("list_supported_models", { configDir });
   },
 
-  /**
-   * Re-read the account's model catalog from the CLI now, bypassing the
-   * cache — for a model that became available since the last fetch.
-   */
   async refreshSupportedModels(configDir: string): Promise<SessionModelInfo[]> {
     return apiCall("refresh_supported_models", { configDir });
   },
 
-  /**
-   * Get the CLI's slash-command catalog for a given account without relying on
-   * a live session's frozen init snapshot. Served from the SQLite-persisted
-   * catalog (refreshed when the CLI version changes) with a live ephemeral
-   * fetch fallback — this is what surfaces newly-added built-ins like
-   * /design-sync in the chat picker.
-   */
   async listSupportedCommands(configDir: string): Promise<SessionSlashCommand[]> {
     return apiCall("list_supported_commands", { configDir });
   },
@@ -2144,27 +1509,22 @@ export const api = {
     return apiCall("session_mcp_server_status", { tabId });
   },
 
-  /** Start OAuth for an MCP server; the caller opens `authUrl`. Rejects with the CLI's message. */
   async sessionMcpAuthenticate(tabId: string, serverName: string): Promise<McpAuthResult> {
     return apiCall("session_mcp_authenticate", { tabId, serverName });
   },
 
-  /** Clear an MCP server's stored auth, then start OAuth again. */
   async sessionMcpReauthenticate(tabId: string, serverName: string): Promise<McpAuthResult> {
     return apiCall("session_mcp_reauthenticate", { tabId, serverName });
   },
 
-  /** Reconnect a failed or disconnected MCP server. */
   async sessionMcpReconnect(tabId: string, serverName: string): Promise<void> {
     return apiCall("session_mcp_reconnect", { tabId, serverName });
   },
 
-  /** Finish MCP OAuth with the URL the browser was redirected to (remote clients). */
   async sessionMcpSubmitCallbackUrl(tabId: string, serverName: string, callbackUrl: string): Promise<void> {
     return apiCall("session_mcp_submit_callback_url", { tabId, serverName, callbackUrl });
   },
 
-  /** Enable or disable an MCP server; the CLI persists it per project. */
   async sessionMcpSetEnabled(tabId: string, serverName: string, enabled: boolean): Promise<void> {
     return apiCall("session_mcp_set_enabled", { tabId, serverName, enabled });
   },
@@ -2173,12 +1533,6 @@ export const api = {
     return apiCall("session_plugins", { tabId, force });
   },
 
-  /**
-   * Per-subagent metadata (model + authoritative end-of-run totals) read
-   * from the on-disk session JSONL and per-subagent transcripts. Keyed by
-   * the dispatching Task's `tool_use_id` — the same key subagent rows use.
-   * Works for both live and replayed sessions since it reads from disk.
-   */
   async getSubagentMeta(
     configDir: string,
     projectPath: string,
@@ -2187,7 +1541,6 @@ export const api = {
     return apiCall("session_subagent_meta", { configDir, projectPath, sessionId });
   },
 
-  /** Live-watch a session's cost; pushes updates on `session-cost:<sessionId>`. */
   async sessionCostWatch(
     configDir: string,
     projectPath: string,
@@ -2201,84 +1554,59 @@ export const api = {
     return apiCall("session_cost_unwatch", { sessionId });
   },
 
-  /** Aggregated cost-history rows, bucketed by day/week/month, from the
-   *  durable `session_cost_daily` table (survives transcript pruning). */
   async sessionCostHistory(
     filters: CostHistoryFilterParams & { groupBy: 'day' | 'week' | 'month' },
   ): Promise<CostHistoryPeriod[]> {
     return apiCall("session_cost_history", stripUndefined(filters));
   },
 
-  /** Per-session cost rows from the durable cost-history table. */
   async sessionCostSessions(filters: CostHistoryFilterParams): Promise<CostSessionRow[]> {
     return apiCall("session_cost_sessions", stripUndefined(filters));
   },
 
-  /** Aggregated cost history bucketed by period AND model, for the Cost
-   *  Report's stacked-area chart. */
   async sessionCostHistoryByModel(
     filters: CostHistoryFilterParams & { groupBy: 'day' | 'week' | 'month' },
   ): Promise<CostHistoryPeriodModel[]> {
     return apiCall("session_cost_history_by_model", stripUndefined(filters));
   },
 
-  /** Spend grouped by project path, most expensive first. */
   async sessionCostByProject(filters: CostHistoryFilterParams): Promise<CostByProject[]> {
     return apiCall("session_cost_by_project", stripUndefined(filters));
   },
 
-  /** Spend grouped by model, most expensive first. */
   async sessionCostByModel(filters: CostHistoryFilterParams): Promise<CostByModel[]> {
     return apiCall("session_cost_by_model", stripUndefined(filters));
   },
 
-  /** Spend crossed by project and model. */
   async sessionCostByProjectModel(filters: CostHistoryFilterParams): Promise<CostByProjectModel[]> {
     return apiCall("session_cost_by_project_model", stripUndefined(filters));
   },
 
-  /** Range-wide cost, requests and DISTINCT session count. */
   async sessionCostTotals(filters: CostHistoryFilterParams): Promise<CostTotals | null> {
     return apiCall("session_cost_totals", stripUndefined(filters));
   },
 
-  /** Spend split into fresh input / output / cache read / cache write. */
   async sessionCostComponents(filters: CostHistoryFilterParams): Promise<CostComponents | null> {
     return apiCall("session_cost_components", stripUndefined(filters));
   },
 
-  /** Cache read:write ratio, savings vs uncached, and the 1h TTL premium. */
   async sessionCostCachingRoi(filters: CostHistoryFilterParams): Promise<CachingRoi | null> {
     return apiCall("session_cost_caching_roi", stripUndefined(filters));
   },
 
-  /** Main-loop vs subagent cost, requests, and cost per request. */
   async sessionCostSubagentSplit(filters: CostHistoryFilterParams): Promise<SubagentSplitRow[]> {
     return apiCall("session_cost_subagent_split", stripUndefined(filters));
   },
 
-  /** Models billed at the fallback rate rather than a known one. */
   async sessionCostUnpriced(filters: CostHistoryFilterParams): Promise<UnpricedModel[]> {
     return apiCall("session_cost_unpriced", stripUndefined(filters));
   },
 
-  /** Distinct accounts / models / projects and the available date range. */
   async sessionCostFacets(filters: CostHistoryFilterParams): Promise<CostFacets | null> {
     return apiCall("session_cost_facets", stripUndefined(filters));
   },
 
-  /**
-   * Render the Cost Report to a PDF at `savePath`.
-   *
-   * Takes the filter *state*, not the derived query params: the export renders
-   * the report a second time in a hidden view, so what has to travel is what
-   * the filter bar is set to, and the queries are re-run over there. The Mac
-   * app loads that view at the print hash, which is computed here — its
-   * escaping rules are this codebase's, not something to restate in Swift.
-   *
-   * Resolves once the file is written. Rejects rather than writing a partial
-   * or blank file if the report never finishes drawing.
-   */
+  /** Takes filter state, not query params: the export re-runs the queries in a hidden view at a print hash built here. */
   async costReportExportPdf(params: {
     filters: CostFilterState;
     savePath: string;
@@ -2286,40 +1614,27 @@ export const api = {
     return apiCall("cost_report_export_pdf", { ...params, hash: buildPrintHash(params.filters) });
   },
 
-  /** Print-window only: report that the report has drawn, and how big it is. */
   async costReportPrintReady(metrics: PrintMeasurement): Promise<null> {
     return apiCall("cost_report_print_ready", metrics as unknown as Record<string, unknown>);
   },
 
-  // ── Model pricing ────────────────────────────────────────────────────────
-  // The delta layer over the rates this build shipped with, so a model that
-  // Anthropic releases after it can still be priced and named without a new
-  // build. `modelPricingShipped()` returns the base layer for display, so the
-  // editor can show what a row would be changing.
-
-  /** User-set pricing rows. Empty means "everything tracks the shipped rates". */
   async modelPricingList(): Promise<ModelPricingRow[]> {
     return apiCall("model_pricing_list", {});
   },
 
-  /** The rates and chart metadata compiled into this build. Read-only. */
   async modelPricingShipped(): Promise<ModelPricingInput[]> {
     return apiCall("model_pricing_shipped", {});
   },
 
-  /** Create or replace the row for a (pattern, effectiveFrom) pair. Rejects
-   *  rather than coerces bad input — the thrown message is user-facing. */
+  /** Rejects bad input rather than coercing; the message is user-facing. */
   async modelPricingUpsert(row: ModelPricingInput): Promise<ModelPricingRow> {
     return apiCall("model_pricing_upsert", stripUndefined({ ...row }));
   },
 
-  /** Drop a row, restoring whatever the shipped table says for that model. */
   async modelPricingDelete(id: number): Promise<void> {
     return apiCall("model_pricing_delete", { id });
   },
 
-  /** Force a full re-scan of every account's surviving JSONLs into the
-   *  cost-history table (same work the startup backfill / hourly sweep do). */
   async sessionCostRescan(): Promise<{ sessionsScanned: number } | null> {
     return apiCall("session_cost_rescan", {});
   },
@@ -2328,16 +1643,7 @@ export const api = {
     return apiCall("session_get_permissions", { tabId, projectPath, configDir });
   },
 
-  /**
-   * The CLI's own view of the live session's permission rules.
-   *
-   * Annotates the file-derived panel with what `permissions-io.ts` cannot see:
-   * `ask` rules, policy/managed rules, `--allowedTools` grants, session-only
-   * approvals, and the `flagSettings` source our own rule push lands in.
-   *
-   * `null` means "no answer", not "no rules" — pre-2.1.269 CLIs
-   * both return it, and the caller must keep showing the file view.
-   */
+  /** `null` means no answer, not no rules: keep showing the file view. */
   async sessionListPermissionRules(tabId: string): Promise<CliPermissionRulesState | null> {
     return apiCall("session_list_permission_rules", { tabId });
   },
@@ -2350,8 +1656,6 @@ export const api = {
   }): Promise<void> {
     return apiCall("session_update_permission", { tabId, projectPath, configDir, ...update });
   },
-
-  // ─── Logging API ────────────────────────────────────────────────
 
   async logWriteBatch(entries: LogEntry[]): Promise<void> {
     return apiCall("log_write_batch", { entries });
@@ -2385,45 +1689,26 @@ export const api = {
     });
   },
 
-  /**
-   * Lists files and directories in a given path
-   */
   async listDirectoryContents(directoryPath: string): Promise<FileEntry[]> {
     return apiCall("list_directory_contents", { directoryPath });
   },
 
-  /**
-   * Searches for files and directories matching a pattern
-   */
   async searchFiles(basePath: string, query: string): Promise<FileEntry[]> {
     return apiCall("search_files", { basePath, query });
   },
 
-  /**
-   * Creates one new folder (no missing parents; fails if it already exists).
-   * Backs the Projects page's New Project button.
-   */
   async createDirectory(directoryPath: string): Promise<string> {
     return apiCall("create_directory", { directoryPath });
   },
 
-  /**
-   * The real paths of the files just dropped on the window, from the Mac app
-   * (WebKit gives the page none). Empty in the web client.
-   */
   async dropPaths(): Promise<string[]> {
     return apiCall("drop:paths", {});
   },
 
-  /** Saves a copy of a dropped file that has no path; returns the copy's path. */
   async saveDroppedFile(name: string, data: string): Promise<string> {
     return apiCall("save_dropped_file", { name, data });
   },
 
-  /**
-   * Gets overall usage statistics
-   * @returns Promise resolving to usage statistics
-   */
   async getUsageStats(): Promise<UsageStats> {
     try {
       return await apiCall<UsageStats>("get_usage_stats");
@@ -2433,12 +1718,6 @@ export const api = {
     }
   },
 
-  /**
-   * Gets usage statistics filtered by date range
-   * @param startDate - Start date (ISO format)
-   * @param endDate - End date (ISO format)
-   * @returns Promise resolving to usage statistics
-   */
   async getUsageByDateRange(startDate: string, endDate: string): Promise<UsageStats> {
     try {
       return await apiCall<UsageStats>("get_usage_by_date_range", { startDate, endDate });
@@ -2448,13 +1727,6 @@ export const api = {
     }
   },
 
-  /**
-   * Gets usage statistics grouped by session
-   * @param since - Optional start date (YYYYMMDD)
-   * @param until - Optional end date (YYYYMMDD)
-   * @param order - Optional sort order ('asc' or 'desc')
-   * @returns Promise resolving to an array of session usage data
-   */
   async getSessionStats(
     since?: string,
     until?: string,
@@ -2472,11 +1744,6 @@ export const api = {
     }
   },
 
-  /**
-   * Gets detailed usage entries with optional filtering
-   * @param limit - Optional limit for number of entries
-   * @returns Promise resolving to array of usage entries
-   */
   async getUsageDetails(limit?: number): Promise<UsageEntry[]> {
     try {
       return await apiCall<UsageEntry[]>("get_usage_details", { limit });
@@ -2493,50 +1760,36 @@ export const api = {
     });
   },
 
-  /** Run /usage via the CLI for a specific account. Max accounts only. */
   async getCliUsage(configDir?: string): Promise<string> {
     return apiCall("get_cli_usage", { configDir });
   },
 
-  /** Latest rate-limit snapshots across all accounts (or one if accountName given). */
   async getRateLimits(accountName?: string): Promise<RateLimitSnapshot[]> {
     return apiCall<RateLimitSnapshot[]>("get_rate_limits", { accountName });
   },
 
-  /** Read user's rate-limit notification settings. */
   async getRateLimitSettings(): Promise<RateLimitSettings> {
     return apiCall<RateLimitSettings>("get_rate_limit_settings");
   },
 
-  /** Update one or more rate-limit notification settings; returns the merged result. */
   async updateRateLimitSettings(
     partial: Partial<RateLimitSettings>,
   ): Promise<RateLimitSettings> {
     return apiCall<RateLimitSettings>("update_rate_limit_settings", partial);
   },
 
-  /**
-   * Run `/usage` via a PTY in the main process and return the parsed result.
-   * Also feeds the per-window utilization into the rate-limits snapshot store
-   * so the existing widgets pick up the fresh data without further wiring.
-   */
   async runUsageCli(accountName: string): Promise<UsageRunResult> {
     return apiCall<UsageRunResult>("usage_run_cli", { accountName });
   },
 
-  /** Read the last cached `/usage` result for an account, if any. */
   async getLastUsageCli(accountName: string): Promise<UsageRunResult | null> {
     return apiCall<UsageRunResult | null>("usage_get_last", { accountName });
   },
 
-  /** Validate a per-account CLI path (path must point to an executable file, or be empty). */
   async validateCliPath(path: string | null): Promise<ValidateCliPathResult> {
     return apiCall<ValidateCliPathResult>("accounts_validate_cli_path", { path });
   },
 
-  /**
-   * Adds a new MCP server
-   */
   async mcpAdd(
     name: string,
     transport: string,
@@ -2564,9 +1817,6 @@ export const api = {
     }
   },
 
-  /**
-   * Lists all configured MCP servers
-   */
   async mcpList(configDir?: string): Promise<MCPServer[]> {
     try {
       const result = await apiCall<MCPServer[]>("mcp_list", { configDir });
@@ -2577,9 +1827,6 @@ export const api = {
     }
   },
 
-  /**
-   * Gets details for a specific MCP server
-   */
   async mcpGet(name: string, configDir?: string): Promise<MCPServer> {
     try {
       return await apiCall<MCPServer>("mcp_get", { name, configDir });
@@ -2589,9 +1836,6 @@ export const api = {
     }
   },
 
-  /**
-   * Removes an MCP server
-   */
   async mcpRemove(name: string, configDir?: string): Promise<string> {
     try {
       return await apiCall<string>("mcp_remove", { name, configDir });
@@ -2601,9 +1845,6 @@ export const api = {
     }
   },
 
-  /**
-   * Adds an MCP server from JSON configuration
-   */
   async mcpAddJson(name: string, jsonConfig: string, scope = "local", configDir?: string): Promise<AddServerResult> {
     try {
       return await apiCall<AddServerResult>("mcp_add_json", { name, jsonConfig, scope, configDir });
@@ -2613,9 +1854,6 @@ export const api = {
     }
   },
 
-  /**
-   * Imports MCP servers from Claude Desktop
-   */
   async mcpAddFromClaudeDesktop(scope = "local", configDir?: string): Promise<ImportResult> {
     try {
       return await apiCall<ImportResult>("mcp_add_from_claude_desktop", { scope, configDir });
@@ -2625,9 +1863,6 @@ export const api = {
     }
   },
 
-  /**
-   * Starts Claude Code as an MCP server
-   */
   async mcpServe(): Promise<string> {
     try {
       return await apiCall<string>("mcp_serve");
@@ -2637,9 +1872,6 @@ export const api = {
     }
   },
 
-  /**
-   * Tests connection to an MCP server
-   */
   async mcpTestConnection(name: string, configDir?: string): Promise<string> {
     try {
       return await apiCall<string>("mcp_test_connection", { name, configDir });
@@ -2649,9 +1881,6 @@ export const api = {
     }
   },
 
-  /**
-   * Resets project-scoped server approval choices
-   */
   async mcpResetProjectChoices(): Promise<string> {
     try {
       return await apiCall<string>("mcp_reset_project_choices");
@@ -2661,9 +1890,6 @@ export const api = {
     }
   },
 
-  /**
-   * Gets the status of MCP servers
-   */
   async mcpGetServerStatus(configDir?: string): Promise<Record<string, ServerStatus>> {
     try {
       return await apiCall<Record<string, ServerStatus>>("mcp_get_server_status", { configDir });
@@ -2673,9 +1899,6 @@ export const api = {
     }
   },
 
-  /**
-   * Reads .mcp.json from the current project
-   */
   async mcpReadProjectConfig(projectPath: string): Promise<MCPProjectConfig> {
     try {
       return await apiCall<MCPProjectConfig>("mcp_read_project_config", { projectPath });
@@ -2685,9 +1908,6 @@ export const api = {
     }
   },
 
-  /**
-   * Saves .mcp.json to the current project
-   */
   async mcpSaveProjectConfig(projectPath: string, config: MCPProjectConfig): Promise<string> {
     try {
       return await apiCall<string>("mcp_save_project_config", { projectPath, config });
@@ -2697,10 +1917,6 @@ export const api = {
     }
   },
 
-  /**
-   * Get the stored Claude binary path from settings
-   * @returns Promise resolving to the path if set, null otherwise
-   */
   async getClaudeBinaryPath(): Promise<string | null> {
     try {
       return await apiCall<string | null>("get_claude_binary_path");
@@ -2710,11 +1926,6 @@ export const api = {
     }
   },
 
-  /**
-   * Set the Claude binary path in settings
-   * @param path - The absolute path to the Claude binary
-   * @returns Promise resolving when the path is saved
-   */
   async setClaudeBinaryPath(path: string): Promise<void> {
     try {
       await apiCall<void>("set_claude_binary_path", { path }); return;
@@ -2724,10 +1935,6 @@ export const api = {
     }
   },
 
-  /**
-   * List all available Claude installations on the system
-   * @returns Promise resolving to an array of Claude installations
-   */
   async listClaudeInstallations(): Promise<ClaudeInstallation[]> {
     try {
       return await apiCall<ClaudeInstallation[]>("list_claude_installations");
@@ -2737,11 +1944,7 @@ export const api = {
     }
   },
 
-  /**
-   * Compare the installed Claude CLI against the changelog watermark this
-   * build was reviewed at. Resolves to null when the check is unavailable —
-   * callers should treat that as "no signal", not as "up to date".
-   */
+  /** Null means no signal, not up to date. */
   async getClaudeCliReviewStatus(): Promise<CliReviewStatus | null> {
     try {
       return await apiCall<CliReviewStatus>("claude_cli_review_status");
@@ -2751,23 +1954,12 @@ export const api = {
     }
   },
 
-  /**
-   * Run the CLI's own `claude update` under every Claude account.
-   *
-   * Deliberately NOT caught the way the status probe above is: this is an
-   * action the user asked for, so a failure has to reach them rather than
-   * being logged and swallowed into a silent no-op.
-   */
+  /** Not caught like the status probe: a failure must reach the user. */
   async updateClaudeCli(): Promise<CliUpdateResult> {
     return await apiCall<CliUpdateResult>("claude_cli_update");
   },
 
-  /**
-   * Announce a newly published Claude Code release, once per version across
-   * every window, client and relaunch. Only a Mac host claims: a web client
-   * cannot show the notification, and claiming there would spend it — so a
-   * release first seen on the iPad is still announced when the Mac app opens.
-   */
+  /** Only a Mac host claims: claiming from a web client would spend the announcement. */
   async notifyClaudeCliRelease(version: string): Promise<boolean> {
     if (!platform.isDesktop) return false;
     const won = await apiCall<boolean>("claude_cli_claim_update_notice", { version });
@@ -2779,31 +1971,15 @@ export const api = {
     });
   },
 
-  // ── Git ──────────────────────────────────────────────────────────────────
-
-  /**
-   * Get the current git branch for a project path.
-   * @param projectPath - The project directory to check
-   * @returns Promise resolving to the branch name or null if not a git repo
-   */
   async getGitBranch(projectPath: string): Promise<string | null> {
     return apiCall("get_git_branch", { projectPath });
   },
 
-  /**
-   * List worktrees attached to the same repository as `projectPath`,
-   * excluding `projectPath` itself. Returns [] for non-git directories.
-   */
   async listGitWorktrees(projectPath: string): Promise<WorktreeInfo[]> {
     const result = await apiCall<WorktreeInfo[]>("list_git_worktrees", { projectPath });
     return result ?? [];
   },
 
-  /**
-   * Start a single per-tab git watch covering both the project itself and any
-   * sibling worktrees. The returned snapshot is the initial state; further
-   * updates stream over `session-git-changed:<watchId>`.
-   */
   async startSessionGitWatch(projectPath: string): Promise<{
     watchId: string;
     snapshot: SessionGitSnapshot;
@@ -2811,33 +1987,18 @@ export const api = {
     return apiCall("start_session_git_watch", { projectPath });
   },
 
-  /** Stop a per-tab session git watch. */
   async stopSessionGitWatch(watchId: string): Promise<void> {
     await apiCall("stop_session_git_watch", { watchId });
   },
 
-  /**
-   * Whether anyone can see this watch. The watcher polls a repository only
-   * while at least one of its watches is visible. See useGitWatchVisibility.
-   */
   async setSessionGitWatchVisible(watchId: string, visible: boolean): Promise<void> {
     await apiCall("set_session_git_watch_visible", { watchId, visible });
   },
 
-  /**
-   * Tear down + recreate the watch's internal fs.watch handles and force a
-   * fresh refresh cycle (re-list peers, re-read every path). Returns the
-   * latest snapshot, or null if the watchId is unknown.
-   */
   async reconnectSessionGitWatch(watchId: string): Promise<SessionGitSnapshot | null> {
     return apiCall("reconnect_session_git_watch", { watchId });
   },
 
-  /**
-   * Subscribe to session-git updates for a watch. The callback fires with the
-   * full snapshot whenever anything visible (project status, peer add/remove,
-   * peer status, error) changes. Returns an unsubscribe function.
-   */
   onSessionGitChanged(
     watchId: string,
     callback: (snapshot: SessionGitSnapshot) => void,
@@ -2863,24 +2024,12 @@ export const api = {
     );
   },
 
-  /**
-   * List every changed path in the working tree at `projectPath`.
-   *
-   * Pull-only, on purpose. The per-tab git watch already pushes a snapshot
-   * every few seconds, but it carries COUNTS — putting a path list on that
-   * hot path would ship N paths to every open tab several times a minute.
-   * Call this when the panel opens, and on a watch event, not on a timer.
-   */
+  /** Pull-only: never put path lists on the per-tab watch's hot path. */
   async listGitChangedFiles(projectPath: string): Promise<GitChangedFile[]> {
     const result = await apiCall<GitChangedFile[]>("git_list_changed_files", { projectPath });
     return result ?? [];
   },
 
-  /**
-   * Read a unified patch for one file, staged and unstaged changes together.
-   * Returns '' when the file is unchanged, the path is refused, or the
-   * directory is not a repo.
-   */
   async getGitFileDiff(
     projectPath: string,
     filePath: string,
@@ -2889,60 +2038,41 @@ export const api = {
     const result = await apiCall<string>("git_file_diff", {
       projectPath,
       filePath,
-      // Stripped rather than sent as undefined — optional params must not
-      // cross IPC as undefined (see Repo Rules).
       ...(contextLines === undefined ? {} : { contextLines }),
     });
     return result ?? "";
   },
 
-  // ── Lima (VM viewer) ──────────────────────────────────────────────────────
-
-  /** Check whether `limactl` is on the user's PATH. */
   async limaCheckInstalled(): Promise<{ installed: boolean }> {
     return apiCall("lima_check_installed");
   },
 
-  /** List all Lima VMs (running and stopped). */
   async limaListVms(): Promise<LimaVm[]> {
     const result = await apiCall<LimaVm[]>("lima_list_vms");
     return result ?? [];
   },
 
-  /** List Docker containers inside a running Lima VM. Returns [] if the VM
-   *  is stopped or doesn't have docker installed. */
   async limaListContainers(vmName: string): Promise<LimaDockerContainer[]> {
     const result = await apiCall<LimaDockerContainer[]>("lima_list_containers", { vmName });
     return result ?? [];
   },
 
-  /** Start a stopped Lima VM. Resolves when the VM reports ready. */
   async limaStartVm(vmName: string): Promise<void> {
     await apiCall("lima_start_vm", { vmName });
   },
 
-  /** Stop a running Lima VM. Resolves when the VM has fully shut down. */
   async limaStopVm(vmName: string): Promise<void> {
     await apiCall("lima_stop_vm", { vmName });
   },
 
-  /** Non-destructively start a Docker container in a Lima VM (`docker start`).
-   *  Preserves volumes, env, and named state — does not recreate. */
   async limaStartContainer(vmName: string, containerId: string): Promise<void> {
     await apiCall("lima_start_container", { vmName, containerId });
   },
 
-  /** Non-destructively stop a Docker container in a Lima VM (`docker stop`). */
   async limaStopContainer(vmName: string, containerId: string): Promise<void> {
     await apiCall("lima_stop_container", { vmName, containerId });
   },
 
-  // Storage API methods
-
-  /**
-   * Lists all tables in the SQLite database
-   * @returns Promise resolving to an array of table information
-   */
   async storageListTables(): Promise<any[]> {
     try {
       return await apiCall<any[]>("storage_list_tables");
@@ -2952,14 +2082,6 @@ export const api = {
     }
   },
 
-  /**
-   * Reads table data with pagination
-   * @param tableName - Name of the table to read
-   * @param page - Page number (1-indexed)
-   * @param pageSize - Number of rows per page
-   * @param searchQuery - Optional search query
-   * @returns Promise resolving to table data with pagination info
-   */
   async storageReadTable(
     tableName: string,
     page: number,
@@ -2979,13 +2101,6 @@ export const api = {
     }
   },
 
-  /**
-   * Updates a row in a table
-   * @param tableName - Name of the table
-   * @param primaryKeyValues - Map of primary key column names to values
-   * @param updates - Map of column names to new values
-   * @returns Promise resolving when the row is updated
-   */
   async storageUpdateRow(
     tableName: string,
     primaryKeyValues: Record<string, unknown>,
@@ -3003,12 +2118,6 @@ export const api = {
     }
   },
 
-  /**
-   * Deletes a row from a table
-   * @param tableName - Name of the table
-   * @param primaryKeyValues - Map of primary key column names to values
-   * @returns Promise resolving when the row is deleted
-   */
   async storageDeleteRow(
     tableName: string,
     primaryKeyValues: Record<string, unknown>
@@ -3024,12 +2133,6 @@ export const api = {
     }
   },
 
-  /**
-   * Inserts a new row into a table
-   * @param tableName - Name of the table
-   * @param values - Map of column names to values
-   * @returns Promise resolving to the last insert row ID
-   */
   async storageInsertRow(
     tableName: string,
     values: Record<string, unknown>
@@ -3045,11 +2148,6 @@ export const api = {
     }
   },
 
-  /**
-   * Executes a raw SQL query
-   * @param query - SQL query string
-   * @returns Promise resolving to query result
-   */
   async storageExecuteSql(query: string): Promise<any> {
     try {
       return await apiCall<any>("storage_execute_sql", { query });
@@ -3059,10 +2157,6 @@ export const api = {
     }
   },
 
-  /**
-   * Resets the entire database
-   * @returns Promise resolving when the database is reset
-   */
   async storageResetDatabase(): Promise<void> {
     try {
       await apiCall<void>("storage_reset_database"); return;
@@ -3072,19 +2166,6 @@ export const api = {
     }
   },
 
-  // Theme settings helpers
-
-  /**
-   * Gets a setting from the app_settings table via the dedicated
-   * `get_setting` IPC channel (which hits `db.getSetting` directly).
-   *
-   * Previously this went through `storageReadTable('app_settings', ...)` which
-   * worked, but the paired `saveSetting` used `storageUpdateRow` which
-   * silently no-ops for missing keys — so new keys never got persisted. Now
-   * both sides use the upsert-safe `get_setting`/`save_setting` pair.
-   *
-   * localStorage mirror is kept as a startup-flicker fast-path.
-   */
   async getSetting(key: string): Promise<string | null> {
     try {
       if (typeof window !== 'undefined' && 'localStorage' in window) {
@@ -3101,11 +2182,6 @@ export const api = {
     }
   },
 
-  /**
-   * Saves a setting to the app_settings table via the `save_setting` IPC
-   * channel, which uses `INSERT ... ON CONFLICT(key) DO UPDATE` and handles
-   * both first-insert and update correctly.
-   */
   async saveSetting(key: string, value: string): Promise<void> {
     try {
       if (typeof window !== 'undefined' && 'localStorage' in window) {
@@ -3122,7 +2198,6 @@ export const api = {
     }
   },
 
-  /** Proxy (HTTP/HTTPS/ALL_PROXY) settings applied to spawned CLI processes. */
   async getProxySettings<T = unknown>(): Promise<T> {
     return apiCall<T>('get_proxy_settings');
   },
@@ -3131,12 +2206,6 @@ export const api = {
     await apiCall('save_proxy_settings', { settings });
   },
 
-  /**
-   * Play a notification sound for preview purposes. The renderer can't reach
-   * `afplay` directly, so the main process resolves the sound ID and shells
-   * out. Resolves to `{ played: false, path: null }` when the ID is unknown
-   * or the choice is "none".
-   */
   async previewNotificationSound(
     id: string,
   ): Promise<{ played: boolean; path: string | null }> {
@@ -3151,10 +2220,7 @@ export const api = {
     }
   },
 
-  /**
-   * Get hooks configuration for a specific scope.
-   * `configDir` is required for the `user` scope so we never silently read ~/.claude.
-   */
+  /** `configDir` is required for the user scope: never fall back to ~/.claude. */
   async getHooksConfig(
     scope: 'user' | 'project' | 'local',
     projectPath?: string,
@@ -3168,10 +2234,7 @@ export const api = {
     }
   },
 
-  /**
-   * Update hooks configuration for a specific scope.
-   * `configDir` is required for the `user` scope so we never silently write to ~/.claude.
-   */
+  /** `configDir` is required for the user scope: never fall back to ~/.claude. */
   async updateHooksConfig(
     scope: 'user' | 'project' | 'local',
     hooks: HooksConfiguration,
@@ -3186,11 +2249,6 @@ export const api = {
     }
   },
 
-  /**
-   * Validate a hook command syntax
-   * @param command - The shell command to validate
-   * @returns Promise resolving to validation result
-   */
   async validateHookCommand(command: string): Promise<{ valid: boolean; message: string }> {
     try {
       return await apiCall<{ valid: boolean; message: string }>("validate_hook_command", { command });
@@ -3200,10 +2258,7 @@ export const api = {
     }
   },
 
-  /**
-   * Get merged hooks configuration (respecting priority).
-   * `configDir` is required so the user-scope read doesn't silently fall back to ~/.claude.
-   */
+  /** `configDir` is required: never fall back to ~/.claude. */
   async getMergedHooksConfig(projectPath: string, configDir?: string): Promise<HooksConfiguration> {
     try {
       const [userHooks, projectHooks, localHooks] = await Promise.all([
@@ -3212,7 +2267,6 @@ export const api = {
         this.getHooksConfig('local', projectPath, configDir)
       ]);
 
-      // Import HooksManager for merging
       const { HooksManager } = await import('@/lib/hooksManager');
       return HooksManager.mergeConfigs(userHooks, projectHooks, localHooks);
     } catch (error) {
@@ -3221,13 +2275,6 @@ export const api = {
     }
   },
 
-  // Slash Commands API methods
-
-  /**
-   * Lists all available slash commands
-   * @param projectPath - Optional project path to include project-specific commands
-   * @returns Promise resolving to array of slash commands
-   */
   async slashCommandsList(projectPath?: string, configDir?: string): Promise<SlashCommand[]> {
     try {
       return await apiCall<SlashCommand[]>("slash_commands_list", { projectPath, configDir });
@@ -3237,11 +2284,6 @@ export const api = {
     }
   },
 
-  /**
-   * Gets a single slash command by ID
-   * @param commandId - Unique identifier of the command
-   * @returns Promise resolving to the slash command
-   */
   async slashCommandGet(commandId: string, configDir?: string): Promise<SlashCommand> {
     try {
       return await apiCall<SlashCommand>("slash_command_get", { commandId, configDir });
@@ -3251,17 +2293,6 @@ export const api = {
     }
   },
 
-  /**
-   * Creates or updates a slash command
-   * @param scope - Command scope: "project" or "user"
-   * @param name - Command name (without prefix)
-   * @param namespace - Optional namespace for organization
-   * @param content - Markdown content of the command
-   * @param description - Optional description
-   * @param allowedTools - List of allowed tools for this command
-   * @param projectPath - Required for project scope commands
-   * @returns Promise resolving to the saved command
-   */
   async slashCommandSave(
     scope: string,
     name: string,
@@ -3289,12 +2320,6 @@ export const api = {
     }
   },
 
-  /**
-   * Deletes a slash command
-   * @param commandId - Unique identifier of the command to delete
-   * @param projectPath - Optional project path for deleting project commands
-   * @returns Promise resolving to deletion message
-   */
   async slashCommandDelete(commandId: string, projectPath?: string, configDir?: string): Promise<string> {
     try {
       return await apiCall<string>("slash_command_delete", { commandId, projectPath, configDir });
@@ -3304,19 +2329,6 @@ export const api = {
     }
   },
 
-  // ── Session Summaries ───────────────────────────────────────
-
-  /**
-   * Read the cached summary sidecar for a session. Null when no sidecar
-   * exists or the on-disk file is unreadable / version-mismatched.
-   *
-   * `configDir` is the resolved account's `config_dir` — held at tab
-   * level by the renderer (`accountResolution.account.config_dir` in
-   * `ClaudeCodeSession`, or from `resolveAccountForProject` in
-   * `SessionList`). Pass `null` only if you don't yet know which
-   * account owns the session; the backend will scan all known accounts
-   * as a fallback.
-   */
   async summaryGet(
     sessionUuid: string,
     projectPath: string,
@@ -3329,11 +2341,6 @@ export const api = {
     });
   },
 
-  /**
-   * Generate (or regenerate) a summary for a session. See
-   * `SummaryGenerateResult` for return shape; throws on hard errors
-   * (auth expired, network failure) so callers can surface a toast.
-   */
   async summaryGenerate(
     sessionUuid: string,
     projectPath: string,
@@ -3346,15 +2353,6 @@ export const api = {
     });
   },
 
-  /**
-   * Update an account's per-session summary opt-in.
-   *
-   * `summarizeOnClose` toggles the auto-on-close generation; `summaryModel`
-   * is the model id (e.g. 'haiku', 'sonnet', 'opus', or a full CLI id like
-   * 'claude-haiku-4-5'). Pass `null` to clear the model. Both fields are
-   * required for generation — toggling on while model is null leaves the
-   * feature off in practice.
-   */
   async accountUpdateSummary(
     id: number,
     summarizeOnClose: boolean,
@@ -3367,13 +2365,6 @@ export const api = {
     });
   },
 
-  /**
-   * Subscribe to summary-updated events. The main process emits
-   * `session-summary:updated` after a successful sidecar write so the
-   * renderer can refresh the matching row. Returns an unsubscribe
-   * function; matches the pattern used by other event subscriptions in
-   * this file.
-   */
   onSessionSummaryUpdated(
     callback: (payload: { sessionUuid: string }) => void,
   ): () => void {
@@ -3386,34 +2377,12 @@ export const api = {
     );
   },
 
-  /**
-   * Snapshot of session uuids whose summary model call is currently
-   * in flight on the main process. Returned as a plain array.
-   *
-   * SessionList calls this on mount so it can spin the per-row refresh
-   * icon for background auto-on-close runs that started before the
-   * component had a chance to subscribe to `session-summary:generating`
-   * events — common when the user clicks the back button inside a
-   * session, since the close lifecycle fires its event within the same
-   * frame as the navigation.
-   */
   async getGeneratingSummaryUuids(): Promise<string[]> {
     const result = await apiCall<unknown>('summary_generating_now', {});
     if (!Array.isArray(result)) return [];
     return result.filter((x): x is string => typeof x === 'string');
   },
 
-  /**
-   * Subscribe to generation-state events. The main process emits
-   * `session-summary:generating` with `generating: true` when a model
-   * call starts and `generating: false` when it finishes (success or
-   * thrown). Used by SessionList to spin the per-row refresh icon
-   * during background auto-on-close runs.
-   *
-   * Note: skipped paths (no-account, no-model, unchanged size-gate,
-   * empty-session, etc.) do NOT emit either event — the model is never
-   * called, so there's nothing to spin for.
-   */
   onSessionSummaryGenerating(
     callback: (payload: { sessionUuid: string; generating: boolean }) => void,
   ): () => void {
@@ -3432,8 +2401,6 @@ export const api = {
     );
   },
 
-  // ── Account Management ─────────────────────────────────────
-
   async listAccounts(): Promise<Account[]> {
     return apiCall<Account[]>('list_accounts');
   },
@@ -3448,12 +2415,8 @@ export const api = {
     icon?: string;
     sessionDefaults?: SessionDefaults;
     cliPath?: string | null;
-    /** Expected login email. null / omitted means no verification. */
     expectedEmail?: string | null;
   }): Promise<Account> {
-    // No isDefault parameter — there is no notion of a default account.
-    // Account binding is via path rules / project overrides; failure to
-    // resolve surfaces as a NoAccountError. See daemon/services/accounts.ts.
     const params: Record<string, unknown> = { name: opts.name, configDir: opts.configDir, engine: opts.engine };
     if (opts.subscriptionLabel !== undefined) params.subscriptionLabel = opts.subscriptionLabel;
     if (opts.hasCost !== undefined) params.hasCost = opts.hasCost;
@@ -3470,7 +2433,7 @@ export const api = {
     opts: {
       name: string;
       configDir: string;
-      // engine intentionally omitted — immutable post-create.
+      // engine omitted: immutable after create.
       subscriptionLabel?: string;
       hasCost?: boolean;
       color?: string;
@@ -3508,12 +2471,7 @@ export const api = {
     return apiCall<void>('remove_path_rule', { ruleId });
   },
 
-  /**
-   * Resolve which account each engine routes to for a project path. Returns a
-   * `ResolvePair` whose `claude`/`codex` slots are independently filled by an
-   * explicit override → longest-prefix path rule → null. An all-null pair MUST
-   * be surfaced as an error, not a default-account fallback.
-   */
+  /** An all-null pair is an error, never a default-account fallback. */
   async resolveAccountForProject(projectPath: string): Promise<ResolvePair> {
     return apiCall<ResolvePair>('resolve_account_for_project', { projectPath });
   },
@@ -3530,22 +2488,10 @@ export const api = {
     return apiCall<DiscoveredConfigDir[]>('discover_accounts');
   },
 
-  /**
-   * Scan $HOME for `.claude*` config dirs not yet represented by an existing
-   * account, and create accounts for each. Resolution semantics unchanged —
-   * this just populates the picker. Returns the newly-created Accounts.
-   */
   async scanForNewAccounts(): Promise<Account[]> {
     return apiCall<Account[]>('scan_for_new_accounts');
   },
 
-  /**
-   * Resolve account for a project path with explanation of why it matched.
-   * Pass `engine` to scope the result to that CLI engine's routing — the
-   * session header must show the account for the engine it is actually
-   * running, not whichever engine owns the longest-prefix rule. Omit `engine`
-   * for an engine-agnostic explanation (e.g. the Account Settings test tool).
-   */
   async explainAccountResolution(projectPath: string, engine?: AgentKind): Promise<{
     account: Account;
     match_type: string;
@@ -3553,10 +2499,6 @@ export const api = {
   } | null> {
     return apiCall("explain_account_resolution", engine ? { projectPath, engine } : { projectPath });
   },
-
-  // ---------------------------------------------------------------------------
-  // Updater
-  // ---------------------------------------------------------------------------
 
   async getAppVersion(): Promise<string> {
     return apiCall("get_app_version", {});
@@ -3593,13 +2535,6 @@ export const api = {
     return apiCall("updater:install-cancel", {});
   },
 
-  /**
-   * Subscribe to live changes in the count of sessions whose CLI turn is
-   * currently in flight — derived as `sessionStatus === 'starting'` or
-   * `conversationStatus === 'running'`.
-   * Used by the titlebar to surface a warning on the upgrade button before
-   * the user clicks install.
-   */
   onSessionInFlightCount(cb: (count: number) => void): () => void {
     return window.electronAPI.onEvent(
       'session-inflight-count',
@@ -3617,7 +2552,6 @@ export const api = {
     return window.electronAPI.onEvent('updater:install-status', cb as (...args: unknown[]) => void);
   },
 
-  /** A click on an OS notification: `id` is the one it was raised with. */
   onNotificationClicked(cb: (data: { tabId?: string | null; id?: string | null }) => void): () => void {
     return window.electronAPI.onEvent('notification-clicked', cb as (...args: unknown[]) => void);
   },
@@ -3626,13 +2560,6 @@ export const api = {
     return window.electronAPI.onEvent('updater:progress', callback as (...args: unknown[]) => void);
   },
 
-  // ── Tab Status ────────────────────────────────────────────────
-  /**
-   * Push this tab's busy/idle summary up to main so the status popover and
-   * the install-gate can read a single source of truth. Renderer is the
-   * canonical interpreter (knows messages, subagents, todos); main is the
-   * canonical aggregator across all open tabs.
-   */
   async publishTabStatus(summary: TabStatusSummary): Promise<void> {
     return apiCall('tab_status_publish', { summary });
   },
@@ -3645,19 +2572,11 @@ export const api = {
     return apiCall<TabStatusSummary[]>('tab_status_list', {});
   },
 
-  /**
-   * Stop the OmniFex Remote daemon and start this build's. Kills any turn in
-   * flight — the caller has asked the user. `url` is null when the new daemon
-   * did not come up; this window's socket client keeps retrying regardless.
-   */
+  /** Kills any turn in flight: ask the user first. */
   async restartDaemon(): Promise<{ url: string | null }> {
     return apiCall<{ url: string | null }>('remote:restart', {});
   },
 
-  /**
-   * Subscribe to the live list of tab summaries. Fires whenever any tab
-   * publishes or is removed. The list is in tab-bar order.
-   */
   onTabStatusesChanged(cb: (summaries: TabStatusSummary[]) => void): () => void {
     return window.electronAPI.onEvent(
       'tab-status:changed',
@@ -3665,8 +2584,6 @@ export const api = {
     );
   },
 
-  // ── Branch Colors (per repo) ─────────────────────────────────
-  /** Pins for a repo; any checkout path of it works. */
   async listBranchColors(repoPath: string): Promise<BranchColor[]> {
     return apiCall<BranchColor[]>('branch_colors_list', { repoPath });
   },
@@ -3676,19 +2593,15 @@ export const api = {
   async deleteBranchColor(id: number): Promise<boolean> {
     return apiCall<boolean>('branch_colors_delete', { id });
   },
-  /** Fires with the repo's main checkout whenever its pins change. */
   onBranchColorsChanged(cb: (repoPath: string) => void): () => void {
     return window.electronAPI.onEvent('branch-colors-changed', (data: unknown) => {
       if (isIpcRecord(data) && typeof data.repoPath === 'string') cb(data.repoPath);
     });
   },
 
-  // ── Repo aliases (per repo) ────────────────────────────────────
-  /** Aliases for the repos asked for, keyed by those paths; repos without one are absent. */
   async listRepoAliases(repoPaths: string[]): Promise<Record<string, string>> {
     return (await apiCall<Record<string, string>>('repo_aliases_list', { repoPaths })) ?? {};
   },
-  /** Set a repo's alias; blank clears it. */
   async setRepoAlias(repoPath: string, alias: string): Promise<void> {
     await apiCall('repo_alias_set', { repoPath, alias });
   },
@@ -3696,7 +2609,6 @@ export const api = {
     return window.electronAPI.onEvent('repo-aliases-changed', () => { cb(); });
   },
 
-  // ── Project repos ──────────────────────────────────────────────
   async getProjectRepos(projectPath: string): Promise<ProjectRepos | null> {
     return apiCall<ProjectRepos | null>('get_project_repos', { projectPath });
   },
@@ -3718,16 +2630,6 @@ export const api = {
     return apiCall<string[]>('git_list_branches', { projectPath });
   },
 
-  // ── One-shot terminal (shared pty+xterm modal) ─────────────────
-  /**
-   * Spawn a short-lived subprocess in a pty for an xterm modal. The
-   * returned handle is used to address data/write/resize/kill calls and to
-   * subscribe to data/exit events via the `one-shot-terminal-data:<handle>`
-   * and `one-shot-terminal-exit:<handle>` event channels.
-   *
-   * Used by interactive auth flows (e.g. `codex login`) where the user has
-   * to type through an OAuth prompt and the modal should tear down on exit.
-   */
   async oneShotTerminalSpawn(opts: {
     binary: string;
     args: string[];
@@ -3748,97 +2650,43 @@ export const api = {
     return apiCall('one_shot_terminal_kill', { ptyHandle });
   },
 
-  /**
-   * Cheap existence check, used by the OneShotTerminal watcher to fire
-   * `onWatchFire` on the false→true transition. Returns `{ exists: false }`
-   * for unreadable / missing paths, never throws.
-   */
   async fsExists(filePath: string): Promise<{ exists: boolean }> {
     return apiCall<{ exists: boolean }>('fs_exists', { path: filePath });
   },
 
-  // ── Claude auth ─────────────────────────────────────────────────────────
-  /**
-   * Start a Claude sign-in for one account: the daemon starts a CLI for its
-   * config dir and asks it for the OAuth links (`claude_authenticate`).
-   * `automaticUrl` finishes by itself in a browser on the daemon's machine;
-   * `manualUrl` shows a code to paste into `claudeSignInSubmitCode`.
-   */
   async claudeSignInBegin(configDir: string): Promise<ClaudeSignInFlow> {
     return apiCall<ClaudeSignInFlow>('claude_auth_begin', { configDir });
   },
-  /** Finish with the code the manual page showed. Rejects on a bad code;
-   *  the flow stays open for another try. */
   async claudeSignInSubmitCode(flowId: string, code: string): Promise<ClaudeSignedInAccount> {
     return apiCall<ClaudeSignedInAccount>('claude_auth_submit_code', { flowId, code });
   },
-  /** Resolves when the browser finishes on the localhost callback. */
   async claudeSignInWait(flowId: string): Promise<ClaudeSignedInAccount> {
     return apiCall<ClaudeSignedInAccount>('claude_auth_wait', { flowId });
   },
-  /** Abandon a sign-in and close its CLI. */
   async claudeSignInCancel(flowId: string): Promise<void> {
     return apiCall<void>('claude_auth_cancel', { flowId });
   },
-  /**
-   * `claude auth logout` for one account. Rejects with the CLI's stderr. The
-   * CLI drops `oauthAccount` from `.claude.json`, so `subscribeAccountIdentity`
-   * consumers see the change without a separate broadcast.
-   */
   async claudeLogout(configDir: string): Promise<void> {
     return apiCall<void>('claude_auth_logout', { configDir });
   },
 
-  // ── Codex auth ──────────────────────────────────────────────────────────
-  /**
-   * Snapshot of Codex auth status. Reads `~/.codex/auth.json` and falls back
-   * to the `OPENAI_API_KEY` env var. `mode` is `'oauth'` when the file is
-   * present, `'apikey'` when only the env var is set, and `undefined` when
-   * unauthenticated.
-   */
   async getCodexAuthStatus(configDir: string): Promise<CodexAuthStatus> {
     return apiCall<CodexAuthStatus>('codex_auth_status', { configDir });
   },
-  /**
-   * Spawn `codex login` in a one-shot pty. Returns the handle the renderer
-   * uses to attach an xterm modal via `oneShotTerminalSpawn`'s data/exit
-   * events (`one-shot-terminal-data:<handle>` / `one-shot-terminal-exit:<handle>`).
-   * `codexBinaryPath` is optional; when omitted, the main process resolves
-   * a system `codex` binary itself.
-   */
   async startCodexLoginFlow(opts: { configDir: string; codexBinaryPath?: string }): Promise<{ ptyHandle: string }> {
     const params: Record<string, unknown> = { configDir: opts.configDir };
     if (opts.codexBinaryPath) params.codexBinaryPath = opts.codexBinaryPath;
     return apiCall<{ ptyHandle: string }>('codex_auth_start_login', params);
   },
-  /** Cancel an in-flight `codex login` pty. */
   async cancelCodexLoginFlow(ptyHandle: string): Promise<void> {
     return apiCall<void>('codex_auth_cancel_login', { ptyHandle });
   },
-  /**
-   * Resolve the system-installed `codex` binary path (e.g.
-   * `/opt/homebrew/bin/codex`). Returns `null` when the binary isn't on the
-   * user's machine — the renderer should surface a "Codex CLI not found"
-   * message instead of trying to spawn it.
-   */
   async getCodexBinaryPath(): Promise<string | null> {
     return apiCall<string | null>('codex_binary_path', {});
   },
-  /**
-   * Sign out by removing `~/.codex/auth.json`. Idempotent. After this resolves
-   * the auth-status watcher fires and `subscribeCodexAuthStatus` consumers
-   * see the unauthenticated state. Does not touch `OPENAI_API_KEY` — if the
-   * user is in apikey mode they need to clear the env var themselves.
-   */
   async codexLogout(configDir: string): Promise<void> {
     return apiCall<void>('codex_logout', { configDir });
   },
-  /**
-   * Subscribe to Codex auth-status changes for a single account's configDir.
-   * The main process broadcasts `{ configDir, status }` whenever any Codex
-   * account's `auth.json` is created, modified, or removed (debounced ~250ms);
-   * this filters to the requested configDir. Returns an unsubscribe function.
-   */
   subscribeCodexAuthStatus(
     configDir: string,
     callback: (status: CodexAuthStatus) => void,
@@ -3859,22 +2707,11 @@ export const api = {
     );
   },
 
-  /**
-   * Enumerate Codex CLI session rollouts found under `~/.codex/sessions/`.
-   * Each entry carries the conversation uuid (for resume), the recorded
-   * project path if any, the rollout file path, and an ISO `lastActivity`
-   * mtime. Sorted most-recent first. Returns `[]` when Codex has never run
-   * on this machine (sessionsDir missing).
-   */
   async listCodexSessions(): Promise<CodexSessionEntry[]> {
     return apiCall<CodexSessionEntry[]>('codex_session_list', {});
   },
 
-  // ── Brain (per-account Markdown vault) ────────────────────────────────────
-  //
-  // Every call takes an explicit accountId — there is no implicit
-  // current-account default, because a wrong default here is a
-  // confidentiality failure rather than a UX annoyance.
+  // Every Brain call takes an explicit accountId: a wrong default is a confidentiality failure.
 
   async brainVaultPath(accountId: number): Promise<string | null> {
     return apiCall<string | null>('brain_vault_path', { accountId });
@@ -3917,8 +2754,6 @@ export const api = {
     return apiCall<BrainVaultStatus>('brain_status', { accountId });
   },
 
-  /** Suggested vault location for an account. Only a suggestion — the backend
-   *  validates whatever is actually submitted to brainSetVaultPath. */
   async brainDefaultVaultPath(accountName: string): Promise<string> {
     return apiCall<string>('brain_default_vault_path', { accountName });
   },
@@ -3935,7 +2770,6 @@ export const api = {
     return apiCall<void>('brain_delete_note', { accountId, notePath });
   },
 
-  /** Queue this project's auto-memory notes and repo instruction files. */
   async brainEnqueueProjectSources(accountId: number, projectPath: string): Promise<number> {
     return apiCall<number>('brain_enqueue_project_sources', { accountId, projectPath });
   },
@@ -3944,7 +2778,6 @@ export const api = {
     return apiCall<string[]>('brain_backlinks', { accountId, notePath });
   },
 
-  /** Whether this account's Brain is exposed to sessions started outside OmniFex. */
   async brainMcpStatus(accountId: number): Promise<BrainMcpStatus> {
     return apiCall<BrainMcpStatus>('brain_mcp_status', { accountId });
   },
@@ -3957,7 +2790,6 @@ export const api = {
     return apiCall<void>('brain_mcp_unregister', { accountId });
   },
 
-  /** Discovered source items for one account, newest first. */
   async brainListSources(
     accountId: number,
     opts: { includeExcluded?: boolean } = {},
@@ -3968,15 +2800,7 @@ export const api = {
     }));
   },
 
-  /**
-   * Record which project folders this account may index.
-   *
-   * Send the complete map of decisions being made, keyed by absolute project
-   * path — not just the excluded ones. An absent key means "no decision", which
-   * leaves the scratch-path default in force, so an exclusions-only payload
-   * would silently re-exclude every temp project deliberately re-included.
-   * Each row's current state is on `BrainSourceSummary.excluded`.
-   */
+  /** Send every decision, not just exclusions: an absent key re-applies the scratch-path default. */
   async brainSetExcludedProjects(
     accountId: number,
     decisions: Record<string, boolean>,
@@ -3984,7 +2808,6 @@ export const api = {
     return apiCall<void>('brain_set_excluded_projects', { accountId, decisions });
   },
 
-  /** The distilled view of one item, or null when it is not this account's. */
   async brainSourcePreview(
     accountId: number,
     itemKey: string,
@@ -3992,25 +2815,13 @@ export const api = {
     return apiCall<BrainSourcePreview | null>('brain_source_preview', { accountId, itemKey });
   },
 
-  /**
-   * Index a whole selection in the main process. Spends tokens.
-   *
-   * The only renderer path that does. A single-item `brainIndexSource` used to
-   * sit beside this one; it was removed because it spent tokens WITHOUT a run
-   * record, so anything reaching for it would silently reintroduce the
-   * untracked run this API exists to prevent. One item is `[itemKey]`.
-   *
-   * The loop lives on the other side of this call so it outlives the pane: the
-   * Brain tab unmounts the Sources pane on a sub-tab switch, which used to
-   * take the run's progress with it.
-   */
+  /** The renderer's only token-spending index path, so every spend has a run record. */
   async brainIndexSelection(
     accountId: number,
     itemKeys: string[],
     opts: { force?: boolean } = {},
   ): Promise<BrainRunResult> {
-    // A press on a ticked row is deliberate, so it indexes what the unattended
-    // gate would decline — a one-prompt session the user wants kept anyway.
+    // Deliberate press: index what the unattended gate would decline.
     return apiCall<BrainRunResult>('brain_index_selection', {
       accountId,
       itemKeys,
@@ -4018,20 +2829,6 @@ export const api = {
     });
   },
 
-  /**
-   * The indexing run in flight for this account, or null.
-   *
-   * BrainSources calls this on mount so it can rebuild its banner for a run
-   * that started before the component existed — the same reason SessionList
-   * calls `summary_generating_now`.
-   */
-  /**
-   * The run in flight for any account, for the app-wide indicator.
-   *
-   * Separate from `brainCurrentRun` because the indicator has no account to
-   * scope by — it asks whether anything is indexing at all. The run carries its
-   * own `accountId`, so the vault is still named rather than guessed.
-   */
   async brainActiveRun(): Promise<BrainRun | null> {
     return apiCall<BrainRun | null>('brain_active_run', {});
   },
@@ -4040,7 +2837,6 @@ export const api = {
     return apiCall<BrainRun | null>('brain_current_run', { accountId });
   },
 
-  /** Progress frames for the run in flight; `null` means it ended. */
   onBrainRunProgress(callback: (run: BrainRun | null) => void): () => void {
     return window.electronAPI.onEvent('brain-run-progress', (data: unknown) => {
       if (data === null || data === undefined) {
@@ -4060,22 +2856,18 @@ export const api = {
     return apiCall<BrainQueueEntry[]>('brain_queue_list', stripUndefined({ accountId, limit }));
   },
 
-  /** Queue every admitted, not-yet-indexed item for an account. */
   async brainBackfill(accountId: number): Promise<number> {
     return apiCall<number>('brain_backfill', { accountId });
   },
 
-  /** Compress one note's accumulated Timeline. Spends tokens. */
   async brainCurateNote(accountId: number, notePath: string): Promise<BrainCurateResult> {
     return apiCall<BrainCurateResult>('brain_curate_note', { accountId, notePath });
   },
 
-  /** Queue the notes most worth compressing. Returns how many were queued. */
   async brainEnqueueCuration(accountId: number): Promise<number> {
     return apiCall<number>('brain_enqueue_curation', { accountId });
   },
 
-  /** Vault size, context cost and Timeline distribution. */
   async brainStats(accountId: number): Promise<BrainVaultStats> {
     return apiCall<BrainVaultStats>('brain_stats', { accountId });
   },
@@ -4086,11 +2878,7 @@ export const api = {
 
 };
 
-/**
- * Renderer-side mirror of the backend `CodexSessionEntry`. Keep the field
- * names in sync with `daemon/services/codex-session-walker.ts` — both
- * sides ship the same shape over IPC, no adapter in between.
- */
+/** Mirrors `CodexSessionEntry` in daemon/services/codex-session-walker.ts. */
 export interface CodexSessionEntry {
   conversationId: string;
   projectPath: string | null;

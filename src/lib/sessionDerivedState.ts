@@ -1,33 +1,17 @@
 import type { JsonlNode } from '@/types/jsonl';
 import { forwardedParentToolUseId } from '@/lib/subagentDispatch';
 
-/**
- * Conversation rollup: the session's own turn axis (mirrored from main, see
- * docs/session-lifecycle.md) OR'd with the transcript-derived task / subagent
- * rows. 'waiting_permission' from the old FSM is collapsed into 'running'
- * (the permission card is still present in JSONL as an open task entry while
- * it is pending).
- */
 export type ConversationStatus = 'idle' | 'running';
 
-// Treat the value of TaskRow / SubagentRow loosely — we only read `.status`.
-// If/when the repo's canonical types are typed strictly, swap these aliases.
 interface WithStatus { status: string }
 
-/**
- * Exported because any per-turn metric needs the same exclusion — see
- * `turnDelta.ts` and `contextTimeline.ts`, both of which would otherwise treat
- * a subagent's context window as the main thread's.
- */
+/** Per-turn metrics need this exclusion too, or a subagent's context reads as the main thread's. */
 export function isMainAssistant(
   node: JsonlNode,
 ): node is Extract<JsonlNode, { kind: 'assistant' }> {
   if (node.kind !== 'assistant') return false;
   const isSidechain = (node.raw as { isSidechain?: boolean }).isSidechain === true;
-  // Live-forwarded subagent assistants (--forward-subagent-text) carry a
-  // non-empty parent_tool_use_id instead of isSidechain — same exclusion:
-  // they may run a different model and their stop_reason brackets the
-  // subagent's own turn, not the main one.
+  // Forwarded subagent assistants carry parent_tool_use_id instead of isSidechain.
   return !isSidechain && forwardedParentToolUseId(node.raw) === null;
 }
 
@@ -37,19 +21,11 @@ function isMainUserNode(node: JsonlNode): boolean {
 }
 
 function isResultNode(node: JsonlNode): boolean {
-  // The CLI's turn-complete `result` envelope (kind:'cli-stream-result' since
-  // the engine-mode reclassification in jsonlClassifier). Not a turn-closer
-  // here — the session owns the turn axis — but it does bracket what a
-  // transcript walk may read as "this turn's" content.
+  // Not a turn-closer (the session owns the turn); it only brackets a turn's content.
   return node.kind === 'cli-stream-result';
 }
 
-// "Open" means actively in flight, not merely "not done." Pending tasks
-// (planned but never started) and failed / abandoned / completed_inferred
-// subagents do NOT count — otherwise a closed session that ended with
-// unstarted todos or a killed subagent renders as 'running' forever on
-// reload. Matches the pre-refactor FSM's "inProgress > 0" / "any running
-// subagent" semantics.
+// In flight only: counting pending tasks or failed/inferred subagents left reloaded sessions 'running' forever.
 export function hasOpenTasks(tasks: WithStatus[]): boolean {
   return tasks.some((t) => t.status === 'in_progress');
 }
@@ -58,12 +34,7 @@ export function hasOpenSubagents(subagents: WithStatus[]): boolean {
   return subagents.some((s) => s.status === 'running');
 }
 
-// The main turn is the SESSION's axis (`turn.status === 'running'`, mirrored
-// from main — see docs/session-lifecycle.md), never read off the transcript
-// here. Tasks and subagents are transcript content and stay derived.
-// 'waiting_permission' from the old FSM collapses into 'running': while a
-// permission request is open, the corresponding task/subagent entry keeps
-// hasOpenTasks / hasOpenSubagents true.
+// The turn is never inferred from the transcript: a resumed transcript ends open while the process is idle.
 export function conversationStatus(
   turnRunning: boolean,
   tasks: WithStatus[],
@@ -74,10 +45,6 @@ export function conversationStatus(
     : 'idle';
 }
 
-// Duration in ms between an assistant and the nearest preceding main-chain
-// user.prompt (by raw.timestamp). Returns null if the assistant has no
-// preceding prompt in the array (e.g. resumed session where the prompt was in
-// an earlier batch).
 export function turnDuration(messages: readonly JsonlNode[], assistant: JsonlNode): number | null {
   if (assistant.kind !== 'assistant') return null;
   const prompt = turnPrompts(messages).get(assistant);
@@ -87,11 +54,6 @@ export function turnDuration(messages: readonly JsonlNode[], assistant: JsonlNod
   return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, end - start) : null;
 }
 
-/**
- * Each assistant's turn-opening prompt, in one forward pass per array. Every
- * completion band asks, and walking back from each one was O(turn length) per
- * row per render. Same per-array cache contract as `transcriptIndex`.
- */
 function turnPrompts(messages: readonly JsonlNode[]): Map<JsonlNode, JsonlNode> {
   let prompts = turnPromptCache.get(messages);
   if (!prompts) {
@@ -116,12 +78,7 @@ export function sessionStartedAt(messages: JsonlNode[]): string | null {
   return typeof ts === 'string' ? ts : null;
 }
 
-// The concrete model id the session is actually running, read off the most
-// recent main-chain assistant message (the CLI stamps `message.model` on every
-// assistant JSONL line). Covers resumed transcripts and the window before the
-// first get_context_usage fetch. Sidechain (subagent) assistants are skipped —
-// they may run a different model — and so are `<synthetic>` stamps (the CLI's
-// marker on synthesized error assistants). Null when no assistant has spoken.
+// Skips sidechain assistants (may run another model) and `<synthetic>` (CLI-made error messages).
 export function lastAssistantModel(messages: JsonlNode[]): string | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const node = messages[i];
@@ -135,17 +92,8 @@ export function lastAssistantModel(messages: JsonlNode[]): string | null {
 }
 
 /**
- * The CLI's answer to a typed `/model`, as it lands in the transcript: the
- * local-command stdout envelope on a `user` record (string or text blocks)
- * or a `system/local_command` record — "Set model to `fable
- * (claude-fable-5-1)`", "Kept model as `…`", with " and saved as your default
- * for new sessions" when the CLI also rewrote the account's settings.json
- * pin. The concrete id in the parentheses is the model; a token with none is
- * taken as written. Null for anything else, the command echo included.
- *
- * OmniFex never saw these, so a switch typed into the composer left the
- * readout, the picker and a restart on the model OmniFex had picked itself
- * (2026-11-08: `/model fable`, restart, back on Opus).
+ * The CLI's reply to a typed `/model`: "Set model to `fable (claude-fable-5-1)`" or "Kept model as `…`",
+ * plus " and saved as your default for new sessions" when it rewrote settings.json.
  */
 export function slashModelResult(node: JsonlNode): { model: string; savedAsDefault: boolean } | null {
   const text = localCommandText(node);
@@ -160,8 +108,6 @@ export function slashModelResult(node: JsonlNode): { model: string; savedAsDefau
   };
 }
 
-/** The stdout inside a local-command envelope, from either record the CLI
- *  writes it on; null when the node is not one. */
 function localCommandText(node: JsonlNode): string | null {
   let content: unknown;
   if (node.kind === 'user') content = (node.raw as { message?: { content?: unknown } }).message?.content;
@@ -180,12 +126,7 @@ function localCommandText(node: JsonlNode): string | null {
   return out ? out[1] : null;
 }
 
-/**
- * The model the session is on at its end, for a resumed tab: the later of
- * the last main-chain turn's model and the last `/model` result. A switch
- * with no turn after it counts — otherwise a restart respawned with the last
- * turn's model and quietly undid the switch.
- */
+/** A `/model` with no turn after it counts, or a restart undoes the switch. */
 export function lastSessionModel(messages: JsonlNode[]): string | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const node = messages[i];
@@ -200,12 +141,6 @@ export function lastSessionModel(messages: JsonlNode[]): string | null {
   return null;
 }
 
-// The permission mode in effect at the end of the session, for restoring a
-// resumed tab to where it left off. Walks messages[] from the end and returns
-// the first `permissionMode` it finds on either a dedicated `permission-mode`
-// record or a `user` envelope (both carry the field). Returns null when the
-// session never recorded one — the caller then falls back to the account
-// default and finally the hardcoded mode.
 export function lastPermissionMode(messages: JsonlNode[]): string | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const node = messages[i];
@@ -218,33 +153,8 @@ export function lastPermissionMode(messages: JsonlNode[]): string | null {
 }
 
 /**
- * Epoch-SECONDS reset time when the session is parked on a claude.ai usage
- * limit, or null when it isn't.
- *
- * Claude Code 2.1.234 added `autoContinueAtUsageLimit`, which defaults ON for
- * claude.ai logins (the CLI only defaults it off when an API key is present).
- * A limited session no longer ends its turn — it waits for the reset and then
- * continues, which can be hours. `waitingOnClaude` stays true across that wait
- * and it is right to: the CLI really is still working the turn. But nothing
- * told the user why, so the composer just spun.
- *
- * Same backward walk as `waitingOnClaude`, with one more decisive node kind:
- *
- *   - a `rate-limit-event` DECIDES. `rejected` + a numeric `resetsAt` means we
- *     are parked until then; anything else means the limit is no longer
- *     blocking and there is nothing to report.
- *   - an assistant / result / main user node means the turn has spoken since
- *     the rejection — it resumed or finished. Not waiting.
- *   - everything else is bookkeeping and is skipped, exactly as above.
- *
- * A rejection with no `resetsAt` returns null on purpose: the CLI's own
- * auto-continue predicate requires a finite `resetsAt`, and without one it
- * offers the wait as a dialog choice rather than waiting. There is no wait to
- * report, and inventing one would be a lie about what the CLI is doing.
- *
- * Deliberately takes no clock. Whether the reset time has passed is a
- * presentation question, and keeping it out of here leaves the derivation
- * pure and its tests deterministic.
+ * Epoch-SECONDS reset time while parked on a usage limit; with autoContinueAtUsageLimit the turn is still running.
+ * A rejection without `resetsAt` returns null: the CLI only auto-waits when it is finite.
  */
 export function usageLimitWait(messages: JsonlNode[]): number | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -256,27 +166,23 @@ export function usageLimitWait(messages: JsonlNode[]): number | null {
     }
     if (isResultNode(n)) return null;
     if (n.kind === 'assistant') {
-      if (!isMainAssistant(n)) continue; // sidechain subagent — not the main turn
+      if (!isMainAssistant(n)) continue;
       return null;
     }
     if (n.kind === 'user') {
-      if (!isMainUserNode(n)) continue; // forwarded subagent prompt — not main-turn traffic
+      if (!isMainUserNode(n)) continue;
       return null;
     }
-    // anything else is bookkeeping — keep scanning backward.
   }
   return null;
 }
 
-/** The failure `sessionAuthFailure` found: when it landed, and what it said. */
 export interface SessionAuthFailure {
   at: string;
   text: string;
 }
 
-// The CLI's own wording, from a failed local command's stdout. A failed
-// `/recap` leaves no structured marker, only this text — and auto-recap is
-// often the first thing an idle session runs after its login lapses.
+// A failed `/recap` leaves only this stdout text, no structured marker.
 const AUTH_FAILURE_STDOUT = /\bNot logged in\b|\bFailed to authenticate\b|\bOAuth session expired\b/;
 
 function assistantText(raw: { message?: { content?: unknown } }): string {
@@ -289,25 +195,8 @@ function assistantText(raw: { message?: { content?: unknown } }): string {
 }
 
 /**
- * Has this session's CLI process lost its sign-in?
- *
- * A process whose OAuth refresh fails gives up for good — it never re-reads
- * the Keychain, so signing in again does not reach it and only a restart
- * does. The account's on-disk login can look perfectly healthy throughout
- * (`oauthAccount` lingers in `.claude.json`), so the config-dir identity check
- * cannot see this. The session's own transcript is the only evidence.
- *
- * Scans backward, like `usageLimitWait`:
- * - a main assistant marked `error: 'authentication_failed'` → failed;
- * - any other main assistant → the model has answered since → `null`;
- * - a failed local command whose stdout is the CLI's auth error → failed;
- * - everything else, including prompts, `result` and `init` (the CLI emits a
- *   fresh init before every prompt, so it does not mark a new process), is
- *   skipped.
- *
- * Returns when the failure landed. A resumed transcript still ends on it
- * until the next reply, so the caller must discard a failure older than the
- * process it is looking at — see `useSessionAuthExpiry`.
+ * A CLI whose OAuth refresh fails stays signed out until restarted, while `.claude.json` looks fine; only the
+ * transcript shows it. A resumed transcript still ends on the failure, so callers discard one older than the process.
  */
 export function sessionAuthFailure(messages: JsonlNode[]): SessionAuthFailure | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {

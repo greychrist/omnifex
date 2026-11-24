@@ -2,16 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type SessionPluginInfo } from '@/lib/api';
 import { logAndForget } from '@/lib/fireAndLog';
 
-/**
- * The session's plugin list, mods included — shared by the Session context
- * panel and the context popover's summary row, so one fetch serves both.
- *
- * A change of `reloadKey` fetches again. The caller keys it on the session
- * having an init and on the panel opening, so opening the panel after a
- * restart shows the restarted process's list. `enabled` gates the first fetch — before any init, main can only
- * answer by sending reload_plugins, which re-runs every mod's session.start,
- * so it waits until there is an init or the panel is actually open.
- */
+/** Before any init, main can only answer by sending reload_plugins, which re-runs every mod's session.start. */
 export function useSessionPlugins(
   tabId: string,
   reloadKey: string,

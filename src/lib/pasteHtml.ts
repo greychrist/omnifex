@@ -1,16 +1,4 @@
-/**
- * Rich-text paste → Markdown, for the prompt composer.
- *
- * A textarea pastes `text/plain`, and apps like Teams and Outlook flatten a
- * nested list into bare lines there: no bullets, no indentation, so which
- * point is an exception to which rule is lost. Their `text/html` still has
- * the structure, so when it holds a list we rebuild the paste as Markdown
- * bullets — readable in the prompt bubble and to Claude alike.
- *
- * Only list-bearing HTML is converted. Everything else (code from an editor,
- * a sentence from a web page) keeps the browser's plain-text paste, where
- * converting would only add risk.
- */
+// Teams and Outlook flatten nested lists in text/plain; only list-bearing HTML is converted.
 
 const SKIP = new Set(['STYLE', 'SCRIPT', 'HEAD', 'META', 'TITLE', 'NOSCRIPT', 'TEMPLATE']);
 const LISTS = new Set(['UL', 'OL']);
@@ -19,7 +7,6 @@ const BLOCKS = new Set([
   'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TABLE', 'TBODY', 'THEAD', 'TR', 'LI', 'HR', 'FIGURE',
 ]);
 
-/** Markdown for `html` when it contains a list, else null (use the plain-text paste). */
 export function listPasteToMarkdown(html: string): string | null {
   if (!/<(ul|ol)\b/i.test(html)) return null;
   const body = new DOMParser().parseFromString(html, 'text/html').body;
@@ -34,10 +21,6 @@ export function listPasteToMarkdown(html: string): string | null {
   return out.join('\n');
 }
 
-/**
- * Lines for an element's content, unindented. Blocks are separated by a blank
- * line except inside a list item, where they would break the list apart.
- */
 function renderBlock(el: Element, inList: boolean): string[] {
   const lines: string[] = [];
   let buf = '';
@@ -137,14 +120,12 @@ function inline(el: Element): string {
   }
 }
 
-/** Keep the surrounding spaces outside the markers: `** x**` is not bold. */
 function wrap(text: string, mark: string): string {
   const lead = text.slice(0, text.length - text.trimStart().length);
   const trail = text.slice(text.trimEnd().length);
   return `${lead}${mark}${text.trim()}${mark}${trail}`;
 }
 
-/** HTML source whitespace (newlines, runs of spaces, nbsp) reads as one space. */
 function collapse(text: string): string {
   return text.replace(/[\s\u00a0]+/g, ' ');
 }

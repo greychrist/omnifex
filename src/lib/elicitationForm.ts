@@ -1,12 +1,4 @@
-// MCP elicitation form model.
-//
-// An MCP server's `elicitation/create` in form mode carries a requestedSchema
-// the spec restricts to a flat object of primitives — string (optionally
-// `enum` + `enumNames`, `oneOf` of `{const,title}`, `format`), number,
-// integer, boolean, and a string-enum array for multi-select. No nesting,
-// which is what makes a generic form honest. The CLI relays the schema
-// untouched; this turns it into fields, validates, and builds the `content`
-// object the answer carries.
+// MCP form-mode schemas are flat objects of primitives (no nesting), per the elicitation spec.
 
 export type ElicitationFieldKind = 'text' | 'select' | 'number' | 'integer' | 'boolean' | 'multiselect';
 
@@ -83,8 +75,6 @@ export function parseElicitationSchema(schema: unknown): ElicitationField[] {
     }
     const options = enumOptions(p);
     if (options) return { ...base, kind: 'select', options };
-    // Anything else — the spec's `string`, or a type it does not allow —
-    // is asked for as text rather than dropped from the form.
     return {
       ...base,
       kind: 'text',
@@ -110,13 +100,11 @@ function isBlank(v: string | boolean | string[] | undefined): boolean {
   return v === undefined || v === '';
 }
 
-/** Field name → message, for every field that would not survive submit. */
 export function validateElicitation(fields: ElicitationField[], values: ElicitationValues): Record<string, string> {
   const errors: Record<string, string> = {};
   for (const f of fields) {
     const v = values[f.name];
     if (isBlank(v)) {
-      // A boolean is never blank; an unticked required box is a valid `false`.
       if (f.required) errors[f.name] = 'Required';
       continue;
     }
@@ -135,7 +123,6 @@ export function validateElicitation(fields: ElicitationField[], values: Elicitat
   return errors;
 }
 
-/** The answer's `content`: typed values, blank optional fields left out. */
 export function toElicitationContent(fields: ElicitationField[], values: ElicitationValues): Record<string, unknown> {
   const content: Record<string, unknown> = {};
   for (const f of fields) {

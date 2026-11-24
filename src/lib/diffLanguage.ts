@@ -1,12 +1,3 @@
-/**
- * Map a file path to a Prism language id for the diff viewer.
- *
- * Deliberately a lookup table rather than content sniffing: the diff viewer
- * already knows the path, and a wrong guess only costs color. `text` is the
- * fallback — Prism accepts it and renders the line unhighlighted, which is
- * what an unknown file type should look like.
- */
-
 const BY_EXTENSION: Record<string, string> = {
   ts: 'typescript',
   mts: 'typescript',
@@ -67,8 +58,6 @@ const BY_EXTENSION: Record<string, string> = {
 export function languageForPath(path: string): string {
   const name = path.split('/').pop() ?? '';
   const dot = name.lastIndexOf('.');
-  // `dot <= 0` covers both "no extension" and a dotfile like `.gitignore`,
-  // whose leading dot starts the name rather than an extension.
   if (dot <= 0) return 'text';
   const ext = name.slice(dot + 1).toLowerCase();
   return BY_EXTENSION[ext] ?? 'text';

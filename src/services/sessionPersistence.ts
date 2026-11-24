@@ -1,8 +1,3 @@
-/**
- * Session Persistence Service
- * Handles saving and restoring session data for chat tabs
- */
-
 import { api, type Session } from '@/lib/api';
 
 const STORAGE_KEY_PREFIX = 'greychrist_session_';
@@ -19,9 +14,6 @@ export interface SessionRestoreData {
 
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class -- utility-class pattern intentional; namespace-style functions less idiomatic in this codebase.
 export class SessionPersistenceService {
-  /**
-   * Save session data for later restoration
-   */
   static saveSession(sessionId: string, projectId: string, projectPath: string, messageCount?: number, scrollPosition?: number): void {
     try {
       const sessionData: SessionRestoreData = {
@@ -33,10 +25,8 @@ export class SessionPersistenceService {
         timestamp: Date.now()
       };
 
-      // Save individual session data
       localStorage.setItem(`${STORAGE_KEY_PREFIX}${sessionId}`, JSON.stringify(sessionData));
 
-      // Update session index
       const index = this.getSessionIndex();
       if (!index.includes(sessionId)) {
         index.push(sessionId);
@@ -47,9 +37,6 @@ export class SessionPersistenceService {
     }
   }
 
-  /**
-   * Load session data for restoration
-   */
   static loadSession(sessionId: string): SessionRestoreData | null {
     try {
       const data = localStorage.getItem(`${STORAGE_KEY_PREFIX}${sessionId}`);
@@ -57,7 +44,6 @@ export class SessionPersistenceService {
 
       const sessionData = JSON.parse(data) as SessionRestoreData;
       
-      // Validate the data
       if (!sessionData.sessionId || !sessionData.projectId || !sessionData.projectPath) {
         return null;
       }
@@ -69,15 +55,10 @@ export class SessionPersistenceService {
     }
   }
 
-  /**
-   * Remove session data from storage
-   */
   static removeSession(sessionId: string): void {
     try {
-      // Remove session data
       localStorage.removeItem(`${STORAGE_KEY_PREFIX}${sessionId}`);
 
-      // Update session index
       const index = this.getSessionIndex();
       const newIndex = index.filter(id => id !== sessionId);
       localStorage.setItem(SESSION_INDEX_KEY, JSON.stringify(newIndex));
@@ -86,9 +67,6 @@ export class SessionPersistenceService {
     }
   }
 
-  /**
-   * Get all saved session IDs
-   */
   static getSessionIndex(): string[] {
     try {
       const index = localStorage.getItem(SESSION_INDEX_KEY);
@@ -99,28 +77,20 @@ export class SessionPersistenceService {
     }
   }
 
-  /**
-   * Clear all session data
-   */
   static clearAllSessions(): void {
     try {
       const index = this.getSessionIndex();
       
-      // Remove all session data
       index.forEach(sessionId => {
         localStorage.removeItem(`${STORAGE_KEY_PREFIX}${sessionId}`);
       });
 
-      // Clear the index
       localStorage.removeItem(SESSION_INDEX_KEY);
     } catch (error) {
       console.error('Failed to clear session data:', error);
     }
   }
 
-  /**
-   * Clean up old session data (older than 30 days)
-   */
   static cleanupOldSessions(): void {
     try {
       const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
@@ -142,24 +112,16 @@ export class SessionPersistenceService {
     }
   }
 
-  /**
-   * Check if session exists on disk and is restorable.
-   *
-   * `projectPath` is required because session history reads now go through
-   * strict account resolution — there is no default-account fallback. Pass
-   * the same path used when the session was opened.
-   */
+  /** `projectPath` is required: history reads use strict account resolution, with no default fallback. */
   static async isSessionRestorable(
     sessionId: string,
     projectId: string,
     projectPath: string,
   ): Promise<boolean> {
     try {
-      // First check if we have the session metadata
       const sessionData = this.loadSession(sessionId);
       if (!sessionData) return false;
 
-      // Try to verify the session exists on disk by loading its history
       const history = await api.loadSessionHistory(sessionId, projectId, projectPath);
       return history && history.length > 0;
     } catch (error) {
@@ -170,13 +132,11 @@ export class SessionPersistenceService {
 
   static migrateFromOldKeys(): void {
     try {
-      // Migrate session index
       const oldIndex = localStorage.getItem('opcode_session_index');
       if (oldIndex && !localStorage.getItem(SESSION_INDEX_KEY)) {
         localStorage.setItem(SESSION_INDEX_KEY, oldIndex);
         localStorage.removeItem('opcode_session_index');
       }
-      // Migrate individual session entries
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && key.startsWith('opcode_session_') && key !== 'opcode_session_index') {
@@ -193,15 +153,12 @@ export class SessionPersistenceService {
     }
   }
 
-  /**
-   * Create Session object from restore data
-   */
   static createSessionFromRestoreData(data: SessionRestoreData): Session {
     return {
       id: data.sessionId,
       project_id: data.projectId,
       project_path: data.projectPath,
-      created_at: data.timestamp / 1000, // Convert to seconds
+      created_at: data.timestamp / 1000, // seconds
     };
   }
 }

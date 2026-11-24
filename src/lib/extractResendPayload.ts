@@ -1,12 +1,4 @@
-/**
- * Extract a resend-able payload from a user message's content array.
- *
- * Boundary normalization (see `normalizeMessage.ts`) guarantees the renderer's
- * `messages[]` state always carries content as an array of typed blocks — the
- * JSONL-restored string shape gets wrapped at ingress. This helper assumes
- * that invariant: a non-array `content` is treated as "nothing to resend"
- * rather than re-decoding a legacy shape downstream.
- */
+/** Assumes normalizeMessage's invariant (content is a block array); anything else resends nothing. */
 export interface ResendPayload {
   text: string;
   images?: string[];

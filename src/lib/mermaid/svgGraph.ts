@@ -1,20 +1,4 @@
-/**
- * Reads the graph back out of a flowchart mermaid has already drawn, so the
- * diagram viewer can highlight a node and what it connects to.
- *
- * Mermaid has no public API for this; it reads the rendered SVG instead.
- * Shapes verified against mermaid 12.1 (fixtures in
- * `src/lib/__tests__/fixtures/mermaid/`):
- *
- * - node:  `g.node#<svgId>-flowchart-<nodeId>-<n>`
- * - edge:  `path[data-edge="true"][data-id="L_<from>_<to>_<n>"]`
- * - label: `.edgeLabel` wrapping an element carrying the edge's `data-id`
- *
- * Node ids may contain `_`, so an edge id is split against the node ids that
- * actually exist rather than on the first underscore. If a future mermaid
- * changes any of this the reader finds no graph and the viewer falls back to
- * pan and zoom — highlighting is a nicety, never load-bearing.
- */
+/** Reads mermaid's rendered SVG (no public API). Node ids may contain `_`, so edge ids are split against existing node ids. A miss falls back to pan and zoom. */
 
 export interface DiagramEdge {
   id: string;
@@ -35,7 +19,6 @@ export interface Neighborhood {
 const HIGHLIGHT_CLASS = 'diagram-hl';
 const HIGHLIGHTING_ATTR = 'data-highlighting';
 
-/** The mermaid node id of a `g.node` element, or null if it is not one. */
 export function nodeIdOf(svg: SVGSVGElement, el: Element): string | null {
   const prefix = `${svg.id}-flowchart-`;
   if (!el.id.startsWith(prefix)) return null;
@@ -53,7 +36,6 @@ function splitEdgeId(id: string, nodes: Set<string>): DiagramEdge | null {
   return null;
 }
 
-/** The flowchart's nodes and edges, or null when the SVG is not a flowchart. */
 export function readFlowchartGraph(svg: SVGSVGElement): DiagramGraph | null {
   if (!svg.getAttribute('aria-roledescription')?.startsWith('flowchart')) return null;
   const nodes = new Set<string>();
@@ -70,7 +52,6 @@ export function readFlowchartGraph(svg: SVGSVGElement): DiagramGraph | null {
   return { nodes, edges };
 }
 
-/** A node, every edge touching it, and the nodes at those edges' other ends. */
 export function neighborhood(graph: DiagramGraph, nodeId: string): Neighborhood {
   const nodes = new Set([nodeId]);
   const edges = new Set<string>();
@@ -84,10 +65,6 @@ export function neighborhood(graph: DiagramGraph, nodeId: string): Neighborhood 
   return { nodes, edges };
 }
 
-/**
- * Marks `nodeId`'s neighbourhood with `.diagram-hl` and flags the SVG with
- * `data-highlighting`, which is what the dimming CSS keys off. Null clears.
- */
 export function applyHighlight(
   svg: SVGSVGElement,
   graph: DiagramGraph,

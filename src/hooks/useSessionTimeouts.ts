@@ -3,10 +3,8 @@ import { api } from "@/lib/api";
 import { fireAndLog } from "@/lib/fireAndLog";
 import type { JsonlNode } from "@/types/jsonl";
 
-/** How long to wait for a first response before checking health. */
 export const RESPONSE_TIMEOUT_MS = 30_000;
 
-/** How long between stream messages before considering the session hung. */
 export const INACTIVITY_TIMEOUT_MS = 15_000;
 
 interface UseSessionTimeoutsArgs {
@@ -43,15 +41,11 @@ export function useSessionTimeouts({
   const [mountedAt] = useState(() => Date.now());
   const lastMessageTimeRef = useRef<number>(mountedAt);
 
-  // Latest-messages ref so the watchdog timeout reads the current array
-  // when it fires, without needing the messages array itself in the
-  // effect's deps (which would reset the timer on every render).
   const messagesRef = useRef(messages);
   useEffect(() => {
     messagesRef.current = messages;
   });
 
-  // Track elapsed time while loading + response timeout
   useEffect(() => {
     if (isLoading) {
       setLoadingStartTime(Date.now());
@@ -60,11 +54,9 @@ export function useSessionTimeouts({
         setElapsedSeconds((prev) => prev + 1);
       }, 1000);
       const timeout = setTimeout(fireAndLog('use-session-timeouts:loading-watchdog', async () => {
-        // Check if the main process session is still alive before killing
         try {
           const health = await api.sessionGetHealth(tabId);
           if (health.alive && health.sessionStatus !== "error") {
-            // Session is alive — show warning but don't kill it
             const now = new Date().toISOString();
             setMessages((prev) => [
               ...prev,
@@ -88,9 +80,6 @@ export function useSessionTimeouts({
           /* health check failed — treat as dead */
         }
 
-        // Session is dead or errored — reset. Read latest messages via
-        // ref so the index points at the actual last-user message at
-        // fire-time, not at effect-setup time.
         const currentMessages = messagesRef.current;
         const lastUserIdx = [...currentMessages]
           .reverse()
@@ -112,20 +101,15 @@ export function useSessionTimeouts({
     }
   }, [isLoading, messages.length, tabId, setIsLoading, setMessages, setError, persistentSessionRef]);
 
-  // Inactivity detection — if loading and no stream messages for 15s, the session
-  // may be hung. Reset so the next prompt auto-restarts the session.
   useEffect(() => {
     if (!isLoading) return;
     const check = setInterval(fireAndLog('use-session-timeouts:inactivity-watchdog', async () => {
       const idle = Date.now() - lastMessageTimeRef.current;
       if (idle >= INACTIVITY_TIMEOUT_MS && !waitingForPermission) {
-        // Check health before killing
         try {
           const health = await api.sessionGetHealth(tabId);
           if (health.alive && health.sessionStatus !== "error") {
-            // Session is alive — show warning but keep waiting
             setMessages((prev) => {
-              // Don't spam warnings. Check the last message's title via raw shape.
               const lastMsg = prev[prev.length - 1];
               const lastTitle =
                 lastMsg?.kind === 'system' && lastMsg.subtype === 'notification'
@@ -156,7 +140,6 @@ export function useSessionTimeouts({
           /* health check failed — treat as dead */
         }
 
-        // Session is dead — reset
         setIsLoading(false);
         persistentSessionRef.current = false;
         const nowLost = new Date().toISOString();

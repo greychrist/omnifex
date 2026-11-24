@@ -1,19 +1,5 @@
-/**
- * One signal store per tab, fed by pure derivation over the session's own state.
- *
- * Two things here are load-bearing for performance, both of them consequences
- * of this repo's default failure mode ("one click re-rendered every session in
- * the app", see the root CLAUDE.md):
- *
- * 1. `handlers` is captured in a ref, not a dependency. AgentSession rebuilds
- *    those closures on every render; depending on them would re-derive the
- *    whole turn series — an O(messages) walk — on every keystroke.
- * 2. `reconcile` returns the *same* state object when nothing changed, so the
- *    `setState` below bails out of the re-render rather than scheduling one.
- *
- * Signals are per tab and die with it: this hook's state unmounts with the tab,
- * which is the whole of "cleared on tab close".
- */
+// `handlers` is held in a ref, not a dependency: AgentSession rebuilds it every render, and the turn
+// derivation is O(messages). `reconcile` returns the same object when nothing changed so setState bails.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -38,24 +24,20 @@ import {
 } from '@/lib/signals/store';
 import type { SessionSignal, SignalAnchor } from '@/lib/signals/types';
 
-/** Everything the caller supplies; handlers are held by ref, hence the split. */
 export type SessionSignalsInput = Omit<SignalInput, 'boundarySnoozeTokens' | 'handlers'> & {
   handlers: SignalHandlers;
 };
 
 export interface SessionSignals {
   state: SignalState;
-  /** Highest-priority first. The attention slot renders index 0. */
+  /** Highest-priority first. */
   queue: SessionSignal[];
   unreadFor: (anchor: SignalAnchor) => number;
   eventsFor: (anchor: SignalAnchor, limit?: number) => SessionSignal[];
   actionsFor: (anchor: SignalAnchor) => SessionSignal[];
   stateFor: (key: string) => SessionSignal | undefined;
-  /** Clears the anchor's unread badge. Call when its popover opens. */
   markRead: (anchor: SignalAnchor) => void;
-  /** Drops an item from the slot; it stays in the anchored popover. */
   dismiss: (key: string) => void;
-  /** Raises the context budget by 20k for this tab only, and re-arms. */
   snoozeBoundary: () => void;
 }
 
@@ -71,8 +53,6 @@ export function useSessionSignals(input: SessionSignalsInput): SessionSignals {
     setState((s) => snooze(s, BOUNDARY_KEY, BOUNDARY_SNOOZE_TOKENS));
   }, []);
 
-  // Stable indirection so a re-created handler bag never invalidates the memo
-  // below. The bag's *identity* changes constantly; what it does does not.
   const handlers = useMemo<SignalHandlers>(
     () => ({
       onCompact: () => handlersRef.current.onCompact(),
@@ -87,8 +67,6 @@ export function useSessionSignals(input: SessionSignalsInput): SessionSignals {
 
   const derived = useMemo(
     () => deriveSessionSignals({ ...input, boundarySnoozeTokens, handlers }),
-    // `input` is a fresh object literal every render; its fields are the real
-    // dependencies.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `input` is rebuilt every render; listing it would recompute every render
     [
       input.tabId,

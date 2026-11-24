@@ -1,28 +1,9 @@
 import type { JsonlNode } from '@/types/jsonl';
 import type { MessageContentBlock } from '@/types/claudeStream';
 
-/**
- * One pass over a transcript, keyed by tool_use id, so that "find the record
- * that goes with this one" is a map lookup instead of a walk.
- *
- * Rows used to answer those questions by scanning the whole message array —
- * each row, on every render. Under an unvirtualised transcript that is
- * quadratic: a 4,000-record tab took ~5.6s of main thread per appended record
- * (traced 2026-10-13), freezing the window from a tab that was not even on
- * screen. The helpers that did the scanning (`isSubagentPrompt`, `detectSkillInjection`, `classifyStandaloneKind`) now
- * read this instead, so every caller got cheaper at once.
- *
- * Cached per array identity, the same contract as `queueWaitMs`: the store
- * replaces the message array on every change and never mutates one in place.
- * An array that is mutated after it has been indexed would read stale.
- *
- * Duplicate ids keep the LAST occurrence. A tool_use id is unique per call, so
- * a duplicate is the same block recorded twice and the two are identical.
- */
+/** Cached per array identity: the store replaces the array on change and never mutates it in place. */
 export interface TranscriptIndex {
-  /** Each tool call's name and input. */
   readonly toolUses: ReadonlyMap<string, ToolUseRef>;
-  /** Each tool call's `tool_result` content block. */
   readonly toolResults: ReadonlyMap<string, MessageContentBlock>;
 }
 
@@ -42,11 +23,7 @@ export function transcriptIndex(messages: readonly JsonlNode[]): TranscriptIndex
 
 const cache = new WeakMap<readonly JsonlNode[], TranscriptIndex>();
 
-/**
- * One ref per tool_use block for the block's lifetime, not per index build: a
- * row's lookups are compared by identity, and a ref minted afresh by each
- * append would read as "changed" and re-render every row that holds one.
- */
+/** One ref per block for its lifetime: rows compare by identity, and a fresh ref per append re-renders every row. */
 function toolUseRef(block: { name?: unknown; input?: unknown }): ToolUseRef {
   let ref = refs.get(block);
   if (!ref) {

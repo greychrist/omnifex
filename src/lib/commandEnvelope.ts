@@ -1,28 +1,6 @@
 import { tagText } from './xmlTags';
 
-/**
- * Parser for the pseudo-XML envelope the CLI persists in place of a typed
- * slash command.
- *
- * The CLI does not emit one canonical shape. Built-ins persist as
- *
- *   <command-name>/usage</command-name>
- *   <command-message>usage</command-message>
- *   <command-args></command-args>
- *
- * while custom and skill-backed commands persist message-first with no args
- * tag at all:
- *
- *   <command-message>timesheet-review</command-message>
- *   <command-name>/timesheet-review</command-name>
- *
- * A single ordered regex spanning all three tags therefore matches only a
- * minority of real records — across this account's transcripts there are 564
- * <command-name> tags but just 122 <command-args>. Every other record fell
- * through to the plain-text renderer and printed the envelope verbatim. Match
- * each tag independently instead, and treat everything but the name as
- * optional.
- */
+/** The CLI's tag order varies (built-ins name-first with args, skills message-first without): match each tag independently. */
 export interface CommandEnvelope {
   name: string;
   message: string;
@@ -36,39 +14,13 @@ export function parseCommandEnvelope(text: string): CommandEnvelope | null {
   return {
     name,
     message: tagText(text, 'command-message') ?? '',
-    // An empty <command-args></command-args> means "invoked with no
-    // arguments" — the same thing as the tag being absent.
     args: args || undefined,
   };
 }
 
-/**
- * The tags the CLI wraps around a *local* command's echo and its stdout. A
- * built-in slash command runs on the client, so what lands in the transcript is
- * a pair of `user` records the model never sees and will never answer:
- *
- *   <command-name>/compact</command-name>   (+ message / args)
- *   <local-command-stdout>Compacted </local-command-stdout>
- *
- * A skill or custom command's echo carries the same tag but is not local — see
- * `isModelCommandEcho`.
- *
- * The classifier and the renderer share one definition of the shape through
- * `commandEnvelopeKind` — messageKind needs the two halves apart (it renders
- * them as different cards), the classifier only needs to know it is either.
- */
 export const COMMAND_NAME_TAG = '<command-name>';
 
-/**
- * Which half of a local-command envelope `text` is, or null for prose.
- *
- * The CLI writes an envelope as the whole record, so its tags open the text:
- * across 400 transcripts every real one began with `<command-name>`,
- * `<command-message>` or `<local-command-stdout>`. A tag further in is a
- * prompt quoting one — a pasted JSONL line, OmniFex's own summary and Brain
- * prompts — and matching it anywhere once rendered such a prompt as nothing
- * but the stdout it quoted.
- */
+/** The tags must open the text: a tag further in is a prompt quoting one. */
 export function commandEnvelopeKind(text: string): 'echo' | 'output' | null {
   const head = text.trimStart();
   if (head.startsWith('<local-command-stdout>') || head.startsWith('<local-command-stderr>')) return 'output';
@@ -78,23 +30,13 @@ export function commandEnvelopeKind(text: string): 'echo' | 'output' | null {
   return null;
 }
 
-/**
- * True for a `system/local_command` record that `/recap` produced. Keyed on
- * the structured `commandRun` the CLI stamps on the record, never on the text:
- * the recap is prose, and is shown as an away summary rather than as command
- * output.
- */
+/** Keyed on the CLI's `commandRun` stamp, never the text: the recap is prose. */
 export function isRecapCommandRecord(raw: unknown): boolean {
   const run = (raw as { commandRun?: { command?: unknown } } | null)?.commandRun;
   return run?.command === 'recap';
 }
 
-/**
- * What a local command printed, without its `<local-command-stdout>` /
- * `<local-command-stderr>` wrapping. Text with neither tag is returned as it
- * is. CLI 2.1.283 moved this output onto a `system/local_command` record's
- * `content`; older transcripts carry it in a user record.
- */
+/** CLI 2.1.283+ puts this in a `system/local_command` record's content; older transcripts in a user record. */
 export function localCommandOutput(text: string): string {
   const parts: string[] = [];
   for (const tag of ['local-command-stdout', 'local-command-stderr']) {
@@ -104,12 +46,7 @@ export function localCommandOutput(text: string): string {
   return parts.length > 0 ? parts.join('\n') : text;
 }
 
-/**
- * The text of a `user` record's content, in both shapes the CLI persists — a
- * bare string and an array of content blocks — because the same record reaches
- * this code from the live stream and from a re-read transcript, and only one of
- * those normalizes. Null for any other shape.
- */
+/** Both shapes: the live stream and a re-read transcript differ, and only one normalizes. */
 function contentText(content: unknown): string | null {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return null;
@@ -120,23 +57,12 @@ function contentText(content: unknown): string | null {
     .join('');
 }
 
-/** True for either half of a local-command envelope. */
 export function isLocalCommandEnvelope(content: unknown): boolean {
   const text = contentText(content);
   return text !== null && commandEnvelopeKind(text) !== null;
 }
 
-/**
- * True for the echo of a skill or custom command — a command the CLI expands
- * into a prompt the model answers, so the echo starts a turn like typed text.
- *
- * The echo record alone has to tell us; the skill body that follows it is a
- * separate record. Across 317 real echoes (2026-09-28) every skill/custom one
- * was message-first and every built-in name-first, and newer CLIs stamp
- * `turnOrigin` on the former only. Either signal counts, so the call survives
- * one of them changing. If both ever vanish, skill echoes fall back to
- * 'local-command': the turn loses its anchor, nothing gets stuck.
- */
+/** Skill/custom echoes are message-first and newer CLIs stamp `turnOrigin` on them; either signal counts. */
 export function isModelCommandEcho(content: unknown, turnOrigin: unknown): boolean {
   const text = contentText(content);
   if (text === null || commandEnvelopeKind(text) !== 'echo') return false;

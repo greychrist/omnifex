@@ -1,22 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 export interface UseSplitWidthOptions {
-  /** localStorage key. Each split pane remembers its own width. */
   storageKey: string;
   defaultWidth: number;
-  /** Narrowest the left pane may become. */
   min: number;
-  /** Room the right pane must keep, whatever the user drags. */
   minRight: number;
   containerRef: React.RefObject<HTMLElement | null>;
 }
 
 export interface UseSplitWidth {
-  /** The left pane's width in pixels, already clamped to fit. */
+  /** Pixels, already clamped to fit. */
   width: number;
-  /** `onMouseDown` for the drag handle between the two panes. */
   startResize: (e: React.MouseEvent) => void;
-  /** Back to the default. Wired to double-click, the way the session header is. */
   reset: () => void;
 }
 
@@ -27,22 +22,13 @@ function read(key: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/**
- * A draggable split between a fixed-width left pane and a filling right one.
- *
- * Mouse events at the window level, not pointer capture on the handle: the
- * handle is 6px wide and the cursor routinely outruns it mid-drag, which is
- * the same reason `LogTab`'s column resizer listens on the window.
- *
- * The width is CLAMPED AT RENDER, not only while dragging. A width stored from
- * a maximised window would otherwise reopen on a small one with the right pane
- * squeezed to nothing — the pane the split exists to reveal.
- */
+// Window-level mouse events, not pointer capture: the 6px handle is routinely outrun mid-drag.
+// Clamped at render: a width stored from a maximised window would squeeze the right pane to nothing.
 export function useSplitWidth({
   storageKey, defaultWidth, min, minRight, containerRef,
 }: UseSplitWidthOptions): UseSplitWidth {
   const [raw, setRaw] = useState(() => read(storageKey, defaultWidth));
-  /** 0 until the container has been measured, which means "do not clamp yet". */
+  /** 0 means not measured yet: do not clamp. */
   const [containerWidth, setContainerWidth] = useState(0);
 
   useLayoutEffect(() => {
@@ -57,11 +43,7 @@ export function useSplitWidth({
   const max = containerWidth > 0 ? Math.max(min, containerWidth - minRight) : Infinity;
   const width = Math.min(max, Math.max(min, raw));
 
-  /**
-   * The live width, for a drag that starts before React has re-rendered.
-   * Reading `width` inside the move handler would capture the value from the
-   * render the drag started in and quantise the whole gesture to it.
-   */
+  /** Read in the move handler: `width` would be captured from the render the drag started in. */
   const widthRef = useRef(width);
   useEffect(() => { widthRef.current = width; }, [width]);
 
@@ -82,12 +64,11 @@ export function useSplitWidth({
       window.removeEventListener('mouseup', onUp);
       document.body.style.cursor = prevCursor;
       document.body.style.userSelect = prevSelect;
-      // Persist the CLAMPED width, not the raw one: storing a value the
-      // current window cannot honour is how the stale-width bug above starts.
+      // Persist the clamped width: storing one the window cannot honour is how the stale width starts.
       try {
         window.localStorage.setItem(storageKey, String(widthRef.current));
       } catch {
-        // Quota. The width reverts on reload, which is not worth an error.
+        // Quota: the width reverts on reload.
       }
     };
     window.addEventListener('mousemove', onMove);

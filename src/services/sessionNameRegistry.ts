@@ -1,35 +1,7 @@
-/**
- * Persistent tabId → session-identity map.
- *
- * The Log tab shows the CLI-side category for every entry, which is
- * `session:<tabId>` (tabIds look like `tab-1778624839066-n893j4wui`). Tab
- * state is in-memory and disappears when a tab is closed, while log rows
- * live forever in SQLite. This registry bridges the gap: whenever a tab
- * updates, we mirror its identifying fields to localStorage so the Log tab
- * can render real session labels even for tabs that were closed days ago.
- *
- * The historical entries were just `{ title }` strings; entries written by
- * later builds carry `{ projectName, claudeSessionId, title }` so the Log
- * tab can produce a `session: <project> - <guid7>` label without depending
- * on the (in-memory) TabContext for closed tabs.
- *
- * Bounded by `MAX_ENTRIES` (oldest evicted first) so a runaway never blows
- * out localStorage. Only chat tabs with at least one identifying field are
- * recorded.
- */
-
 const STORAGE_KEY = 'omnifex_session_name_registry_v1';
 const MAX_ENTRIES = 500;
 
-/**
- * One stored entry. All identity fields are optional because they get
- * populated at different points in a chat tab's lifecycle:
- *   - `title` and `projectName` are known as soon as a chat tab opens.
- *   - `claudeSessionId` is assigned by the CLI after the first `init`
- *     message lands, so it shows up a moment later.
- * Each write merges with what's already stored — partial updates don't
- * overwrite fields that were set by an earlier call.
- */
+/** Writes merge: a partial update never clears fields set earlier. */
 export interface SessionRegistryEntry {
   title?: string;
   projectName?: string;
@@ -57,10 +29,6 @@ function loadFromStorage(): Registry {
     }
     const parsed: unknown = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') {
-      // Existing entries from the original v1 schema only had {title,
-      // updatedAt}; the new optional fields will simply be undefined on
-      // those rows, which is exactly what we want. No migration step
-      // needed.
       cache = parsed as Registry;
       return cache;
     }
@@ -93,7 +61,6 @@ function evictOldest(reg: Registry, target: number): void {
   }
 }
 
-/** Trim, drop empty strings; preserves `undefined` for "not provided". */
 function clean(s: string | null | undefined): string | undefined {
   if (s == null) return undefined;
   const t = String(s).trim();
@@ -101,12 +68,6 @@ function clean(s: string | null | undefined): string | undefined {
 }
 
 export const sessionNameRegistry = {
-  /**
-   * Record (or refresh) identity fields for a tab. Partial updates are
-   * merged with the stored entry — if you call with only `{ claudeSessionId }`
-   * the previously-stored `title` and `projectName` stay intact. No-op if
-   * every provided field is empty.
-   */
   set(tabId: string, input: SessionRegistryInput): void {
     if (!tabId) return;
     const title = clean(input.title);
@@ -117,9 +78,6 @@ export const sessionNameRegistry = {
     const reg = { ...loadFromStorage() };
     const existing = reg[tabId];
 
-    // Skip the write if every provided field already matches — avoids
-    // touching localStorage on every render cycle when the tab hasn't
-    // actually changed identity.
     if (
       existing &&
       (title === undefined || existing.title === title) &&
@@ -140,16 +98,13 @@ export const sessionNameRegistry = {
     persist(reg);
   },
 
-  /** Returns the full stored entry for the tab, or null if none recorded. */
   get(tabId: string): SessionRegistryEntry | null {
     const reg = loadFromStorage();
     return reg[tabId] ?? null;
   },
 
-  /** Returns a snapshot of all known entries. */
   snapshot(): Record<string, SessionRegistryEntry> {
     const reg = loadFromStorage();
-    // Defensive shallow copy so callers can't mutate the cache.
     const out: Record<string, SessionRegistryEntry> = {};
     for (const k of Object.keys(reg)) {
       out[k] = { ...reg[k] };
@@ -157,7 +112,6 @@ export const sessionNameRegistry = {
     return out;
   },
 
-  /** Test helper — drops the in-memory cache so the next read re-parses storage. */
   _resetCacheForTests(): void {
     cache = null;
   },

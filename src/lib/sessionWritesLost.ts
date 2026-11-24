@@ -1,10 +1,4 @@
-/**
- * The text for `system/session_writes_lost` (CLI >= 2.1.317): sent once, as
- * the CLI exits, when a full disk or used-up quota lost lines of a session
- * transcript, changes to ~/.claude.json, or both. The CLI writes the same
- * explanation to stderr; this is the stream-json frame of it, reworded for
- * the card the way the CLI words it there.
- */
+/** `system/session_writes_lost` (CLI >= 2.1.317): sent once at exit when a full disk or quota lost transcript or ~/.claude.json writes. */
 export function sessionWritesLostText(raw: unknown): string {
   const r = (raw ?? {}) as { error_code?: unknown; lost?: unknown };
   const lost = Array.isArray(r.lost) ? r.lost : [];

@@ -14,27 +14,18 @@ import { CostReportPrintPage } from "@/components/cost-report/CostReportPrintPag
 import { installRemoteBridge } from "@/lib/remote/bootstrap";
 import { installStallWatchdog } from "@/lib/stallWatchdog";
 
-// Everything below talks to `window.electronAPI`, so the shim over the
-// daemon's WebSocket has to be installed first. It installs before it
-// connects, so a daemon that is down is a reconnecting banner, not a blank
-// window.
+// Everything below talks to `window.electronAPI`: install the shim first.
 void installRemoteBridge()
   .catch((err: unknown) => { console.warn('[remote] bootstrap failed', err); })
   .then(() => { boot(); });
 
 function boot(): void {
-// Initialize structured logging
 logAndForget('main:initialize', logService.initialize());
 
-// Render profiler — off unless explicitly enabled, including in packaged
-// builds. `__omnifexProfile.on()` in the devtools console, then reload.
 installRenderProfilerConsole(window as unknown as Record<string, unknown>);
 
-// Logs a `renderer-stall` warn to app_logs whenever the main thread stops
-// running timers for 2s+. See stallWatchdog.ts for the freeze it exists for.
 installStallWatchdog();
 
-// Check log count and warn if excessive
 api.logCount().then((count) => {
   if (count > 5000) {
     console.warn(
@@ -45,7 +36,6 @@ api.logCount().then((count) => {
   // Ignore — DB may not be ready yet
 });
 
-// Add a macOS-specific class to the <html> element to enable platform-specific styling.
 (() => {
   const isMacLike = typeof navigator !== "undefined" &&
     // eslint-disable-next-line @typescript-eslint/no-deprecated -- navigator.userAgentData is not yet universally available; navigator.platform is the reliable cross-browser fallback.
@@ -56,7 +46,6 @@ api.logCount().then((count) => {
   }
 })();
 
-// Set favicon to the new app icon (avoids needing /public)
 (() => {
   try {
     const existing = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
@@ -72,18 +61,14 @@ api.logCount().then((count) => {
   }
 })();
 
-// The PDF export boots a hidden second window into this same bundle, marked by
-// a `#print=cost-report&…` hash. That window renders the report alone — no
-// titlebar, no tabs, no scroll box — because the app shell is what makes the
-// live document exactly one window tall. See daemon/services/cost-report-pdf.ts.
+// The PDF export's hidden window renders the report without the app shell, which clips the document to one window tall.
 const printFilters = parsePrintHash(window.location.hash);
 
 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- document.getElementById("root") asserted at app entry.
 const root = ReactDOM.createRoot(document.getElementById("root")!);
 
 if (printFilters) {
-  // No StrictMode here: it double-invokes effects, and this window's whole job
-  // is to fire one "I have drawn, here is my size" report to the main process.
+  // No StrictMode: double-invoked effects would send the one size report twice.
   root.render(
     <ErrorBoundary>
       <CostReportPrintPage

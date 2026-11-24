@@ -4,7 +4,6 @@ import type { JsonlNode } from "@/types/jsonl";
 import type { EffortLevel } from "@/components/FloatingPromptInput";
 import { conversationStatus as deriveConversationStatus, type ConversationStatus } from "@/lib/sessionDerivedState";
 
-/** Filter out noisy stderr messages that aren't real errors. */
 function isIgnorableStderr(msg: string): boolean {
   if (!msg) return false;
   return (
@@ -15,7 +14,6 @@ function isIgnorableStderr(msg: string): boolean {
 
 const IDLE_TURN: TurnState = { status: 'idle', since: null };
 
-/** Loose structural type — only `.status` is read by the derivation. */
 interface WithStatus { status: string }
 
 interface UseSessionLifecycleArgs {
@@ -24,11 +22,6 @@ interface UseSessionLifecycleArgs {
   selectedModel: string;
   permissionMode: string;
   effort: EffortLevel;
-  /**
-   * Which engine to launch. Optional for back-compat with older callers
-   * that haven't been threaded yet; main process treats missing values as
-   * `'claude'` (see engine-factory dispatch in `daemon/services/sessions/`).
-   */
   agent?: AgentKind;
   accountResolution: {
     account: { name: string; subscription_label: string; config_dir: string };
@@ -36,92 +29,30 @@ interface UseSessionLifecycleArgs {
     match_detail: string;
   } | null;
   persistentSessionRef: React.RefObject<boolean>;
-  /**
-   * If the component is mounting with a session to resume or a
-   * preconfigured fresh start, pass `true` so the initial sessionStatus
-   * is 'starting' instead of 'stopped'. Prevents a one-frame flash of
-   * the empty-state form before the auto-start effect fires.
-   */
   hasPendingStart?: boolean;
   handleJsonlLine: (payload: string | object) => void;
   setMessages: React.Dispatch<React.SetStateAction<JsonlNode[]>>;
-  /**
-   * Called when the main process emits `session-init:<tabId>` — i.e. the
-   * CLI subprocess has been spawned and a pinned sessionId is known. Fires
-   * before any `agent-output:` message arrives, so the renderer can seed
-   * claudeSessionId / extractedSessionInfo (and unlock UI gated on them)
-   * without waiting for the CLI's eventual `system:init` stream message.
-   */
   onSessionInit: (sessionId: string) => void;
-  /**
-   * Called with the mode the daemon's session is actually in, once a start
-   * or rebind has a live process to ask. The picker follows it: a resume
-   * spawns from the daemon's persisted options, never the picker, and the
-   * transcript does not always record a mode (a slash-command-only session
-   * has none), so the picker's own guess can be wrong.
-   */
+  /** A resume spawns from the daemon's persisted options, not the picker. */
   onLivePermissionMode?: (mode: string) => void;
-  /**
-   * Active task list. Only `.status` is read — pass `TaskListEntry[]` or
-   * any `{ status: string }[]` compatible slice. Used by
-   * `sessionDerivedState.hasOpenTasks` to detect in-flight tasks.
-   */
   tasks: WithStatus[];
-  /**
-   * Active subagent list. Only `.status` is read — pass the array from
-   * `deriveSubagents()` directly. Used by
-   * `sessionDerivedState.hasOpenSubagents` to detect running dispatches.
-   */
   subagents: WithStatus[];
 }
 
 interface UseSessionLifecycleReturn {
   unlistenRefs: React.RefObject<(() => void)[]>;
   isMountedRef: React.RefObject<boolean>;
-  /** `options.permissionMode` overrides the picker's mode for this launch —
-   *  "Restart in Bypass" starts before that state has re-rendered here. */
+  /** `options.permissionMode` overrides the picker: "Restart in Bypass" starts before it re-renders. */
   startPersistentSession: (resumeId?: string, options?: { permissionMode?: string }) => Promise<void>;
-  /**
-   * The `--permission-mode` the live session's CLI was spawned with, or null
-   * before one is known. Distinct from the mode it is in now: the CLI allows
-   * Bypass mid-session only when it was launched in Bypass. Set on start, and
-   * re-learned from `sessionGetHealth` on rebind.
-   */
+  /** The CLI allows Bypass mid-session only when launched in Bypass. */
   launchPermissionMode: string | null;
-  /**
-   * Re-attach to an in-flight session in the main process (no CLI restart).
-   * Returns true if a live session existed and was reclaimed, false otherwise.
-   * Used after a renderer reload (Cmd+R) so prompts keep flowing.
-   */
   rebindPersistentSession: () => Promise<boolean>;
-  /**
-   * Connection axis. Single source of truth, driven by the main process
-   * via `session-status:<tabId>` events plus optimistic updates from
-   * `startPersistentSession` (set to 'starting' before IPC). Defaults to
-   * 'stopped' before any activity. See `docs/session-lifecycle.md`.
-   */
   sessionStatus: SessionStatus;
-  /**
-   * The session's turn axis, mirrored from main via `session-turn:<tabId>`
-   * (and seeded from `sessionGetHealth` on rebind). Never inferred from the
-   * transcript: a resumed session is idle until the user sends.
-   */
+  /** Mirrored from main, never inferred from the transcript: a resumed session is idle until the user sends. */
   turn: TurnState;
-  /**
-   * Conversation rollup. Null whenever `sessionStatus !== 'started'`.
-   * `'running'` when the turn is running or a task / subagent is still open
-   * (those two are transcript content and stay derived).
-   */
+  /** Null unless `sessionStatus === 'started'`. */
   conversationStatus: ConversationStatus | null;
-  /**
-   * Synchronous setter for callers that need to reset the connection axis
-   * independent of a main-process event — e.g. the stop / clear /
-   * reconnect handlers that tear down the event listeners themselves
-   * and therefore won't receive main's eventual `'stopped'` event.
-   * The `conversationStatus` field in the argument is accepted for
-   * back-compat but ignored — the turn axis is now derived, not stored.
-   * Prefer reacting to events over calling this directly.
-   */
+  /** For teardowns that dispose their listeners and so miss main's 'stopped'. `conversationStatus` is ignored. */
   resetStatus: (next: { sessionStatus: SessionStatus; conversationStatus: ConversationStatus | null }) => void;
 }
 
@@ -150,19 +81,11 @@ export function useSessionLifecycle({
   const [turn, setTurn] = useState<TurnState>(IDLE_TURN);
   const [launchPermissionMode, setLaunchPermissionMode] = useState<string | null>(null);
 
-  // `conversationStatus` is now derived, not stored. The `conversationStatus`
-  // field on `session-status:<tabId>` IPC events was removed from the IPC
-  // contract in Task 3 (jsonl-as-rendered refactor).
   const resetStatus = (next: { sessionStatus: SessionStatus; conversationStatus: ConversationStatus | null }) => {
-    // `next.conversationStatus` is accepted for back-compat but ignored.
-    // A reset is a teardown: whatever turn was running belongs to the
-    // process that just went away.
     setSessionStatus(next.sessionStatus);
     setTurn(IDLE_TURN);
   };
 
-  // Attach the tab-scoped event listeners. Idempotent: tears down any prior
-  // listeners first. Used both for fresh-start and for rebind-after-reload.
   const attachStreamListeners = () => {
     unlistenRefs.current.forEach((u) => { u(); });
     unlistenRefs.current = [];
@@ -172,12 +95,7 @@ export function useSessionLifecycle({
       (...args: unknown[]) => { handleJsonlLine(args[0] as string | object); },
     );
 
-    // Closure carriers (queue-operation enqueue with <task-notification>,
-    // attachment queued_command with the same) that the CLI stream-json
-    // output may not surface. The main-process JSONL tail surfaces them on
-    // this separate channel so the renderer can apply them to the same
-    // message array — `deriveSubagents` then folds them through
-    // `applyEvents` identically to JSONL replay.
+    // Closure carriers the stream-json output may not surface, from the JSONL tail.
     const outputExtraUnlisten = window.electronAPI.onEvent(
       `claude-output-extra:${tabId}`,
       (payload: unknown) => { handleJsonlLine(payload as string | object); },
@@ -191,36 +109,18 @@ export function useSessionLifecycle({
       },
     );
 
-    // `agent-complete:<tabId>` is main's authoritative "this session is
-    // done" signal — fires on user stop, session error, AND on tab close
-    // (TabContext.removeTab → api.stopSession → main emits complete). It's
-    // the right place to tear listeners down: no more events are coming on
-    // this tab, so holding the IPC subscriptions just leaks. State setters
-    // are gated on isMountedRef because the React tree may already be gone
-    // by the time complete arrives (tab close races React unmount); the
-    // listener teardown runs unconditionally because ipcRenderer.removeListener
-    // is safe regardless of React state.
     const completeUnlisten = window.electronAPI.onEvent(
       `agent-complete:${tabId}`,
       () => {
         if (isMountedRef.current) {
           setTurn(IDLE_TURN);
           persistentSessionRef.current = false;
-          // Status flip is owned by main process — it emits a final
-          // `session-status:<tabId>` with 'stopped' on clean close. The
-          // listener below catches it (before we dispose it below).
         }
-        // Dispose all listeners for this session. Safe to run even though we
-        // are inside one of them — Node EventEmitter (and ipcRenderer) tolerate
-        // removeListener mid-dispatch. The next startPersistentSession call
-        // re-creates them via attachStreamListeners.
         unlistenRefs.current.forEach((u) => u());
         unlistenRefs.current = [];
       },
     );
 
-    // Single source of truth for the connection-axis badge. Main process emits
-    // `session-status:<tabId>` on every transition. See docs/session-lifecycle.md.
     const statusUnlisten = window.electronAPI.onEvent(
       `session-status:${tabId}`,
       (...args: unknown[]) => {
@@ -230,15 +130,11 @@ export function useSessionLifecycle({
         } | undefined;
         if (!payload?.sessionStatus) return;
         setSessionStatus(payload.sessionStatus);
-        // Main announces the idle turn alongside a stop/error, but the two
-        // ride separate channels; a dead process is idle regardless.
+        // The idle turn rides a separate channel; a dead process is idle regardless.
         if (payload.sessionStatus === 'stopped' || payload.sessionStatus === 'error') setTurn(IDLE_TURN);
       },
     );
 
-    // The turn axis, announced by the session itself: opened when a prompt
-    // is handed to the CLI, closed by its result row or the process going
-    // away. Mirrored, never derived.
     const turnUnlisten = window.electronAPI.onEvent(
       `session-turn:${tabId}`,
       (...args: unknown[]) => {
@@ -249,11 +145,6 @@ export function useSessionLifecycle({
       },
     );
 
-    // `session-init:<tabId>` carries the pinned sessionId the moment the
-    // CLI subprocess is alive — before any stream message arrives. Lets
-    // the component seed claudeSessionId / extractedSessionInfo and unlock
-    // UI gated on them (mode toggle, model picker, persistence) without
-    // waiting for the CLI's mid-first-turn `system:init`.
     const initUnlisten = window.electronAPI.onEvent(
       `session-init:${tabId}`,
       (...args: unknown[]) => {
@@ -286,18 +177,10 @@ export function useSessionLifecycle({
     if (!rebound) return false;
     attachStreamListeners();
     persistentSessionRef.current = true;
-    // Seed both status axes from the live main-process handle. The
-    // renderer just reloaded, so we may have missed recent transitions.
-    // After this, the `session-status:<tabId>` listener catches any
-    // subsequent change. Best-effort — leave status as-is on failure.
     api.sessionGetHealth(tabId).then((health) => {
       if (!isMountedRef.current || !health.alive) return;
       setSessionStatus(health.sessionStatus);
-      // The renderer just reloaded; the turn it missed is still the main
-      // process's to report.
       if (health.turn) setTurn(health.turn);
-      // Re-seed claudeSessionId on rebind — the renderer just reloaded and
-      // may have lost it. The main process still holds the pinned id.
       if (health.sessionId) onSessionInit(health.sessionId);
       adoptLiveModes(health);
     }).catch((err: unknown) => {
@@ -306,26 +189,11 @@ export function useSessionLifecycle({
     return true;
   };
 
-  // Re-read every render so the effect below never calls a rebind closed over
-  // a stale render's props (handleJsonlLine, accountResolution, …).
   const rebindRef = useRef(rebindPersistentSession);
   rebindRef.current = rebindPersistentSession;
 
-  // The daemon went away and took this tab's CLI child with it. The shim
-  // reconciles the badge to 'stopped' and says so here, for sessions it had
-  // live before the drop; bring the session back rather than dropping the
-  // user on the New Session panel above their own transcript.
-  //
-  // This lives in the renderer, not the shim, because resuming a session
-  // without re-attaching the tab's stream listeners would leave an invisible
-  // CLI burning tokens — `rebindPersistentSession` does both.
-  // `persistentSessionRef` is cleared first: no `agent-complete` ever
-  // arrived, so the tab may still believe it holds a live handle, and the
-  // rebind would short-circuit on that stale belief.
-  //
-  // `remote-session-died:` exists only on the shim, never on the preload
-  // bridge (which throws on unknown channels) — hence the mode guard, the
-  // same one RemoteConnectionBanner uses.
+  // Lives here, not in the shim: resuming without re-attaching listeners leaves an invisible CLI burning tokens.
+  // Cleared first: no agent-complete arrived, so rebind would short-circuit on the stale handle.
   useEffect(() => {
     if (!window.__omnifexRemote?.client) return;
     return window.electronAPI.onEvent(`remote-session-died:${tabId}`, () => {
@@ -338,45 +206,28 @@ export function useSessionLifecycle({
     });
   }, [tabId]); // eslint-disable-line react-hooks/exhaustive-deps -- rebind is read through a ref; the rest are stable refs/setters
 
-  /** Seed the launch mode and the picker from the daemon's live handle. */
   const adoptLiveModes = (health: { launchPermissionMode?: string | null; permissionMode?: string | null }) => {
-    // Absent from a daemon older than the field: leave it unknown.
     if (health.launchPermissionMode !== undefined) setLaunchPermissionMode(health.launchPermissionMode);
     if (typeof health.permissionMode === 'string' && health.permissionMode) onLivePermissionMode?.(health.permissionMode);
   };
 
   const startPersistentSession = async (resumeId?: string, options?: { permissionMode?: string }) => {
-    if (persistentSessionRef.current) return; // Already running
-    // Claim the slot synchronously — `api.startSession` awaits IPC and
-    // account resolution, so a second concurrent call that hits the guard
-    // above before this one's promise resolves would otherwise also fire
-    // `startSession`, spawning a duplicate CLI query with a fresh UUID
-    // and leaking the first one. React StrictMode double-mount and rapid
-    // re-renders both trigger this. The error branch below resets the
-    // ref so a failed start doesn't permanently lock out the tab.
+    if (persistentSessionRef.current) return;
+    // Claim the slot synchronously: a concurrent call (StrictMode, re-render) would spawn a duplicate CLI.
     persistentSessionRef.current = true;
 
-    // Show 'Starting…' badge immediately. Main process emits its own
-    // `session-status: starting` event once `start()` runs, but that may
-    // fire before the listener below has attached — set it eagerly so the
-    // UI reflects the user's action regardless. Subsequent main-process
-    // events overwrite this. A start — fresh or `--resume` — is a new
-    // process, and a new process is not working on anything.
+    // Optimistic: main's own 'starting' can fire before the listeners attach.
     setSessionStatus('starting');
     setTurn(IDLE_TURN);
     attachStreamListeners();
 
-    // Resolve account fresh at session start (the cached state may not be ready yet)
     const mode = options?.permissionMode ?? permissionMode;
     setLaunchPermissionMode(mode);
     let configDir = accountResolution?.account.config_dir;
     if (!configDir && projectPath) {
       try {
         const pair = await api.resolveAccountForProject(projectPath);
-        // Prefer the slot for this session's engine; fall back to the other
-        // engine's slot so a session still resolves a configDir when only one
-        // side routes here. No default-account fallback — an all-null pair
-        // leaves configDir undefined and main raises NoAccountError.
+        // Fall back to the other engine's slot; never a default account — main raises NoAccountError.
         const account =
           (agent ? pair[agent]?.account : undefined)
           ?? pair.claude?.account
@@ -388,15 +239,9 @@ export function useSessionLifecycle({
         console.error("[startPersistentSession] resolve error:", e);
       }
     }
-    // 'auto' goes through as-is: the engine omits `--effort` for anything that
-    // is not a CLI level, so the model's own default applies.
+    // 'auto' passes through: the engine omits `--effort` for non-CLI levels.
     const sdkEffort = effort;
-    // Signal "user explicitly picked this account on the form" so main
-    // doesn't re-resolve and overwrite their choice. `manual_override`
-    // is set by AccountPickerDialog → setProjectAccountResolution in
-    // TabContent (and the equivalent in ClaudeCodeSession's in-session
-    // account swap). Everything else (path_rule / override-from-DB) is
-    // safe for main to re-resolve fresh.
+    // Tells main not to re-resolve the user's explicit account choice.
     const manualAccountOverride =
       accountResolution?.match_type === 'manual_override';
     try {
@@ -411,27 +256,14 @@ export function useSessionLifecycle({
         manualAccountOverride,
         agent,
       );
-      // A resume spawns under the daemon's persisted mode, not `mode`; read
-      // back what the process actually runs in. Best-effort.
       api.sessionGetHealth(tabId).then((health) => {
         if (isMountedRef.current && health.alive) adoptLiveModes(health);
       }).catch((err: unknown) => {
         console.warn('[startPersistentSession] sessionGetHealth failed:', err);
       });
-      // No state flips here. Main process owns lifecycle status and emits
-      // `session-status:<tabId>` events; ClaudeCodeSession subscribes.
-      // sessionId arrives via `session-init:<tabId>` the moment the
-      // subprocess spawns, so claudeSessionId is seeded immediately.
     } catch (err) {
-      // Surface session-start failures to the user. The most common cause
-      // is "no account resolved for this project path" (configDir is
-      // null-checked in the main process, throws synchronously); without
-      // this branch, the renderer's `.catch(console.error)` would swallow
-      // the message and leave the user staring at a stuck "Starting…"
-      // badge with no clue what went wrong.
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[startPersistentSession] api.startSession failed:", err);
-      // Release the slot we claimed above so the user can retry.
       persistentSessionRef.current = false;
       setSessionStatus('error');
       setTurn(IDLE_TURN);
@@ -452,36 +284,12 @@ export function useSessionLifecycle({
           receivedAt: new Date().toISOString(),
         } satisfies JsonlNode,
       ]);
-      throw err; // Bubble so the caller's .catch logger still fires.
+      throw err;
     }
-    // persistentSessionRef was claimed synchronously above. The main
-    // process emits `session-status: started/idle` and `session-init`
-    // (with the pinned sessionId) the moment the CLI subprocess is alive,
-    // so the badge and claudeSessionId both update without any renderer-
-    // side polling. Account / models / commands flow through the reducer
-    // when the CLI emits its real `system:init` mid-first-turn.
   };
 
-  // Mount/unmount lifecycle.
-  //
-  // React StrictMode mounts → unmounts → re-mounts components on first
-  // render. Our auto-start effect handles the first mount (fresh-start
-  // attaches listeners), then the StrictMode unmount tears every listener
-  // off, then the second mount sees persistentSessionRef=true and skips
-  // startPersistentSession — leaving the tab with zero IPC listeners for
-  // the rest of its life. Main keeps emitting claude-output / session-status
-  // / session-init into the void.
-  //
-  // Two-part fix:
-  //   1. On EVERY mount, if a session is already live (persistentRef=true)
-  //      but listeners are empty, re-attach. Idempotent — attachStreamListeners
-  //      tears down any existing listeners first.
-  //   2. Keep listeners alive across unmount. The unmount runs synchronously
-  //      before re-mount in StrictMode and before any IPC event from main
-  //      reaches the renderer, so tearing them off here loses real events.
-  //      Listeners are owned by the main-process session, not the React tree;
-  //      cleanup belongs in tab-close (TabContext.removeTab); quitting the
-  //      app leaves the session running in the daemon.
+  // Re-attach on every mount and never detach on unmount: StrictMode's unmount would strand
+  // a live session with no listeners. Teardown belongs to tab close.
   useEffect(() => {
     isMountedRef.current = true;
     if (persistentSessionRef.current && unlistenRefs.current.length === 0) {
@@ -492,9 +300,6 @@ export function useSessionLifecycle({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only effect; tabId is stable per hook instance
 
-  // The rollup: the session's own turn axis plus the transcript-derived
-  // task / subagent rows. Null whenever sessionStatus !== 'started' — a
-  // conversation is meaningless without a connection.
   const derivedConversationStatus: ConversationStatus | null = useMemo(
     () => sessionStatus === 'started'
       ? deriveConversationStatus(turn.status === 'running', tasks, subagents)

@@ -21,17 +21,7 @@ import type {
 import { anchorToolUseId } from './toolProgress';
 import { isLocalCommandEnvelope, isModelCommandEcho } from './commandEnvelope';
 
-/**
- * Single source of truth for classifying a parsed JSONL line into the
- * renderer's taxonomy. Returns null only for malformed input (non-object,
- * missing `type`) and for known kinds missing their required fields;
- * unrecognized types always classify as 'unknown' so the renderer's
- * catch-all card can show them — the caller appends only non-null results.
- *
- * Pure function; safe to call repeatedly on the same input. Tolerant of
- * missing optional fields (real JSONL lines often omit `timestamp` on
- * bookkeeping types).
- */
+/** Null only for malformed input or a known kind missing required fields; unrecognized types classify as 'unknown', never dropped. */
 export function classifyJsonlLine(raw: unknown): JsonlNode | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
@@ -44,13 +34,7 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
       : typeof r.session_id === 'string'
         ? r.session_id
         : '';
-  // Two valid wall-clock sources, depending on the ingress path:
-  //   - `timestamp`  → JSONL on disk (the CLI stamps it at persist time)
-  //   - `receivedAt` → live IPC stream (main process stamps it at IPC arrival;
-  //                    see OmnifexEnvelope in src/types/claudeStream.ts)
-  // Both are legitimate. Returning null only when BOTH are absent preserves
-  // Task 4's intent (no synthetic wall-clock fallback that masks data bugs)
-  // while accepting live envelopes that lack `timestamp` by design.
+  // `timestamp` on disk, `receivedAt` on the live stream; null only when both are absent (no synthetic fallback).
   const receivedAt =
     typeof r.timestamp === 'string' ? r.timestamp
     : typeof r.receivedAt === 'string' ? r.receivedAt
@@ -87,10 +71,7 @@ export function classifyJsonlLine(raw: unknown): JsonlNode | null {
     case 'tool_progress':
       return classifyToolProgress(r);
     default:
-      // Catch-all: never drop. Some real record types ('summary', 'mode')
-      // persist with no top-level timestamp, so unlike the content kinds
-      // above, 'unknown' tolerates a null wall-clock — the history loader
-      // preserves file order, which is ordering enough for a marker card.
+      // Never drop. Some record types ('summary', 'mode') carry no timestamp, so 'unknown' tolerates null.
       return {
         kind: 'unknown',
         raw: r,
@@ -125,50 +106,14 @@ function isAttachmentMarker(content: unknown): boolean {
   return first.text.startsWith('[Image: ');
 }
 
-/**
- * A /compact summary reaches us as a `user` record, marked `isCompactSummary`
- * (plus `isVisibleInTranscriptOnly` for a plain compaction, absent for a
- * directed summarize).
- *
- * This used to fall back to `isReplay === false`, because stream-json stripped
- * `isCompactSummary` and the CLI emits `isReplay: !isCompactSummary` while
- * every other emitter hard-codes `true`. That proxy died with the transcript
- * inversion: committed rows now come from the CLI's JSONL, which marks
- * summaries outright (see services/sessions/stream-forward.ts). A census of
- * all 890 personal transcripts found 21 rows carrying `isCompactSummary` and
- * zero carrying `isReplay: false`, across six CLI versions — the field has
- * never appeared on disk, so the fallback could only ever have fired on a
- * shape we no longer render from.
- *
- * `isSynthetic` is deliberately NOT consulted: the CLI defines it as
- * `isMeta || isVisibleInTranscriptOnly`, so it fires for skill bodies and
- * image markers too, and it misses a directed summarize entirely.
- */
+/** Never consult `isSynthetic`: it fires for skill bodies and image markers, and misses a directed summarize. */
 export function isCompactSummaryRecord(r: Record<string, unknown>): boolean {
   return r.isCompactSummary === true;
 }
 
 /**
- * The marker the CLI writes into the transcript when the user presses Stop:
- *
- *   [Request interrupted by user]
- *   [Request interrupted by user for tool use]
- *
- * Both are plain `user` records carrying neither isMeta nor any other flag, so
- * without this they classify as `prompt` — a prompt nothing will ever answer,
- * which pins the turn axis open forever (work session aacbd708).
- *
- * The prefix is the CLI's own predicate for the same record (2.1.273 counts
- * interruptions with `text.includes("[Request interrupted by user")`), and
- * those two strings are the only ones in the 2.1.273 binary.
- *
- * Anchored end-to-end on purpose: the CLI can prepend the marker to the prompt
- * the user typed next ("[Request interrupted by user]\nUse Sonnet instead."),
- * and that record IS a prompt — Claude owes it a reply.
- *
- * `content` is accepted in both shapes the CLI persists (bare string, array of
- * blocks) for the same reason as isLocalCommandEnvelope: the live stream and a
- * re-read transcript normalize differently.
+ * Without this a Stop marker classifies as a prompt nothing answers, pinning the turn open.
+ * Anchored end-to-end: the CLI may prepend the marker to the next typed prompt, which IS a prompt.
  */
 const INTERRUPT_NOTICE = /^\[Request interrupted by user[^\]]*\]$/;
 
@@ -177,7 +122,6 @@ export function isInterruptNotice(content: unknown): boolean {
   if (typeof content === 'string') {
     text = content;
   } else if (Array.isArray(content)) {
-    // A non-text block means this is not a bare marker.
     if (!content.every((b) => b && typeof b === 'object' && (b as { type?: string }).type === 'text')) {
       return false;
     }
@@ -210,11 +154,7 @@ function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt:
   } else if (isInterruptNotice(content)) {
     userKind = 'interrupt';
   } else if (isLocalCommandEnvelope(content) && !isModelCommandEcho(content, r.turnOrigin)) {
-    // A built-in slash command leaves two `user` records behind — the echo of
-    // what was typed and the command's stdout. Neither carries isMeta, so
-    // without this branch both classified as 'prompt': a question nothing would
-    // ever answer. A skill or custom command's echo IS a prompt — the model
-    // answers the skill body it expands to — so it stays one.
+    // A built-in's echo and stdout carry no isMeta; as 'prompt' they would await a reply that never comes.
     userKind = 'local-command';
   } else {
     userKind = 'prompt';
@@ -270,8 +210,6 @@ const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
   'model_fallback',
   'model_refusal_fallback',
   'model_refusal_no_fallback',
-  // CLI >= 2.1.317: a full disk or quota lost transcript / ~/.claude.json
-  // writes. Stream-only, once, as the CLI exits.
   'session_writes_lost',
   'model_consent_fallback',
   'error_during_execution',
@@ -290,8 +228,6 @@ const SYSTEM_SUBTYPES: ReadonlySet<SystemSubtype> = new Set<SystemSubtype>([
   'ui_panes',
   'ui_placed',
   'ui_scroll',
-  // CLI 2.1.321: a mod's $.ui.notify / cancelNotify, sent because OmniFex
-  // spawns as a notifications host. The daemon raises the OS banner.
   'ui_notify',
   'ui_notify_cancel',
   'commands_changed',
@@ -345,8 +281,6 @@ function classifyFileSnapshot(r: Record<string, unknown>): JsonlNode | null {
 function classifySystem(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode | null {
   const subtype = r.subtype;
   if (typeof subtype !== 'string' || !SYSTEM_SUBTYPES.has(subtype as SystemSubtype)) {
-    // Unrecognized system subtype → catch-all, timestamp or not (same
-    // rationale as the top-level default branch).
     return { kind: 'unknown', raw: r, sessionId, receivedAt };
   }
   if (receivedAt === null) return null;
@@ -369,29 +303,13 @@ function classifyCliResult(r: Record<string, unknown>, sessionId: string, receiv
   return { kind: 'cli-stream-result', raw: r as unknown as CliResultRaw, sessionId, receivedAt };
 }
 
-// rate_limit_event lines carry no `subtype`/narrative field to validate
-// against (unlike classifyAttachment/classifyQueueOp above), and real
-// samples have been observed without a top-level `timestamp` — so this
-// never returns null and never requires receivedAt. The alternative (any
-// stricter check) would silently drop the line back to the 'unknown'
-// catch-all, defeating the point of first-classing it.
+// Never null and no receivedAt required: real samples lack `timestamp`, and a stricter check drops it to 'unknown'.
 function classifyRateLimitEvent(r: Record<string, unknown>, sessionId: string, receivedAt: string | null): JsonlNode {
   return { kind: 'rate-limit-event', raw: r as unknown as RateLimitEventRaw, sessionId, receivedAt };
 }
 
 
-/**
- * Live progress for an in-flight tool call. An OVERLAY node: it never enters
- * `messages[]`, because the CLI never writes this frame to the JSONL on disk.
- *
- * The guard mirrors the CLI's own `sdkMessageAdapter`, which drops a frame
- * "with a non-string tool_name/tool_use_id or non-finite
- * elapsed_time_seconds" — same three fields, same verdict, so a malformed
- * frame can never reach a chip that does arithmetic on it.
- *
- * No `receivedAt` requirement, unlike every content kind above: the frame
- * carries no `timestamp` by design, and arrival is stamped by the reducer.
- */
+/** Overlay node: the CLI never writes this frame to disk. The guard mirrors the CLI's own `sdkMessageAdapter`. */
 function classifyToolProgress(r: Record<string, unknown>): JsonlNode | null {
   const toolUseId = r.tool_use_id;
   const toolName = r.tool_name;

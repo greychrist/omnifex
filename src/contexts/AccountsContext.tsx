@@ -20,7 +20,7 @@ export const AccountsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const list = await api.listAccounts();
       setAccounts(list);
     } catch {
-      // silent — accounts may not be available yet
+      // Accounts may not be available yet.
     }
   }, []);
 
@@ -58,13 +58,6 @@ export function useAccounts() {
   return ctx;
 }
 
-/**
- * The accounts context when there is one, null when there is not.
- *
- * For features that are enrichment rather than function — a component that
- * merely wants to know which account it is under should degrade, not crash,
- * when rendered outside the provider.
- */
 export function useOptionalAccounts(): AccountsContextType | null {
   return useContext(AccountsContext) ?? null;
 }

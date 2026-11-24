@@ -5,17 +5,9 @@ interface NotificationPayload {
   title: string;
   body: string;
   is_error: boolean;
-  /** 'mod' for a mod's `$.ui.notify`, which is no result waiting in the tab. */
   origin?: string;
 }
 
-/**
- * Listens for claude-notification events and:
- * 1. Marks non-active tabs with hasUnreadResult for badge display
- * 2. Brings app to front when notification arrives for non-active tab
- *
- * Native OS notifications are sent from the main process directly.
- */
 export function useNotifications(
   activeTabId: string | null,
   setActiveTab: (id: string) => void,
@@ -31,12 +23,10 @@ export function useNotifications(
   });
 
   useEffect(() => {
-    // Listen for notification events from backend to update tab badges
     const unlistenNotification = window.electronAPI.onEvent(
       "claude-notification",
       (payload: unknown) => {
         const { tab_id, origin } = payload as NotificationPayload;
-        // Mark non-active tabs with unread badge
         if (origin !== 'mod' && tab_id !== activeTabIdRef.current) {
           updateTabRef.current(tab_id, { hasUnreadResult: true });
         }

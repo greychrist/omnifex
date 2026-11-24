@@ -1,19 +1,13 @@
 @import "tailwindcss";
 
-/* Tauri Transparent Window with Rounded Corners - Official Approach */
 html, body {
   height: 100%;
   width: 100%;
   margin: 0;
   padding: 0;
-  /* Transparent background for window transparency */
   background-color: rgba(0, 0, 0, 0);
 }
 
-/* Drag region helpers — set on the titlebar and its children so the OS
-   knows which areas of the chrome are draggable. The Electron behavior
-   comes from the -webkit-app-region declaration; class names are
-   convention only. */
 .app-drag {
   -webkit-app-region: drag;
 }
@@ -22,7 +16,6 @@ html, body {
   -webkit-app-region: no-drag;
 }
 
-/* Apply rounded corners and background to body */
 body {
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -32,20 +25,16 @@ body {
 #root {
   height: 100%;
   width: 100%;
-  /* Ensure root also clips fixed-position descendants */
   border-radius: inherit;
   overflow: hidden;
 }
 
-/* Ensure the viewport itself clips fixed-position elements */
 html {
   border-radius: var(--radius-lg);
   overflow: hidden;
-  /* Robust clipping for fixed descendants and backdrop filters */
   clip-path: inset(0 round var(--radius-lg));
 }
 
-/* Inter Font - Local */
 @font-face {
   font-family: 'Inter';
   font-style: normal;
@@ -54,7 +43,6 @@ html {
   src: url('/src/assets/fonts/inter/Inter.ttf') format('truetype-variations');
 }
 
-/* Geist */
 @font-face {
   font-family: 'Geist';
   font-style: normal;
@@ -63,7 +51,6 @@ html {
   src: url('/src/assets/fonts/geist/geist.woff2') format('woff2-variations');
 }
 
-/* Geist Mono */
 @font-face {
   font-family: 'Geist Mono';
   font-style: normal;
@@ -72,9 +59,6 @@ html {
   src: url('/src/assets/fonts/geist-mono/geist-mono.woff2') format('woff2-variations');
 }
 
-/* The Modern chat format is set in Geist, as shadcn's AI examples are,
-   unless Settings › Chats › Modern picks the Typography content face
-   (`--modern-font`). Code keeps a monospace face: Geist Mono. */
 .modern-format {
   font-family: var(--modern-font, 'Geist', var(--app-font-stack, ui-sans-serif, system-ui, sans-serif));
 }
@@ -83,10 +67,7 @@ html {
 .modern-format kbd {
   font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-/* An answer in Modern is set as the shadcn example's is: 14px on a 20px
-   line, edge to edge. The .prose rules below are unlayered and read the Chats
-   → Typography variables, so Tailwind utilities cannot override them; these
-   rules can, and do so only inside Modern. */
+/* Unlayered .prose rules beat Tailwind utilities; only these override them, inside Modern. */
 .modern-format .modern-answer.prose {
   font-family: inherit;
   font-size: var(--modern-answer-size, 0.875rem);
@@ -101,24 +82,7 @@ html {
 .modern-format .modern-answer > :last-child {
   margin-bottom: 0;
 }
-/* Modern's two cards — your prompt and the answer that ends a turn — are
-   made one way, each in its own color: the theme's muted color lifted, a
-   chroma in the card's hue, and a hairline border in the same hue. The
-   shadow, tinted the card's color, is `.modern-card-shadow`, set per card
-   by Settings › Chats › Modern › Drop shadow.
-
-   Set from the muted color, not mixed into it: a `color-mix` lifted
-   lightness and diluted chroma alike, so a chosen color barely showed and
-   every hue read as the same grey. The lifts, chromas and the prompt's 245
-   hue reproduce the old 18% blue mix, which drifted toward the theme's own
-   240 (dark: 0.24 L, 0.039 C over 0.16 muted).
-
-   `--modern-*-hue` is the chosen color read as a hue (modernCssVars),
-   `--modern-*-saturation` scales the chroma and `--modern-*-brightness` the
-   lift (down on the light theme, so there it darkens); unset, the prompt is blue and
-   the answer the chip's emerald (emerald-700, as ContextTimelineTick draws
-   the context rail). Rules, not utilities, for the `* { border-color }`
-   reset's sake. */
+/* Rules, not utilities: the `* { border-color }` reset beats border-color utilities. */
 .modern-format :is(.modern-prompt, .modern-final-card) {
   --modern-card-lift: 0.08;
   --modern-card-edge: 0.19;
@@ -141,17 +105,11 @@ html {
   --modern-card-brightness: var(--modern-final-brightness, 1);
   --modern-card-glow: var(--modern-final-tint, oklch(50.8% 0.118 165.612));
 }
-/* Settings › Chats › Modern › … color › Enabled, off: no fill and a
-   transparent border (kept, so the card does not shift by a pixel). */
 .modern-format :is(.modern-prompt, .modern-final-card).modern-card-plain {
   background-color: transparent;
   border-color: transparent;
 }
-/* Settings › Chats › Modern › Answer style › Line: no card, a bar down the
-   answer's left edge in the answer color (unset: the Answer chip's own
-   bg-emerald-700, which is also the card's default hue and glow). A rule,
-   since the `* { border-color }` reset beats the utilities. Enabled off
-   leaves the bar in the theme's border color. */
+/* A rule: the `* { border-color }` reset beats the utilities. */
 .modern-format .modern-final-line {
   border-left: 2px solid var(--modern-final-tint, oklch(50.8% 0.118 165.612));
 }
@@ -164,8 +122,6 @@ html {
 .modern-format .modern-prompt-line.modern-card-plain {
   border-right-color: var(--color-border);
 }
-/* The User prompt chip over a line-style prompt: the answer chip's shape, in
-   the prompt color. */
 .modern-format .modern-prompt-chip {
   background-color: var(--modern-prompt-tint, oklch(0.45 0.15 255));
 }
@@ -175,14 +131,11 @@ html {
 .modern-format .modern-card-shadow {
   box-shadow: 0 1px 2px oklch(0 0 0 / 0.12), 0 2px 8px color-mix(in oklch, var(--modern-card-glow) 12%, transparent);
 }
-/* A failed step's icon chip: red border to match its red icon and line.
-   A rule, not a utility, because the `* { border-color }` reset above beats
-   every Tailwind border-color utility. */
+/* A rule: the `* { border-color }` reset beats the utilities. */
 [data-status="error"] .modern-step-icon {
   border-color: color-mix(in oklch, var(--color-destructive) 50%, transparent);
 }
 
-/* Plus Jakarta Sans */
 @font-face {
   font-family: 'Plus Jakarta Sans';
   font-style: normal;
@@ -191,7 +144,6 @@ html {
   src: url('/src/assets/fonts/plus-jakarta/plus-jakarta.ttf') format('truetype-variations');
 }
 
-/* DM Sans */
 @font-face {
   font-family: 'DM Sans';
   font-style: normal;
@@ -200,7 +152,6 @@ html {
   src: url('/src/assets/fonts/dm-sans/dm-sans.ttf') format('truetype-variations');
 }
 
-/* IBM Plex Sans */
 @font-face {
   font-family: 'IBM Plex Sans';
   font-style: normal;
@@ -209,7 +160,6 @@ html {
   src: url('/src/assets/fonts/plex-sans/plex-sans.woff2') format('woff2-variations');
 }
 
-/* IBM Plex Serif */
 @font-face {
   font-family: 'IBM Plex Serif';
   font-style: normal;
@@ -218,7 +168,6 @@ html {
   src: url('/src/assets/fonts/plex-serif/plex-serif.woff2') format('woff2');
 }
 
-/* IBM Plex Mono */
 @font-face {
   font-family: 'IBM Plex Mono';
   font-style: normal;
@@ -227,7 +176,6 @@ html {
   src: url('/src/assets/fonts/plex-mono/plex-mono.woff2') format('woff2');
 }
 
-/* Oxanium */
 @font-face {
   font-family: 'Oxanium';
   font-style: normal;
@@ -236,7 +184,6 @@ html {
   src: url('/src/assets/fonts/oxanium/oxanium.ttf') format('truetype-variations');
 }
 
-/* Source Serif 4 */
 @font-face {
   font-family: 'Source Serif 4';
   font-style: normal;
@@ -245,7 +192,6 @@ html {
   src: url('/src/assets/fonts/source-serif/source-serif.woff2') format('woff2-variations');
 }
 
-/* JetBrains Mono */
 @font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
@@ -254,7 +200,6 @@ html {
   src: url('/src/assets/fonts/jetbrains-mono/jetbrains-mono.woff2') format('woff2-variations');
 }
 
-/* iA Writer Quattro */
 @font-face {
   font-family: 'iA Writer Quattro';
   font-style: normal;
@@ -263,7 +208,6 @@ html {
   src: url('/src/assets/fonts/ia-quattro/ia-quattro.ttf') format('truetype-variations');
 }
 
-/* iA Writer Duospace */
 @font-face {
   font-family: 'iA Writer Duospace';
   font-style: normal;
@@ -272,7 +216,6 @@ html {
   src: url('/src/assets/fonts/ia-duospace/ia-duospace.ttf') format('truetype-variations');
 }
 
-/* Custom scrollbar hiding */
 .scrollbar-hide {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -282,7 +225,6 @@ html {
   display: none;
 }
 
-/* Thin scrollbar for textarea */
 .scrollbar-thin {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
@@ -306,9 +248,7 @@ html {
   background-color: var(--color-muted-foreground);
 }
 
-/* Dark theme configuration */
 @theme {
-  /* Colors */
   --color-background: oklch(0.10 0.01 240);
   --color-foreground: oklch(0.95 0.01 240);
   --color-card: oklch(0.14 0.01 240);
@@ -323,8 +263,6 @@ html {
   --color-muted-foreground: oklch(0.65 0.01 240);
   --color-accent: oklch(0.18 0.01 240);
   --color-accent-foreground: oklch(0.95 0.01 240);
-  /* Git change counts (changed / untracked) on the branch chips: Tailwind's
-     emerald-400 / amber-300, darkened to 700 under .theme-light. */
   --color-git-changed: oklch(0.765 0.177 163.223);
   --color-git-untracked: oklch(0.879 0.169 91.605);
   --color-destructive: oklch(0.6 0.2 25);
@@ -333,22 +271,18 @@ html {
   --color-input: oklch(0.20 0.01 240);
   --color-ring: oklch(0.50 0.015 240);
   
-  /* Additional colors for status messages */
   --color-green-500: oklch(0.72 0.20 142);
   --color-green-600: oklch(0.64 0.22 142);
 
-  /* Border radius */
   --radius-sm: 0.25rem;
   --radius-base: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
 
-  /* Fonts */
   --font-sans: var(--app-font-stack, "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif);
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
   
-  /* Font Weights */
   --font-weight-thin: 100;
   --font-weight-extralight: 200;
   --font-weight-light: 300;
@@ -359,18 +293,16 @@ html {
   --font-weight-extrabold: 800;
   --font-weight-black: 900;
   
-  /* Font Sizes */
-  --text-xs: 0.75rem;      /* 12px */
-  --text-sm: 0.875rem;     /* 14px */
-  --text-base: 1rem;       /* 16px */
-  --text-lg: 1.125rem;     /* 18px */
-  --text-xl: 1.25rem;      /* 20px */
-  --text-2xl: 1.5rem;      /* 24px */
-  --text-3xl: 1.875rem;    /* 30px */
-  --text-4xl: 2.25rem;     /* 36px */
-  --text-5xl: 3rem;        /* 48px */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
   
-  /* Line Heights */
   --leading-none: 1;
   --leading-tight: 1.25;
   --leading-snug: 1.375;
@@ -378,7 +310,6 @@ html {
   --leading-relaxed: 1.625;
   --leading-loose: 1.75;
   
-  /* Letter Spacing */
   --tracking-tighter: -0.05em;
   --tracking-tight: -0.025em;
   --tracking-normal: 0;
@@ -386,15 +317,10 @@ html {
   --tracking-wider: 0.05em;
   --tracking-widest: 0.1em;
 
-  /* Transitions */
   --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
 }
 
-/* Theme Variations */
-/* Default is dark theme - already defined above */
-
-/* Light Theme */
 .theme-light {
   --color-background: oklch(0.98 0.01 240);
   --color-foreground: oklch(0.12 0.01 240);
@@ -418,12 +344,10 @@ html {
   --color-input: oklch(0.90 0.01 240);
   --color-ring: oklch(0.52 0.015 240);
   
-  /* Additional colors for status messages */
   --color-green-500: oklch(0.62 0.20 142);
   --color-green-600: oklch(0.54 0.22 142);
 }
 
-/* Gray Theme */
 .theme-gray {
   --color-background: oklch(0.18 0.01 240);
   --color-foreground: oklch(0.95 0.01 240);
@@ -445,12 +369,10 @@ html {
   --color-input: oklch(0.32 0.01 240);
   --color-ring: oklch(0.55 0.015 240);
   
-  /* Additional colors for status messages */
   --color-green-500: oklch(0.72 0.20 142);
   --color-green-600: oklch(0.64 0.22 142);
 }
 
-/* Reset and base styles */
 * {
   border-color: var(--color-border);
 }
@@ -465,14 +387,12 @@ body {
   font-family: var(--font-sans);
 }
 
-/* Placeholder text styling */
 input::placeholder,
 textarea::placeholder {
   color: var(--color-muted-foreground);
   opacity: 0.6;
 }
 
-/* Cursor pointer for all interactive elements */
 button,
 a,
 [role="button"],
@@ -484,14 +404,12 @@ a,
   cursor: pointer;
 }
 
-/* Ensure disabled elements don't have pointer cursor */
 button:disabled,
 [disabled],
 .disabled {
   cursor: not-allowed !important;
 }
 
-/* Remove all focus styles globally */
 * {
   outline: none !important;
   outline-offset: 0 !important;
@@ -504,7 +422,6 @@ button:disabled,
   box-shadow: none !important;
 }
 
-/* Specifically remove focus styles from form elements */
 input:focus,
 input:focus-visible,
 textarea:focus,
@@ -522,7 +439,6 @@ button:focus-visible,
   border-color: var(--color-input) !important;
 }
 
-/* Remove ring styles */
 .ring-0,
 .ring-1,
 .ring-2,
@@ -534,13 +450,10 @@ button:focus-visible,
   box-shadow: none !important;
 }
 
-/* macOS-only: subtle window outline for transparent, custom-decorated window */
 html.is-macos body {
-  /* Maintain rounded-corner shape and add a gentle 1px inner outline */
   box-shadow: inset 0 0 0 1px var(--color-border);
 }
 
-/* Typography Utility Classes */
 .text-display-1 {
   font-size: var(--text-5xl);
   font-weight: var(--font-weight-bold);
@@ -626,7 +539,6 @@ html.is-macos body {
   text-transform: uppercase;
 }
 
-/* Custom utilities */
 @utility animate-in {
   animation-name: enter;
   animation-duration: 150ms;
@@ -660,7 +572,6 @@ html.is-macos body {
   }
 }
 
-/* Markdown Editor Theme-aware Styles */
 [data-color-mode="dark"],
 .theme-gray [data-color-mode="dark"] {
   --color-border-default: rgb(48, 54, 61);
@@ -734,33 +645,22 @@ html.is-macos body {
   color: var(--color-foreground) !important;
 }
 
-/* Prose styles for markdown rendering */
 .prose {
   color: var(--color-foreground);
   max-width: 65ch;
-  /* Size, weight, and family all track Chats → Typography → Content, set by
-     MessageRenderingProvider as CSS variables on :root. The variable path is
-     required (not utility classes): these `.prose` / `.prose-sm` rules set
-     font-size and would beat any text-* / font-* class on the content
-     container, so the picker's size/weight were silently ignored before.
-     Fallbacks preserve the prior defaults when the chat context isn't mounted. */
+  /* Variables, not utility classes: these rules set font-size and would beat any text-/font- class. */
   font-size: var(--chat-content-size, 1rem);
   line-height: 1.75;
   font-family: var(--chat-content-font, inherit);
-  /* Body text inherits this; headings/strong keep their own bolder weights. */
   font-weight: var(--chat-content-weight, 400);
 }
 
 .prose-sm {
-  /* Content containers use `prose prose-sm`; this rule wins on font-size by
-     source order, so it must read the same variable as `.prose` above. */
+  /* Must read the same variable as `.prose`: this rule wins on font-size by source order. */
   font-size: var(--chat-content-size, 0.875rem);
   line-height: 1.714;
 }
 
-/* Extra-extra-small step below Tailwind's text-xs, for the Typography size
-   picker's "Extra extra small" option. Used by the class-based header/preview
-   path; the content body reads --chat-content-size (0.625rem) to match. */
 .text-xxs {
   font-size: 0.625rem;
   line-height: 0.85rem;
@@ -790,10 +690,6 @@ html.is-macos body {
   line-height: 1.1111111;
 }
 
-/* Heading scale is em-relative to the prose base (the Content/markdown size).
-   These are deliberately tamer than Tailwind Typography's article defaults
-   (which were h1 2.25 / h2 1.5 / h3 1.25) — those read as oversized in a chat
-   surface, where headings sit only a line or two above body text. */
 .prose h1 {
   font-size: 1.5em;
 }
@@ -826,11 +722,7 @@ html.is-macos body {
   padding-left: 1.625em;
 }
 
-/* Markers. Tailwind's Preflight resets `ol, ul { list-style: none }`, and this
-   prose CSS is hand-rolled — it set the indent above but never restored the
-   markers, so every markdown list in the app rendered as flush-left prose with
-   its numbering silently dropped. Nesting levels alternate the way Tailwind
-   Typography does, so a nested list is still distinguishable from its parent. */
+/* Preflight resets `ol, ul { list-style: none }`; restore the markers. */
 .prose ul { list-style-type: disc; }
 .prose ul ul { list-style-type: circle; }
 .prose ul ul ul { list-style-type: square; }
@@ -842,7 +734,6 @@ html.is-macos body {
   color: var(--color-muted-foreground);
 }
 
-/* GFM task lists ship their own checkbox — a bullet beside it reads as noise. */
 .prose li:has(> input[type="checkbox"]) {
   list-style-type: none;
 }
@@ -944,7 +835,6 @@ html.is-macos body {
   padding: 0.571em;
 }
 
-/* Dark mode adjustments */
 .prose.dark\:prose-invert {
   color: var(--color-foreground);
 }
@@ -963,7 +853,6 @@ html.is-macos body {
 }
 
 .prose.dark\:prose-invert pre {
-  /*background-color: rgb(13, 17, 23);*/
   border: 1px solid var(--color-border);
 }
 
@@ -975,12 +864,10 @@ html.is-macos body {
   border-bottom-color: var(--color-border);
 }
 
-/* Remove maximum width constraint */
 .prose.max-w-none {
   max-width: none;
 }
 
-/* Rotating symbol animation */
 @keyframes rotate-symbol {
   0%   { content: "◐"; transform: scale(1); }
   25%  { content: "◓"; transform: scale(1); }
@@ -1006,7 +893,7 @@ html.is-macos body {
   line-height: 1;
   animation: fade-in 0.2s ease-out;
   font-weight: normal;
-  font-size: 1.5rem; /* Make it bigger! */
+  font-size: 1.5rem;
   position: relative;
   top: -2px;
 }
@@ -1021,9 +908,6 @@ html.is-macos body {
   transform-origin: center;
 }
 
-/* Removed special font-weight for larger sizes to maintain consistency */
-
-/* Shimmer hover effect */
 @keyframes shimmer {
   0% {
     background-position: -200% 0;
@@ -1059,7 +943,6 @@ html.is-macos body {
   animation: shimmer 0.5s;
 }
 
-/* Trailing border effect */
 @property --angle {
   syntax: "<angle>";
   initial-value: 0deg;
@@ -1079,7 +962,6 @@ html.is-macos body {
   overflow: visible;
 }
 
-/* The correctly traveling border line */
 .trailing-border::after {
   content: "";
   position: absolute;
@@ -1110,21 +992,16 @@ html.is-macos body {
   animation: trail-rotate 2s linear infinite;
 }
 
-/* Ensure the card content stays above the border effect */
 .trailing-border > * {
   position: relative;
   z-index: 1;
 }
 
-/* --- ELEGANT SCROLLBARS --- */
-
-/* Firefox - thin and minimal */
 * {
   scrollbar-width: thin;
   scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
 }
 
-/* Global webkit scrollbar - ultra thin and elegant */
 ::-webkit-scrollbar {
   width: 3px;
   height: 3px;
@@ -1148,7 +1025,6 @@ html.is-macos body {
   background: transparent;
 }
 
-/* Code blocks - slightly larger for better usability */
 pre::-webkit-scrollbar,
 .w-md-editor-content::-webkit-scrollbar,
 code::-webkit-scrollbar {
@@ -1169,7 +1045,6 @@ code::-webkit-scrollbar-thumb:hover {
   background-color: rgba(156, 163, 175, 0.6);
 }
 
-/* NFO Credits Scanlines Animation */
 @keyframes scanlines {
   0% {
     transform: translateY(-100%);
@@ -1183,7 +1058,6 @@ code::-webkit-scrollbar-thumb:hover {
   animation: scanlines 8s linear infinite;
 }
 
-/* Screenshot Shutter Animation */
 @keyframes shutterFlash {
   0% {
     opacity: 0;
@@ -1200,7 +1074,6 @@ code::-webkit-scrollbar-thumb:hover {
   animation: shutterFlash 0.5s ease-in-out;
 }
 
-/* Image Move to Input Animation */
 @keyframes moveToInput {
   0% {
     transform: scale(1) translateY(0);
@@ -1220,7 +1093,6 @@ code::-webkit-scrollbar-thumb:hover {
   animation: moveToInput 0.8s ease-in-out forwards;
 }
 
-/* iMessage-style typing indicator dots */
 .typing-dot {
   display: inline-block;
   width: 7px;
@@ -1243,11 +1115,6 @@ code::-webkit-scrollbar-thumb:hover {
 }
 
 
-/* Indeterminate progress sweep, for work whose only unit is "the whole thing".
-   Used by the Brain sources banner: indexing one item is a single opaque
-   await, so a percentage there would be invented. Translating a one-third-wide
-   fill across the track says "running, duration unknown" without claiming one.
-   See BrainSources.tsx. */
 @keyframes brain-indeterminate {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(300%); }
@@ -1257,8 +1124,6 @@ code::-webkit-scrollbar-thumb:hover {
   animation: brain-indeterminate 1.4s ease-in-out infinite;
 }
 
-/* A sweep with nowhere to go reads as a stalled bar, so honour the OS setting
-   with a pulse instead of freezing the element mid-track. */
 @media (prefers-reduced-motion: reduce) {
   .brain-indeterminate-bar {
     animation: none;
@@ -1267,13 +1132,9 @@ code::-webkit-scrollbar-thumb:hover {
   }
 }
 
-/* Find-in-chat highlights. The `data-find` attribute is the contract with
-   `useFindInChat`; the hook wraps every match in <mark data-find> and toggles
-   `.is-active` on the currently focused hit. Theme-neutral yellow reads on
-   light + dark backgrounds; the active outline anchors the eye while
-   scrolling between hits. See useFindInChat.ts. */
+/* `data-find` and `.is-active` are the contract with useFindInChat. */
 mark[data-find] {
-  background-color: rgba(250, 204, 21, 0.35); /* yellow-400 @ 35% */
+  background-color: rgba(250, 204, 21, 0.35);
   color: inherit;
   border-radius: 2px;
   padding: 0 1px;
@@ -1281,12 +1142,10 @@ mark[data-find] {
 
 mark[data-find].is-active {
   background-color: rgba(250, 204, 21, 0.75);
-  outline: 1px solid rgba(202, 138, 4, 0.9); /* yellow-600 */
+  outline: 1px solid rgba(202, 138, 4, 0.9);
 }
 
-/* ─── OmniFex Remote: narrow / touch layouts ───────────────────────────────
-   Classes are set on <html> by useLayoutMode(). Kept unlayered on purpose so
-   they win over utilities the same way the border-color reset above does. */
+/* Classes set on <html> by useLayoutMode(); unlayered so they beat utilities. */
 html.omnifex-touch pre,
 html.omnifex-narrow pre {
   overflow-x: auto;
@@ -1296,8 +1155,6 @@ html.omnifex-narrow pre {
 }
 html.omnifex-touch button,
 html.omnifex-touch [role="button"] {
-  /* Apple HIG minimum: 44pt. Icon-only 32px buttons become reachable
-     without redrawing every toolbar. */
   min-height: 44px;
   min-width: 44px;
 }
@@ -1306,15 +1163,11 @@ html.omnifex-touch body {
   overscroll-behavior-y: contain;
 }
 html.omnifex-web {
-  /* Standalone PWA: the status bar overlaps the top edge. */
   padding-top: env(safe-area-inset-top, 0px);
 }
 
 
-/* ─── Mermaid diagrams (MermaidBlock / DiagramOverlay) ─────────────────────
-   Click-to-highlight in the full-window viewer: svgGraph.applyHighlight sets
-   `data-highlighting` on the <svg> and `.diagram-hl` on the lit node, edges,
-   labels and neighbours; everything else dims. */
+/* svgGraph.applyHighlight sets `data-highlighting` on the <svg> and `.diagram-hl` on lit elements. */
 .omnifex-diagram-interactive g.node {
   cursor: pointer;
 }

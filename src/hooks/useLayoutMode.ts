@@ -1,11 +1,3 @@
-/**
- * `computeLayoutMode()` bound to the live window, shared by every subscriber.
- *
- * One listener set per page, not per component: the value changes on resize
- * and on rotation, and forty components each adding a resize listener is the
- * kind of thing that shows up in the render profiler. The current mode is
- * also mirrored as classes on <html> so plain CSS can branch.
- */
 import { useSyncExternalStore } from 'react';
 
 import { ALL_LAYOUT_CLASSES, computeLayoutMode, layoutClassNames, type LayoutMode } from '@/lib/layoutMode';
@@ -60,7 +52,7 @@ export function useLayoutMode(): LayoutMode {
   return useSyncExternalStore(subscribe, () => current, () => current);
 }
 
-/** For tests: reset the module-level store. */
+/** Test-only. */
 export function __resetLayoutModeForTests(): void {
   current = { narrow: false, touch: false, web: false };
   listeners = new Set();

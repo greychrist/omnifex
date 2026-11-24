@@ -2,18 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { JsonlNode } from '@/types/jsonl';
 import { slashModelResult } from '@/lib/sessionDerivedState';
 
-/**
- * Keep `selectedModel` in step with a `/model` typed into the composer.
- *
- * The command goes to the CLI, which switches and writes its answer to the
- * transcript; OmniFex only ever learned the model from its own picker, so
- * the readout, the picker and a restart stayed on the old one. This watches
- * the transcript for that answer (slashModelResult) and reports it once.
- *
- * Only the LAST model-bearing record counts. In replayed history a `/model`
- * that later turns overrode is not the model the session is on, and firing
- * on it would undo what the resume restored from the same history.
- */
+/** Only the last model-bearing record counts: an overridden `/model` in replayed history would undo the resume. */
 export function useSlashModelSync({ messages, onModel, onSavedAsDefault }: {
   messages: JsonlNode[];
   onModel: (model: string) => void;

@@ -21,10 +21,6 @@ interface PaginationResult<T> {
   pageRange: number[];
 }
 
-/**
- * Custom hook for handling pagination logic
- * Returns paginated data and pagination controls
- */
 export function usePagination<T>(
   data: T[],
   options: PaginationOptions = {}
@@ -41,14 +37,12 @@ export function usePagination<T>(
   const totalItems = data.length;
   const totalPages = Math.ceil(totalItems / pageSize);
 
-  // Calculate paginated data
   const paginatedData = useMemo(() => {
     const startIndex = (currentPage - 1) * pageSize;
     const endIndex = startIndex + pageSize;
     return data.slice(startIndex, endIndex);
   }, [data, currentPage, pageSize]);
 
-  // Navigation functions
   const goToPage = useCallback((page: number) => {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)));
   }, [totalPages]);
@@ -63,29 +57,24 @@ export function usePagination<T>(
 
   const handleSetPageSize = useCallback((size: number) => {
     setPageSize(size);
-    // Reset to first page when page size changes
     setCurrentPage(1);
   }, []);
 
-  // Generate page range for pagination UI
   const pageRange = useMemo(() => {
     const range: number[] = [];
-    const maxVisible = 7; // Maximum number of page buttons to show
+    const maxVisible = 7;
     
     if (totalPages <= maxVisible) {
-      // Show all pages if total is less than max
       for (let i = 1; i <= totalPages; i++) {
         range.push(i);
       }
     } else {
-      // Always show first page
       range.push(1);
       
       if (currentPage > 3) {
-        range.push(-1); // Ellipsis
+        range.push(-1);
       }
       
-      // Show pages around current page
       const start = Math.max(2, currentPage - 1);
       const end = Math.min(totalPages - 1, currentPage + 1);
       
@@ -94,10 +83,9 @@ export function usePagination<T>(
       }
       
       if (currentPage < totalPages - 2) {
-        range.push(-1); // Ellipsis
+        range.push(-1);
       }
       
-      // Always show last page
       if (totalPages > 1) {
         range.push(totalPages);
       }

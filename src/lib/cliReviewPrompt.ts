@@ -1,31 +1,6 @@
-/**
- * The changelog-review prompt the Updates popover's drift warning launches.
- *
- * This used to live in `.claude/commands/cli-changelog-review.md` so it could
- * be edited without rebuilding the app. That worked on the author's machine and
- * nowhere else: `.gitignore` ignores `.claude/`, so the file was never in the
- * repo, never seeded on first run, and had no user-scope copy. Anyone who
- * cloned OmniFex and clicked the drift warning got a session that fired a slash
- * command the CLI had never heard of.
- *
- * Shipping the prompt as a constant fixes that. It is deliberately not
- * editable in the app: a saved copy froze the prompt at the version saved
- * (and "Reset to default" saved one), while the prompt's own last step is to
- * repair itself here, in the repo. The `cliReview.promptTemplate` override
- * and its Settings box were removed 2026-10-24.
- *
- * The prompt names files and symbols, never line numbers; its tests fail when
- * a named path or symbol goes away. The mechanical binary diffing lives in
- * `scripts/cli-review-diff.ts` (`npm run cli-review:diff`), where each check
- * is tested — it used to be hand-typed `rg` one-liners in this text.
- */
+// Names files and symbols, never line numbers: its tests fail when a named path or symbol goes away.
+// Deliberately not editable in the app: the prompt's last step repairs it here, in the repo.
 
-/**
- * Placeholders the app fills in before sending. Named rather than positional:
- * the old file used `$1`/`$2` and the command harness substituted them
- * inconsistently — `$1` arrived holding the *installed* version while `$2` was
- * left literal, so the prompt's own prose described the wrong range.
- */
 export const REVIEWED_VERSION_PLACEHOLDER = '{reviewedVersion}';
 export const INSTALLED_VERSION_PLACEHOLDER = '{installedVersion}';
 
@@ -249,13 +224,7 @@ grep, a file read or a transcript behind it.
   broke the scraper. Check the surface; don't trust the summary.
 `;
 
-/**
- * Fill the version placeholders.
- *
- * Splits and joins rather than `String.replace`: `replace` reads `$&`, `$1`
- * and friends in a *replacement string* as backreferences, so a version
- * containing one would otherwise smear the matched text through the prompt.
- */
+/** Split/join, not String.replace: a replacement string reads `$&` and `$1` as backreferences. */
 export function renderCliReviewPrompt(reviewedVersion: string, installedVersion: string): string {
   return CLI_REVIEW_PROMPT
     .split(REVIEWED_VERSION_PLACEHOLDER)

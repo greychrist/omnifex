@@ -12,22 +12,14 @@ export interface QueuedPromptItem {
 }
 
 export interface SendPromptOptions {
-  /** If the prompt has to queue, put it at the head: it answers something
-   *  that already happened (a denial card's retry), so it goes before
-   *  whatever the user typed after. */
+  /** Queue at the head: it answers something that already happened (a denial card's retry). */
   front?: boolean;
 }
 
 interface UseSendPromptArgs {
   projectPath: string;
   tabId: string;
-  /**
-   * Live ref to the session's turn axis (`turn.status === 'running'`). Read
-   * at call-time so the queue-drain path (which holds onto handleSendPrompt
-   * across renders via setTimeout) sees the current value rather than a
-   * stale closure capture. Reading from a closure-captured boolean caused
-   * the queue to silently re-enqueue drained prompts instead of sending them.
-   */
+  /** Read at call time: the queue drain holds this callback across renders, and a captured boolean re-enqueued drained prompts. */
   turnRunningRef: React.RefObject<boolean>;
   selectedModel: string;
   persistentSessionRef: React.RefObject<boolean>;
@@ -48,11 +40,7 @@ interface UseSendPromptArgs {
   setCurrentActivity: React.Dispatch<React.SetStateAction<string>>;
   setSelectedModel: React.Dispatch<React.SetStateAction<string>>;
   setMessages: React.Dispatch<React.SetStateAction<JsonlNode[]>>;
-  /**
-   * The side chat. `/btw <q>` goes here with `q`, a bare `/btw` with `''`,
-   * instead of being sent or queued. Omitted for engines with no side chat
-   * (Codex), where `/btw` stays an ordinary prompt.
-   */
+  /** Omitted for engines with no side chat (Codex), where `/btw` stays an ordinary prompt. */
   onSideChat?: (question: string) => void;
 }
 
@@ -85,10 +73,8 @@ export function useSendPrompt({
   const [queuedPrompts, setQueuedPrompts] = useState<QueuedPromptItem[]>([]);
   const queuedPromptsRef = useRef<QueuedPromptItem[]>([]);
   const lastPromptRef = useRef<{ prompt: string; model: string } | null>(null);
-  // A send in progress: from the call until main has taken the prompt. The
-  // session opens its turn only once the prompt is handed over, so between
-  // here and that round-trip `turnRunningRef` still reads idle; this latch
-  // is the other fact that must gate a second prompt into the queue.
+  // Main opens the turn only once it has the prompt; until then `turnRunningRef` reads idle and this latch
+  // must gate a second prompt into the queue.
   const sendingRef = useRef(false);
 
   const handleSendPrompt = async (
@@ -102,20 +88,13 @@ export function useSendPrompt({
       return;
     }
 
-    // `/btw` is the side chat, not a prompt. Checked here, ahead of the
-    // queue, because this is the one place a prompt is queued: every entry
-    // path (composer, resend, queue drain, launch prompt) comes through, so
-    // none of them can queue a side question behind a running turn.
+    // Checked ahead of the queue: every entry path comes through here, so none can queue a side question behind a turn.
     const btw = onSideChat ? parseBtw(prompt) : null;
     if (btw !== null) {
       onSideChat?.(btw);
       return;
     }
 
-    // A running turn or a send still in flight: queue the prompt. Read from
-    // the refs (not closure booleans) so a stale reference held by the
-    // queue-drain setTimeout sees the current state, not whatever was
-    // captured at render.
     if (turnRunningRef.current || sendingRef.current) {
       const newPrompt: QueuedPromptItem = {
         id: newQueuedPromptId(),
@@ -133,8 +112,7 @@ export function useSendPrompt({
       setCurrentActivity(pickGerund());
       lastPromptRef.current = { prompt, model };
 
-      // Mid-session model change: use the CLI's Query.setModel() rather than
-      // tearing down and restarting the session.
+      // Mid-session model change: set it on the live process rather than restarting the session.
       if (persistentSessionRef.current && model !== selectedModel) {
         try {
           await api.sessionSetModel(tabId, model);
@@ -151,7 +129,6 @@ export function useSendPrompt({
         setSelectedModel(model);
       }
 
-      // Start session if not running
       if (!persistentSessionRef.current) {
         const resumeId =
           effectiveSession?.id || claudeSessionId || undefined;
@@ -159,7 +136,6 @@ export function useSendPrompt({
         await startPersistentSession(resumeId);
       }
 
-      // Build content blocks: text + any pasted images
       const contentBlocks: Record<string, unknown>[] = [];
       if (prompt) {
         contentBlocks.push({ type: "text", text: prompt });
@@ -179,9 +155,6 @@ export function useSendPrompt({
         }
       }
 
-      // Add user message immediately for UI display as a JsonlNode.
-      // Stamp with receivedAt so StreamMessage renders a card timestamp the
-      // same way it does for CLI-forwarded messages.
       const receivedAt = new Date().toISOString();
       const userMessage = {
         kind: 'user',
@@ -195,14 +168,12 @@ export function useSendPrompt({
       } satisfies JsonlNode;
       setMessages((prev) => [...prev, userMessage]);
 
-      // Update session metrics
       sessionMetrics.current.promptsSent += 1;
       sessionMetrics.current.lastActivityTime = Date.now();
       if (!sessionMetrics.current.firstMessageTime) {
         sessionMetrics.current.firstMessageTime = Date.now();
       }
 
-      // Track model changes
       const lastModel =
         sessionMetrics.current.modelChanges.length > 0
           ? sessionMetrics.current.modelChanges[
@@ -220,7 +191,6 @@ export function useSendPrompt({
         });
       }
 
-      // Send the message via stdin to the persistent process
       if (contentBlocks.some((b) => b.type === 'image')) {
         await api.sendStructuredMessage(tabId, contentBlocks);
       } else {

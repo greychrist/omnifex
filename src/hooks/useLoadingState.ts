@@ -8,10 +8,6 @@ interface LoadingState<T, A extends unknown[]> {
   reset: () => void;
 }
 
-/**
- * Custom hook for managing loading states with error handling
- * Reduces boilerplate code for async operations
- */
 export function useLoadingState<T, A extends unknown[] = []>(
   asyncFunction: (...args: A) => Promise<T>
 ): LoadingState<T, A> {

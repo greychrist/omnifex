@@ -7,116 +7,61 @@ import { isCliSidechannelRecord } from "@/lib/cliSidechannelRecords";
 import { titleChangeIndices } from "@/lib/sessionTitle";
 import { summariseContextAttachment } from "@/lib/contextLedger";
 
-/**
- * Filters out messages that shouldn't be displayed in the session UI.
- *
- * Skips:
- * - Meta messages without meaningful content (no leafUuid or summary)
- * - User messages that only contain tool results already rendered by
- *   tool-specific widgets (e.g. Bash, Edit, Read, Grep, etc.)
- * - Subagent task lifecycle markers (task_started / task_progress /
- *   task_notification) — those are rendered in the agents readout.
- * Not here: hook rows (their kinds default to Never), repeats of a kind
- * (collapseRepeats.ts, a per-kind registry rule)
- * and stream-only CLI bookkeeping, which is hidden by its kind's default
- * Never visibility so it can be switched on from Appearance settings.
- */
 export function filterDisplayableMessages(messages: JsonlNode[]): JsonlNode[] {
   const keptTitles = titleChangeIndices(messages);
 
   return messages.filter((message, index) => {
-    // Skill-injection user messages have isMeta:true in the persisted
-    // JSONL (the CLI live-stream variant uses isSynthetic instead) but
-    // they carry the SKILL.md body — which we want to render. Detect
-    // them here so the meta-noise filter below doesn't drop them, and
-    // the user-message isMeta filter further down doesn't either.
+    // Skill injections are isMeta in the JSONL (isSynthetic live) but carry the SKILL.md body.
     const isMeta = message.kind === 'user' && (message.raw as { isMeta?: boolean }).isMeta === true;
     const isSkillInjected = isMeta && !!detectSkillInjection(message, messages);
 
-    // Skip meta messages that don't have meaningful content. Compaction
-    // summaries (`type: 'summary'`) are exempt — they're meta in the JSONL
-    // sense but carry the only signal that the prior history was compacted,
-    // so the dedicated SummaryWidget needs them.
+    // A `type: 'summary'` record is meta but is the only signal the history was compacted.
     const rawShape = (message as unknown as { raw?: { type?: string } }).raw;
     const rawType = rawShape?.type;
     if (isMeta && rawType !== 'summary' && !isSkillInjected) {
       return false;
     }
 
-    // Skip subagent lifecycle markers — shown in the agents readout instead
     if (isTaskLifecycleMarker(rawShape)) {
       return false;
     }
 
-    // Always skip transient `system:status` phase pings (requesting /
-    // compacting). The stream reducer surfaces them as the live "Running…"
-    // activity label; they carry no body and must never render as an empty
-    // transcript row.
     if (message.kind === "system" && message.subtype === "status") {
       return false;
     }
 
-    // Context attachments the ledger has no one-line summary for render
-    // nothing (StreamMessage's attachment branch) — and an empty row still
-    // takes its padding, which opened blank gaps down the transcript.
+    // Attachments with no ledger summary render nothing, and an empty row still takes padding.
     if (message.kind === "attachment") {
       const att = (message.raw as { attachment?: Record<string, unknown> }).attachment;
       if (summariseContextAttachment(att) === null) return false;
     }
 
-    // Session titles: one row per change of the effective title — see
-    // titleChangeIndices. Decided over the whole list on every pass, so a
-    // title streamed in live lands exactly where a reload would put it.
     if (message.kind === "ai-title" || message.kind === "custom-title") {
       return keptTitles.has(index);
     }
 
-    // Skip the `<task-notification>` carriers. These queue-operation /
-    // attachment envelopes exist to deliver a backgrounded dispatch's
-    // completion, which the subagent row renders as the row's closure — in
-    // the transcript they are a contentless "Input queue: enqueue" strip,
-    // one per completion plus its `remove` twin. A queue-operation carrying
-    // a real queued prompt is NOT this and stays visible.
     if (isTaskNotificationCarrier(rawShape)) {
       return false;
     }
 
-    // The CLI's conversation latches and branch bookkeeping, which it writes
-    // into the same JSONL as messages: `atis-latch`, `mode`, `worktree-state`
-    // and the rest of the family in `cliSidechannelRecords.ts`. Nothing in
-    // them is addressed to the reader — they are how the CLI carries session
-    // state across turns, branches and compaction — and there are hundreds
-    // per session, each of which drew its own catch-all card.
     if (message.kind === "unknown" && isCliSidechannelRecord(message.raw)) {
       return false;
     }
 
-    // Skip live-forwarded subagent assistant text (--forward-subagent-text):
-    // it belongs to the subagent row keyed by parent_tool_use_id, not the
-    // main transcript. A bare non-null check is safe for assistants — no
-    // persisted main-chain assistant line carries a non-null value (subagent
-    // transcripts live in separate agent-*.jsonl files).
+    // Safe as a bare check: no persisted main-chain assistant carries a parent_tool_use_id.
     if (message.kind === "assistant" && forwardedParentToolUseId(message.raw) !== null) {
       return false;
     }
 
-    // Skip the synthesized subagent prompt — its content is already
-    // rendered by TaskWidget at the parent Task/Agent tool_use position.
-    // We require the parent_tool_use_id to actually point at a Task/Agent
-    // tool_use; the bare presence of the field is not enough, since the
-    // CLI's JSONL persistence stamps real user prompts with parent
-    // references for conversation-tree chaining.
+    // The CLI stamps real user prompts with parent refs too, so isSubagentPrompt checks it points at a Task/Agent.
     if (isSubagentPrompt(message, messages)) {
       return false;
     }
 
-    // Skip user messages that only contain tool results that are already displayed
     if (message.kind === "user") {
       if (isMeta && !isSkillInjected) return false;
 
       const msgContent = (message.raw as { message?: { content?: unknown } }).message?.content;
-      // Boundary normalization (see lib/normalizeMessage) guarantees
-      // `msg.content` is an array here; treat a non-array as "no content".
       if (!Array.isArray(msgContent) || msgContent.length === 0) {
         return false;
       }
@@ -135,7 +80,6 @@ export function filterDisplayableMessages(messages: JsonlNode[]): JsonlNode[] {
           if (content.type === "tool_result") {
             let willBeSkipped = false;
             if (content.tool_use_id) {
-              // Look for the matching tool_use in previous assistant messages
               for (let i = index - 1; i >= 0; i--) {
                 const prevMsg = messages[i];
                 if (prevMsg.kind === "assistant") {
@@ -158,21 +102,13 @@ export function filterDisplayableMessages(messages: JsonlNode[]): JsonlNode[] {
                         "write",
                         "grep",
                       ];
-                      // NOTE: subagent dispatch (Task/Agent) is intentionally
-                      // NOT in this skip list. The tool_result for a Task is
-                      // rendered chronologically by SubagentReturnedMarker —
-                      // dropping the parent user message would erase the
-                      // subagent's output card entirely.
+                      // Task/Agent deliberately absent: SubagentReturnedMarker renders their result.
                       if (
                         (toolName !== undefined &&
                           toolsWithWidgets.includes(toolName)) ||
                         toolUse.name?.startsWith("mcp__")
                       ) {
-                        // ...unless the result carries an image. The skip above
-                        // assumes the tool's widget renders the payload, which
-                        // is false for images — MCPWidget discards `result`
-                        // outright — so skipping here would drop a screenshot
-                        // and leave only the tool-call entry behind.
+                        // Unless the result carries an image: MCPWidget discards `result`.
                         willBeSkipped = !toolResultHasImages(content);
                       }
                       break;
@@ -187,9 +123,7 @@ export function filterDisplayableMessages(messages: JsonlNode[]): JsonlNode[] {
             }
             continue;
           }
-          // Any block type this filter doesn't recognize counts as visible —
-          // the renderer has a catch-all card for unknown blocks, and hiding
-          // the whole message here would silently drop it one stage earlier.
+          // Unknown blocks count as visible: the renderer has a catch-all card for them.
           hasVisibleContent = true;
           break;
         }

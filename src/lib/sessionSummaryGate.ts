@@ -4,27 +4,7 @@ import {
   AUTO_ON_CLOSE_SETTING_KEY,
 } from '@/lib/api';
 
-/**
- * Renderer-side mirror of the auto-on-close gate in `daemon/session-close-work.ts`.
- *
- * The lifecycle close hook in main only fires `summaryGenerate` when both
- *   - sessionsSummary.enabled (master switch), AND
- *   - sessionsSummary.autoOnClose ("Generate summaries automatically when
- *     leaving a session")
- * are stored as the literal string `'true'`. This helper applies the same
- * gate to other "user is leaving the session" entry points the renderer
- * fires before the CLI session is actually torn down — currently the
- * back-button in `ClaudeCodeSession`, which keeps the CLI session alive
- * but should still be considered "leaving" from the user's perspective.
- *
- * The manual refresh button in `SessionList` deliberately bypasses this
- * gate: that path is an explicit user action, not an auto-trigger, and
- * should work even when both global toggles are off.
- *
- * Fire-and-forget: rejections from `api.summaryGenerate` are swallowed so
- * callers don't have to wrap every call site in `.catch(...)`. The IPC
- * layer logs failures separately.
- */
+/** Mirrors daemon/session-close-work.ts's gate: both settings must be the literal string 'true'. */
 export async function maybeAutoGenerateSummaryOnLeave(
   sessionUuid: string,
   projectPath: string,

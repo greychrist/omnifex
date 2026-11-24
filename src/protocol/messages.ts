@@ -1,63 +1,23 @@
 /**
- * OmniFex Remote — wire messages.
- *
- * The protocol carries OmniFex concepts, not Claude Code concepts: clients
- * speak in projects, sessions, turns and permissions, and never in CLI flags,
- * control-request subtypes or `--output-format` shapes. The daemon owns the
- * CLI; that is the whole point of the split, and it is why CLI churn should
- * only ever reach `daemon/services/`.
- *
- * ONE DELIBERATE EXCEPTION, and it is load-bearing: `event.payload` for a
- * `transcript` event is the renderer's own `JsonlNode`, `raw` included. The
- * classifier (`src/lib/jsonlClassifier.ts`) and every consumer of it
- * (`StreamMessage.tsx` reads `message.raw.*` in dozens of places) already live
- * on the client side of this boundary. Re-deriving a CLI-free shape would mean
- * rewriting the whole render path before a single byte moved over a socket.
- * Purging `raw` is a later hardening pass, tracked as such — not an accident.
- *
- * Schemas are LOOSE objects on purpose. "Clients and daemon must tolerate
- * unknown fields" is the additive-versioning rule, so a newer peer's extra
- * field must survive a parse rather than be stripped or rejected. Closed
- * *enums* are the exception: an unknown `sessionStatus` is a bug, not a
- * feature (see `docs/session-lifecycle.md`).
+ * The protocol speaks OmniFex concepts, never CLI flags or shapes. The one exception: a `transcript` event's payload is the renderer's `JsonlNode`, `raw` included.
+ * Schemas are loose so a newer peer's unknown fields survive a parse; enums are closed.
  */
 import { z } from 'zod';
 
 import { PROTOCOL_VERSION } from './version';
 
-// ---------------------------------------------------------------------------
-// Shared vocabulary
-// ---------------------------------------------------------------------------
-
-/**
- * The connection axis, verbatim from `docs/session-lifecycle.md`.
- *
- * There is deliberately NO `idle` / `running` / `awaiting_permission` here.
- * Those are `conversationStatus`, which that document defines as *derived* on
- * the client from `messages[]` and never carried in a payload. Collapsing the
- * two axes into one enum is the exact mistake that produced the
- * "session stuck on starting" family of bugs, and `'waiting_permission'` was
- * removed from the old FSM for the same reason: an open permission keeps its
- * task entry open, which keeps the derivation at `running` on its own.
- *
- * Clients that need a single label compute it; the daemon does not invent one.
- */
+/** The connection axis only: no idle/running here, conversation state is derived client-side. */
 export const SessionStatusSchema = z.enum(['starting', 'started', 'error', 'stopped']);
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
 export const AgentKindSchema = z.enum(['claude', 'codex']);
 
-/** What a client is: the Mac app's window, or a browser (Safari, the iPad). */
 export const ClientKindSchema = z.enum(['desktop', 'web']);
 export type ClientKind = z.infer<typeof ClientKindSchema>;
 
-/**
- * The turn axis, owned by the session (see docs/session-lifecycle.md). A
- * client renders it; it never infers a turn from the transcript.
- */
+/** Owned by the session; a client never infers a turn from the transcript. */
 export const TurnStateSchema = z.looseObject({
   status: z.enum(['idle', 'running']),
-  /** ISO timestamp the running turn started; null while idle. */
   since: z.string().nullable(),
 });
 export type TurnState = z.infer<typeof TurnStateSchema>;
@@ -73,7 +33,6 @@ export const ErrorCodeSchema = z.enum([
   'NO_ACCOUNT_FOR_PROJECT',
   'SESSION_NOT_RUNNING',
   'PERMISSION_NOT_PENDING',
-  /** `rpc.invoke` naming a channel the daemon's allowlist does not carry. */
   'CHANNEL_NOT_ALLOWED',
   'INTERNAL',
 ]);
@@ -85,16 +44,7 @@ export const ProtocolErrorSchema = z.looseObject({
 });
 export type ProtocolError = z.infer<typeof ProtocolErrorSchema>;
 
-/**
- * A project the daemon can spawn into.
- *
- * `accountId` / `configDir` are not decoration. Resolution order (explicit
- * override → longest path rule → unambiguous on-disk ownership → null) runs
- * against the account registry, and the spawn needs `CLAUDE_CONFIG_DIR`. A
- * registry entry of `{projectId, path, title}` alone could not start a
- * session on a multi-account machine. `null` means unresolved — the client is
- * expected to ask, exactly as the desktop account picker does today.
- */
+/** `accountId`/`configDir` null means unresolved: the client asks. */
 export const ProjectSchema = z.looseObject({
   projectId: z.string(),
   path: z.string(),
@@ -105,13 +55,7 @@ export const ProjectSchema = z.looseObject({
 });
 export type Project = z.infer<typeof ProjectSchema>;
 
-/**
- * List-view snapshot of a session.
- *
- * `inFlight` is the session's own turn axis OR'd with a pending permission —
- * a list-view rollup. A subscribed client reads `turn` off `session.state`
- * instead; nothing derives either from the transcript.
- */
+/** `inFlight` = turn running OR a pending permission. */
 export const SessionSummarySchema = z.looseObject({
   sessionId: z.string(),
   projectId: z.string(),
@@ -123,50 +67,31 @@ export const SessionSummarySchema = z.looseObject({
   lastSeq: z.number().int().nonnegative(),
   pendingPermissions: z.number().int().nonnegative(),
   inFlight: z.boolean(),
-  /**
-   * `session.list` only: the kinds of the *other* clients subscribed to the
-   * session, deduplicated and sorted. Empty means no other client has it open.
-   */
+  /** `session.list` only: the other subscribed clients' kinds. */
   openIn: z.array(ClientKindSchema).optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 });
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 
-/** Start options, mirroring what `session_start` accepts today. */
 export const SessionOptionsSchema = z.looseObject({
   agent: AgentKindSchema.optional(),
   model: z.string().optional(),
   permissionMode: z.string().optional(),
   effort: z.string().optional(),
-  /** Adopt an existing CLI transcript instead of minting a new session id. */
   resumeSessionId: z.string().optional(),
   /** The user picked an account explicitly; skip path-rule re-resolution. */
   manualAccountOverride: z.boolean().optional(),
 });
 
-/**
- * Bytes, never a path.
- *
- * A file path only works when the client and the CLI share a filesystem. An
- * iPad shares nothing, so the wire shape is the bytes themselves — the daemon
- * is what lands them on disk for the CLI to read.
- */
+/** Bytes, never a path: an iPad shares no filesystem with the CLI. */
 export const AttachmentSchema = z.strictObject({
   name: z.string(),
   mimeType: z.string(),
   dataBase64: z.string(),
 });
 
-/**
- * Permission-rule suggestions to persist on "Allow & Remember".
- *
- * `addRules` is modelled because the rule editor drives it. Everything else
- * the CLI sends (`setMode`, `addDirectories`, and whatever it adds next) is
- * passed through unmodelled: refusing an unrecognised entry would break the
- * Allow button on a live session over a suggestion we merely did not know
- * about. See `withDefaultRuleSuggestion` in `sessions/permissions.ts`.
- */
+/** Only `addRules` is modelled; anything else passes through, or an unknown suggestion breaks the Allow button. */
 export const PermissionUpdateSchema = z.union([
   z.looseObject({
     type: z.literal('addRules'),
@@ -177,31 +102,19 @@ export const PermissionUpdateSchema = z.union([
   z.looseObject({ type: z.string() }),
 ]);
 
-/** Kinds of session-scoped stream event. `payload` shape follows `kind`. */
 export const EventKindSchema = z.enum([
-  /** A classified `JsonlNode` — the transcript. Carries `raw`; see the note above. */
+  /** A classified `JsonlNode`, `raw` included. */
   'transcript',
-  /** The resolved config dir is not signed in as the account we expected. */
   'account-mismatch',
   /** A non-fatal CLI stderr line. Surfaced, never a status change. */
   'stderr',
-  /** Something the user should be told about out of band. */
   'notification',
-  /** The pinned session id and project path, sent the moment a session spawns. */
   'init',
-  /** The engine is gone; a client tears down its per-session listeners. */
   'complete',
-  /** An MCP server is asking the user a question (answered via rpc.invoke). */
   'elicitation',
-  /** The CLI took back a permission request it had sent; drop its card. */
   'permission-withdrawn',
 ]);
 
-// ---------------------------------------------------------------------------
-// Client → daemon
-// ---------------------------------------------------------------------------
-
-/** Present on every request so the daemon can echo it on the response. */
 const req = { requestId: z.string() };
 
 export const ClientMessageSchema = z.discriminatedUnion('type', [
@@ -227,20 +140,10 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   }),
   z.looseObject({ ...req, type: z.literal('session.resume'), sessionId: z.string() }),
   z.looseObject({ ...req, type: z.literal('session.kill'), sessionId: z.string() }),
-  /**
-   * This client is done with the session (its tab closed). The daemon drops
-   * the client's subscription and stops the session only if no other client
-   * still has it open.
-   */
+  /** The daemon stops the session only if no other client still has it open. */
   z.looseObject({ ...req, type: z.literal('session.release'), sessionId: z.string() }),
 
-  /**
-   * `fromSeq` is the last seq the client already has. The daemon replays
-   * everything after it from the ring buffer, then live-tails. Omitted means
-   * "live only" — a fresh view that loads its history from the CLI's JSONL.
-   * When the ring cannot answer, the result carries `resync: true` and the
-   * client reloads that history instead.
-   */
+  /** `fromSeq`: last seq held; omitted means live only. When the ring cannot answer, the result carries `resync: true`. */
   z.looseObject({
     ...req,
     type: z.literal('session.subscribe'),
@@ -258,14 +161,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   }),
   z.looseObject({ ...req, type: z.literal('turn.interrupt'), sessionId: z.string() }),
 
-  /**
-   * Addressed by `permissionId`, not by queue position.
-   *
-   * The desktop path shifts the head of `handle.permissionQueue`, which is
-   * safe only because one window can click. With two clients subscribed to the
-   * same session, an unaddressed response resolves whichever request happens
-   * to be first — approving a tool the user never saw.
-   */
+  /** Addressed by `permissionId`: with two clients, answering the queue head could approve a tool the user never saw. */
   z.looseObject({
     ...req,
     type: z.literal('permission.respond'),
@@ -276,18 +172,11 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     remember: z.array(PermissionUpdateSchema).optional(),
   }),
 
-  /**
-   * The escape hatch for the ~165 IPC channels that are not session workflow
-   * (Brain, cost, usage, accounts, MCP and hooks editors, storage browser,
-   * Lima). Typing each as its own message would be ~165 schemas that change
-   * every time a channel does. The allowlist is enforced server-side — hiding
-   * admin UI on the client is not a boundary.
-   */
+  /** The allowlist is enforced server-side; hiding UI on the client is not a boundary. */
   z.looseObject({ ...req, type: z.literal('rpc.invoke'), channel: z.string(), params: z.looseObject({}).optional() }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
-/** Every method name, for exhaustiveness checks on both sides. */
 export const CLIENT_METHODS = [
   'hello',
   'project.list',
@@ -307,20 +196,7 @@ export const CLIENT_METHODS = [
 ] as const;
 export type ClientMethod = (typeof CLIENT_METHODS)[number];
 
-// ---------------------------------------------------------------------------
-// Daemon → client
-// ---------------------------------------------------------------------------
-
-/**
- * Split on `ok` rather than carrying an optional error, so a failure with no
- * error body cannot parse: the client would otherwise reject its promise with
- * nothing to show the user.
- *
- * Its own union because a discriminated union keys on ONE field, and these two
- * share `type: 'response'` while differing on `ok`. Nesting keeps both
- * narrowings — `msg.type === 'response'` then `msg.ok === true` — which a
- * flat object plus a refinement would lose.
- */
+/** Split on `ok` so a failure with no error body cannot parse. */
 export const ResponseSchema = z.discriminatedUnion('ok', [
   z.looseObject({ type: z.literal('response'), requestId: z.string(), ok: z.literal(true), result: z.unknown() }),
   z.looseObject({
@@ -336,11 +212,7 @@ export const ServerPushSchema = z.discriminatedUnion('type', [
     type: z.literal('welcome'),
     protocolVersion: z.number().int(),
     daemonVersion: z.string(),
-    /**
-     * Names this daemon run. Seqs are per run (events are never persisted), so
-     * a client that sees a different bootId than last time drops every seq it
-     * holds and reloads its transcripts.
-     */
+    /** Seqs are per daemon run: a changed bootId means drop every seq and reload. */
     bootId: z.string().optional(),
     capabilities: z.looseObject({}).optional(),
   }),
@@ -348,10 +220,6 @@ export const ServerPushSchema = z.discriminatedUnion('type', [
   z.looseObject({ type: z.literal('project.changed'), projects: z.array(ProjectSchema) }),
   z.looseObject({ type: z.literal('session.changed'), sessions: z.array(SessionSummarySchema) }),
 
-  /**
-   * The connection axis only. See `SessionStatusSchema` for why this does not
-   * carry a conversation state.
-   */
   z.looseObject({
     type: z.literal('session.state'),
     sessionId: z.string(),
@@ -368,31 +236,13 @@ export const ServerPushSchema = z.discriminatedUnion('type', [
     seq: SeqSchema,
     kind: EventKindSchema,
     payload: z.unknown(),
-    /**
-     * Where a transcript event came from. The renderer keeps engine output
-     * (`agent-output:`) and rows tailed from the CLI's JSONL
-     * (`claude-output-extra:`) on separate channels so the former stays 1:1
-     * with what the engine emitted; a client re-creating those channels needs
-     * to know which is which.
-     */
+    /** Engine output and JSONL-tailed rows stay on separate renderer channels. */
     origin: z.enum(['engine', 'tail']).optional(),
-    /**
-     * The legacy IPC channel prefix this event was lifted from
-     * (`agent-output`, `session-init`, …). Lets a client shim re-emit
-     * it on exactly the channel the existing renderer subscribes to, without a
-     * kind→channel table that would drift from the daemon's.
-     */
+    /** The legacy IPC channel to re-emit on. */
     channel: z.string().optional(),
   }),
 
-  /**
-   * A non-session broadcast the desktop app already emits (`rate-limits:`,
-   * `account-identity-changed`, `brain-run-progress`, …), carried verbatim
-   * under its legacy channel name. This is the event-side twin of
-   * `rpc.invoke`: the long tail of app-wide signals reaches a client without
-   * a protocol message each, and the client-side shim re-emits them on the
-   * channel the renderer already subscribes to.
-   */
+  /** A non-session broadcast, verbatim under its legacy channel name. */
   z.looseObject({
     type: z.literal('channel'),
     channel: z.string(),
@@ -406,17 +256,10 @@ export const ServerPushSchema = z.discriminatedUnion('type', [
     permissionId: z.string(),
     tool: z.string(),
     input: z.looseObject({}),
-    /** The CLI's own suggestions, plus our fallback rule, for the editor. */
     suggestions: z.array(PermissionUpdateSchema).optional(),
     toolUseId: z.string().optional(),
-    /** Codex approvals are `patch` / `exec`; Claude tool asks are `tool`. */
     kind: z.enum(['tool', 'patch', 'exec']).optional(),
-    /**
-     * The desktop renderer's own permission-card payload, verbatim. The
-     * PermissionCard reads a dozen fields off it (title, display_name,
-     * decision_reason, blocked_path, suppress_always_allow_rule, …); carrying
-     * it whole means the existing card renders unchanged over the protocol.
-     */
+    /** The renderer's permission-card payload, verbatim. */
     payload: z.unknown().optional(),
   }),
 
@@ -429,29 +272,13 @@ export const ServerPushSchema = z.discriminatedUnion('type', [
   }),
 ]);
 
-/**
- * A plain union of the two groups: no `response` shape can match a push and no
- * push can match a response, so there is no ambiguity to order around.
- */
 export const ServerMessageSchema = z.union([ResponseSchema, ServerPushSchema]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
-/**
- * Pushes that consume the per-session sequence space.
- *
- * All three share ONE counter so the ring buffer is a single ordered log: a
- * `session.subscribe { fromSeq }` replay then restores state transitions and
- * still-open permission requests, not just transcript rows. A reconnecting
- * iPad that replayed only transcript events would sit at a stale status with
- * an invisible permission prompt blocking the turn.
- */
+/** One shared counter, so a `fromSeq` replay restores status and open permissions, not just transcript rows. */
 export const SESSION_SCOPED_PUSHES = ['session.state', 'event', 'permission.request'] as const;
 export type SessionScopedPushType = (typeof SESSION_SCOPED_PUSHES)[number];
 export type SessionScopedPush = Extract<ServerMessage, { type: SessionScopedPushType }>;
-
-// ---------------------------------------------------------------------------
-// Decoding
-// ---------------------------------------------------------------------------
 
 export type DecodeResult<T> = { ok: true; message: T } | { ok: false; error: ProtocolError };
 
@@ -464,11 +291,7 @@ function decode<T>(schema: z.ZodType<T>, raw: unknown): DecodeResult<T> {
   };
 }
 
-/**
- * Never throws. A peer that can send a malformed frame can send one at any
- * time, and the daemon answering with a protocol `error` beats an exception
- * unwinding through the socket handler and dropping every session on it.
- */
+/** Never throws: an exception would drop every session on the socket. */
 export function decodeClientMessage(raw: unknown): DecodeResult<ClientMessage> {
   return decode(ClientMessageSchema, raw);
 }

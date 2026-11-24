@@ -11,22 +11,6 @@ export interface UseUsageAutoRefreshResult {
   refresh: () => Promise<void>;
 }
 
-/**
- * Drives the live `/usage` widget data for a single active account.
- *
- * - On mount: reads the cached result from the main process. If absent or
- *   stale (> 5 min), fires a fresh `runUsageCli` immediately.
- * - When `sessionActive` transitions false → true: fires once (debounced
- *   against the 5-min refresh window so a fresh run isn't duplicated).
- * - While the tab is visible: re-runs every 5 minutes.
- * - On `visibilitychange` to hidden: pauses the timer.
- * - On return to visible: catches up if at least one interval elapsed
- *   while hidden, then resumes the timer.
- *
- * The main-process `usage-runner` service de-dups concurrent calls per
- * account, so multiple subscribers (e.g. several open tabs on the same
- * account) collapse onto a single PTY spawn.
- */
 export function useUsageAutoRefresh(
   accountName: string | null,
   sessionActive = false,
@@ -50,7 +34,6 @@ export function useUsageAutoRefresh(
     }
   }, [accountName]);
 
-  // Initial fetch (read cache, then refresh if missing/stale)
   useEffect(() => {
     let cancelled = false;
     if (!accountName) {
@@ -76,10 +59,6 @@ export function useUsageAutoRefresh(
     };
   }, [accountName, doRun]);
 
-  // Session active edge: when a session transitions from not-active to
-  // active, kick a fresh /usage run so the widgets reflect the run that
-  // just kicked off. Debounced against the 5-min refresh window so we
-  // don't pile on top of a freshly-cached result.
   const wasActive = useRef(false);
   useEffect(() => {
     if (!accountName) {
@@ -94,7 +73,6 @@ export function useUsageAutoRefresh(
     }
   }, [accountName, sessionActive, doRun]);
 
-  // Visibility-aware periodic timer
   useEffect(() => {
     if (!accountName) return;
 

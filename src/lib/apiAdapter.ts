@@ -1,13 +1,4 @@
-/**
- * Thin transport layer for `window.electronAPI.invoke`.
- *
- * The main process IPC layer encodes structured error codes as a `[CODE] `
- * prefix on `error.message` (custom Error properties are stripped by
- * Electron's structured-clone serialization). We strip that prefix here and
- * re-attach it as `error.code` so call sites can branch on stable codes
- * (e.g. `error.code === 'NO_ACCOUNT_FOR_PROJECT'`) instead of substring
- * matching the message.
- */
+/** Errors carry a `[CODE] ` message prefix (custom Error properties do not cross IPC); re-attached as `error.code`. */
 export async function apiCall<T>(command: string, params?: Record<string, unknown>): Promise<T> {
   try {
     return await (window.electronAPI.invoke(command, params) as Promise<T>);

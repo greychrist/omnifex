@@ -24,15 +24,6 @@ import type {
   SessionModelInfo,
 } from '@/lib/api';
 
-/**
- * Per-tab slice of session state derived from the CLI stream.
- *
- * Owned by `claudeSessionStore` (one entry per tabId). Stores the small
- * set of stream-derived fields that ClaudeCodeSession needs to share
- * with header components and that the stream reducer's effects write
- * into. Rendering-side derived state (filtered messages, compact items,
- * subagents) stays in the component as `useMemo`s over `messages`.
- */
 export interface TabSessionState {
   messages: JsonlNode[];
   claudeSessionId: string | null;
@@ -40,26 +31,14 @@ export interface TabSessionState {
   sdkAccountInfo: SessionAccountInfo | null;
   contextUsage: SessionContextUsage | null;
   supportedModels: SessionModelInfo[];
-  /** Text-streaming slot for partial messages. Populated by the
-   *  inflight coalescer's RAF flush; cleared when the complete assistant
-   *  message lands (matching uuid), on stream error, or on tab close. */
   inflightAssistant: {
     uuid: string;
     text: string;
     parentToolUseId: string | null;
   } | null;
-  /** Thinking-streaming slot: the text of the thought being had, fed by the
-   *  coalescer from `thinking_delta` frames (summarized display). Cleared when
-   *  the thinking record lands, on stream error, or on tab close. */
   inflightThinking: string | null;
-  /** Live-only per-tool progress, keyed by the REAL tool_use id (see
-   *  src/lib/toolProgress.ts). Never persisted and never part of
-   *  `messages[]` — the CLI does not write `tool_progress` to disk, so a
-   *  transcript reloaded from disk must not show what a live one showed.
-   *  `resetTab` clears it, so clear/restart needs no separate handling. */
+  /** Live-only: the CLI never writes `tool_progress` to disk, so a reloaded transcript must not show it. */
   toolProgress: ToolProgressMap;
-  /** Live-only: tool calls waiting on their automatic permission check (see
-   *  src/lib/permissionChecks.ts). Cleared at turn end and by `resetTab`. */
   permissionChecks: PermissionChecks;
 }
 
@@ -83,28 +62,15 @@ type MessagesUpdater =
 interface ClaudeSessionStoreState {
   tabs: Record<string, TabSessionState>;
 
-  // Selectors -------------------------------------------------------------
-  /** Read the slice for a tab; returns EMPTY_TAB_SESSION for unknown tabs.
-   *  Use this from non-React call sites (e.g. the stream reducer's effect
-   *  runner). React components should use `useTabSession`. */
   selectTab(tabId: string): TabSessionState;
 
-  // Actions ---------------------------------------------------------------
   patchTab(tabId: string, patch: Partial<TabSessionState>): void;
   setMessages(tabId: string, next: MessagesUpdater): void;
   appendMessage(tabId: string, msg: JsonlNode): void;
-  /** Append the CLI's own record of a user prompt, replacing the optimistic
-   *  echo it is a copy of when one is still pending. One action rather than
-   *  a read-then-write so the match and the write cannot straddle another
-   *  append. See src/lib/promptReconciliation.ts. */
+  /** One action, so the match and the write cannot straddle another append. */
   appendOrReconcilePrompt(tabId: string, msg: JsonlNode): void;
-  /** Append a node from the session's message stream, placing a persisted
-   *  record above any prompt echo sent after it was written — the turn's last
-   *  record can arrive after the queued prompt it preceded. See
-   *  `appendCliRecord` in src/lib/promptReconciliation.ts. */
+  /** A persisted record goes above any prompt echo sent after it: the turn's last record can arrive after the queued prompt. */
   appendCliRecord(tabId: string, msg: JsonlNode): void;
-  /** Splice a system:init message in before the first user message,
-   *  fall back to push when there is no user yet. */
   insertMessageBeforeFirstUser(tabId: string, msg: JsonlNode): void;
   resetTab(tabId: string): void;
   setInflightAssistantText(
@@ -116,17 +82,13 @@ interface ClaudeSessionStoreState {
   clearInflightAssistant(tabId: string): void;
   setInflightThinkingText(tabId: string, text: string): void;
   clearInflightThinking(tabId: string): void;
-  /** Fold one live `tool_progress` frame into the tab's map. */
   applyToolProgress(tabId: string, node: ToolProgressNode): void;
-  /** Drop progress for tools no longer of interest (empty set at turn end). */
   pruneToolProgressFor(tabId: string, keepIds: Set<string>): void;
-  /** Fold one live `permission_check_status` frame into the tab's set. */
   applyPermissionCheck(tabId: string, frame: PermissionCheckFrame): void;
-  /** Nothing is checking once a turn has ended — `done` may never come for
-   *  a call the turn was interrupted under. */
+  /** `done` may never come for a call the turn was interrupted under. */
   clearPermissionChecks(tabId: string): void;
 
-  /** Test-only — wipes the whole store. */
+  /** Test-only. */
   __resetForTests(): void;
 }
 
@@ -160,12 +122,7 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
             [tabId]: {
               ...existing,
               inflightAssistant: { uuid, text, parentToolUseId },
-              // The in-chat typing-dots spinner is suppressed independently
-              // via `hasInflightAssistant` in AgentSession (so dots and bubble
-              // never co-exist on screen). The turn itself is the session's
-              // axis (useSessionLifecycle), so a first delta cannot clear the
-              // tab spinner mid-turn — the bug the original 0.4.17
-              // partial-messages implementation introduced.
+              // The turn is the session's axis (useSessionLifecycle), so a first delta must not clear the tab spinner.
             },
           },
         };
@@ -174,8 +131,7 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
     setInflightThinkingText: (tabId, text) =>
       { set((state) => {
         const existing = ensureTab(state.tabs, tabId);
-        // The flush rewrites every buffered tab; an unchanged thought must not
-        // hand subscribers a new object.
+        // The flush rewrites every buffered tab; an unchanged thought must not hand subscribers a new object.
         if (existing.inflightThinking === text) return state;
         return { tabs: { ...state.tabs, [tabId]: { ...existing, inflightThinking: text } } };
       }); },
@@ -258,10 +214,8 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
         };
       }); },
 
-    // Both of these bail on an unchanged reference rather than always
-    // writing: heartbeats repeat, and a remote client's reconnect replay can
-    // redeliver a frame verbatim. A no-op set would re-render every mounted
-    // transcript for a value that did not move.
+    // Bail on an unchanged reference: heartbeats and reconnect replays redeliver frames verbatim,
+    // and a no-op set re-renders every mounted transcript.
     applyToolProgress: (tabId, node) =>
       { set((state) => {
         const slice = ensureTab(state.tabs, tabId);
@@ -303,10 +257,6 @@ export const useClaudeSessionStore = create<ClaudeSessionStoreState>()(
   })),
 );
 
-// ---------------------------------------------------------------------------
-// React-side ergonomics
-// ---------------------------------------------------------------------------
-
 type Setter<T> = (next: T | ((prev: T) => T)) => void;
 
 export interface UseTabSessionResult extends TabSessionState {
@@ -336,27 +286,10 @@ function makeSetter<K extends keyof TabSessionState>(
   };
 }
 
-/**
- * Cache of "title for this exact messages array", keyed by array identity.
- *
- * `useTabSessionTitle` is a Zustand selector, so it re-runs on every store
- * change anywhere — a tool-progress frame in another tab included. Without
- * this the tab strip would rescan every open tab's full transcript on each
- * frame of a running turn. A WeakMap keyed on the array means the O(n) scan
- * happens once per actual change to that tab's messages, and every other call
- * is a lookup. The entry dies with the array.
- */
+// Keyed by array identity: the selector re-runs on every store change, and rescanning every tab's transcript per frame is O(n).
 const titleByMessages = new WeakMap<readonly JsonlNode[], string | null>();
 
-/**
- * The session's name for one tab — the CLI's `ai-title`, or a `custom-title`
- * if it has been renamed.
- *
- * Derived on read rather than stored beside `messages`: four separate actions
- * mutate that array, and a cached copy would be four chances to drift from
- * the transcript it claims to describe. The returned value is a string, so a
- * tab only re-renders when its name actually changes.
- */
+/** Derived on read, not stored: four actions mutate `messages`, and a stored copy would drift. */
 export function useTabSessionTitle(tabId: string): string | null {
   return useClaudeSessionStore((s) => {
     const messages = s.tabs[tabId]?.messages;
@@ -369,13 +302,6 @@ export function useTabSessionTitle(tabId: string): string | null {
   });
 }
 
-/**
- * React hook that returns the per-tab slice plus React-shaped setters.
- *
- * Setters match `Dispatch<SetStateAction<T>>` so they can be passed to
- * existing hooks (e.g. `useSessionLifecycle`) as drop-in replacements
- * for the old `useState` setters.
- */
 export function useTabSession(tabId: string): UseTabSessionResult {
   const slice = useClaudeSessionStore(
     useShallow((s) => s.tabs[tabId] ?? EMPTY_TAB_SESSION),
@@ -386,13 +312,7 @@ export function useTabSession(tabId: string): UseTabSessionResult {
   );
   const resetTab = useClaudeSessionStore((s) => s.resetTab);
 
-  // Memoize the setters so their identity is stable across renders for a given
-  // tabId. makeSetter reads `getState()` at call time, so a setter is a pure
-  // function of tabId — safe to build once. Stable setters are what let
-  // consumers (useSessionLifecycle, AgentSession effects) depend on them in
-  // dependency arrays without churn, and remove the need for the stale-closure
-  // ref shims that the unstable-setter version forced. The store actions
-  // (appendMessage/insertBefore/resetTab) are stable Zustand references.
+  // Stable per tabId (makeSetter reads getState() at call time), so consumers can list them as deps.
   const setters = useMemo(
     () => ({
       setMessages: makeSetter(tabId, 'messages'),

@@ -2,12 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { EMPTY_SIDE_CHAT, type SideChat } from '@/lib/sideChat';
 
-/**
- * The session's side chat (the CLI's `/btw`). The thread is owned by the
- * session in main and pushed as full snapshots on `session-side-chat:<tabId>`;
- * this mirrors it, seeding once so a reload or a second client picks up a
- * thread already in progress.
- */
+/** Seeds once so a reload or a second client picks up a thread already in progress. */
 export function useSideChat(tabId: string) {
   const [sideChat, setSideChat] = useState<SideChat>(EMPTY_SIDE_CHAT);
   const [askError, setAskError] = useState<string | null>(null);

@@ -1,13 +1,4 @@
-/**
- * One transcript holding at least one record of every message kind a record
- * can produce, in a plausible order. Settings › Chats › Turn preview draws
- * it, so Expanded shows every kind and Standard what the kinds list lets
- * through. The golden test pins what Standard draws from it; Expanded must
- * draw every record in it. Changing a record here changes the goldens.
- *
- * Synthetic on purpose: real transcripts carry private text. Each record is
- * the smallest shape the classifier keys on (messageKind.ts, jsonlClassifier.ts).
- */
+/** Golden tests pin what Standard draws from this; changing a record changes the goldens. Synthetic: real transcripts carry private text. */
 import type { JsonlNode } from '@/types/jsonl';
 import { classifyJsonlLine } from '@/lib/jsonlClassifier';
 import { normalizeJsonlNode } from '@/lib/normalizeMessage';
@@ -124,21 +115,16 @@ const entries: [string, JsonlNode][] = [
   // CLI state rides at the end so adding it shifted no earlier record's id.
   rec('cli-state', { type: 'session-owner', accountUuid: 'acct', organizationUuid: 'org' }),
   rec('task-lifecycle', { type: 'system', subtype: 'task_progress', task_id: 'tk', description: 'Check the appended CSS' }),
-  // Appended, not inserted: fixture uuids number by position, and the golden
-  // snapshot names them.
+  // Appended, not inserted: fixture uuids number by position, and the golden snapshot names them.
   rec('system.status', system('status', { status: 'requesting' })),
 ];
 
-/** Every record, in transcript order. */
 export const ALL_KIND_RECORDS: JsonlNode[] = entries.map(([, n]) => n);
 
-/** The kind each record was written to produce (several records share one). */
 export const KIND_OF_RECORD = new Map<JsonlNode, string>(entries.map(([k, n]) => [n, k]));
 
-/** Registry kinds no transcript record produces, with why. */
 export const NOT_A_RECORD: ReadonlyMap<string, string> = new Map([
   ['assistant.text.live', 'the streaming reply; replaced by its record when it lands'],
-  // user_prompt_submit is not in jsonlClassifier's SYSTEM_SUBTYPES, so such a
-  // record classifies as `unknown`; messageKind's branch for it is unreachable.
+  // user_prompt_submit is not in jsonlClassifier's SYSTEM_SUBTYPES, so such a record classifies as `unknown`.
   ['system.userPromptSubmit', 'no record classifies to it (see above)'],
 ]);

@@ -1,7 +1,3 @@
-/**
- * Hooks configuration manager for Claude Code hooks
- */
-
 import {
   HOOK_EVENTS,
   HooksConfiguration,
@@ -13,10 +9,6 @@ import {
 
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class -- utility-class pattern intentional; namespace-style functions less idiomatic in this codebase.
 export class HooksManager {
-  /**
-   * Merge hooks configurations with proper priority
-   * Priority: local > project > user
-   */
   static mergeConfigs(
     user: HooksConfiguration,
     project: HooksConfiguration,
@@ -24,12 +16,7 @@ export class HooksManager {
   ): HooksConfiguration {
     const merged: HooksConfiguration = {};
 
-    // One path for every event. Events that ignore `matcher` still store
-    // their commands under the same `[{matcher?, hooks:[…]}]` nesting, so
-    // there is nothing to special-case — the old direct-event branch both
-    // assumed a flat shape the CLI never uses and concatenated instead of
-    // overriding, so a project-scope hook would fire alongside the user one
-    // rather than replacing it.
+    // Every event nests commands under `[{matcher?, hooks:[…]}]`; a later scope replaces, never concatenates.
     for (const event of HOOK_EVENTS) {
       let matchers = [...(user[event] ?? [])];
       if (project[event]) matchers = this.mergeMatchers(matchers, project[event]);
@@ -40,9 +27,6 @@ export class HooksManager {
     return merged;
   }
 
-  /**
-   * Merge matcher arrays, with later items taking precedence
-   */
   private static mergeMatchers(
     base: HookMatcher[],
     override: HookMatcher[]
@@ -55,10 +39,8 @@ export class HooksManager {
       );
       
       if (existingIndex >= 0) {
-        // Replace existing matcher
         result[existingIndex] = overrideMatcher;
       } else {
-        // Add new matcher
         result.push(overrideMatcher);
       }
     }
@@ -66,14 +48,10 @@ export class HooksManager {
     return result;
   }
 
-  /**
-   * Validate hooks configuration
-   */
   static async validateConfig(hooks: HooksConfiguration): Promise<HookValidationResult> {
     const errors: HookValidationError[] = [];
     const warnings: HookValidationWarning[] = [];
 
-    // Guard against undefined or null hooks
     if (!hooks) {
       return { valid: true, errors, warnings };
     }
@@ -83,10 +61,7 @@ export class HooksManager {
       if (!matchers || !Array.isArray(matchers)) continue;
 
       for (const matcher of matchers) {
-        // A legacy flat entry — `{type:'command', command:'…'}` written
-        // straight into the event array — has no `hooks` member. The CLI
-        // silently never runs those, so surface it as an error rather than
-        // letting a dead hook look configured.
+        // A flat entry with no `hooks` member never runs in the CLI: surface it rather than let a dead hook look configured.
         if (!Array.isArray(matcher.hooks)) {
           errors.push({
             event,
@@ -96,7 +71,6 @@ export class HooksManager {
           continue;
         }
 
-        // Validate regex pattern if provided
         if (matcher.matcher) {
           try {
             new RegExp(matcher.matcher);
@@ -118,7 +92,6 @@ export class HooksManager {
             });
           }
 
-          // Check for dangerous patterns
           const dangers = this.checkDangerousPatterns(hook.command || '');
           warnings.push(...dangers.map(d => ({
             event,
@@ -133,13 +106,9 @@ export class HooksManager {
     return { valid: errors.length === 0, errors, warnings };
   }
 
-  /**
-   * Check for potentially dangerous command patterns
-   */
   public static checkDangerousPatterns(command: string): string[] {
     const warnings: string[] = [];
     
-    // Guard against undefined or null commands
     if (!command || typeof command !== 'string') {
       return warnings;
     }
@@ -163,7 +132,6 @@ export class HooksManager {
       }
     }
 
-    // Check for unescaped variables that could lead to code injection
     if (command.includes('$') && !command.includes('"$')) {
       warnings.push('Unquoted shell variable detected - potential code injection risk');
     }
@@ -171,11 +139,7 @@ export class HooksManager {
     return warnings;
   }
 
-  /**
-   * Escape a command for safe shell execution
-   */
   static escapeCommand(command: string): string {
-    // Basic shell escaping - in production, use a proper shell escaping library
     return command
       .replace(/\\/g, '\\\\')
       .replace(/"/g, '\\"')
@@ -183,9 +147,6 @@ export class HooksManager {
       .replace(/`/g, '\\`');
   }
 
-  /**
-   * Generate a unique ID for hooks/matchers/commands
-   */
   static generateId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   }

@@ -1,31 +1,5 @@
-/**
- * Reconciling the optimistic prompt echo with the CLI's own record of it.
- *
- * In rich mode the renderer appends a synthetic `user` node the instant you
- * press Enter (`useSendPrompt`), so the bubble does not wait on the CLI. That
- * echo used to be the only copy of your prompt in `messages[]`: stream-json
- * echoes `user` records for tool results, never for the prompt you typed.
- *
- * The transcript inversion made the CLI's JSONL the source of committed rows,
- * and the JSONL *does* record the prompt. The stream's copy is denied
- * (`JSONL_CARRIED_TYPES` includes `user`), which correctly de-duplicates tool
- * results — but the prompt's collision is not stream-vs-file, it is
- * file-vs-echo, so nothing caught it and every prompt rendered twice.
- *
- * The fix is to reconcile rather than to drop the echo. Dropping it would put
- * the JSONL tail's 100ms poll — and, on the first prompt of a session, the
- * whole session-start latency — between Enter and seeing your own text. So the
- * echo stays as a placeholder and the CLI's record replaces it. That also
- * upgrades the row to the real record, which matters downstream: `turnDelta`
- * anchors on prompt nodes and `transcriptStepper` walks them by uuid.
- *
- * A placeholder is identified by the absence of `uuid` — the renderer cannot
- * mint one the CLI would agree with, and every persisted record has one.
- *
- * When matching fails the caller appends, so an unrecognised shape shows up
- * twice rather than vanishing. Same direction as the deny-list in
- * daemon/services/sessions/stream-forward.ts: fail toward the visible bug.
- */
+// The optimistic echo is a uuid-less placeholder that the CLI's JSONL record replaces: stream-json never echoes the
+// typed prompt, and file-vs-echo is invisible to stream-forward's deny-list. Unmatched records append (fail visible).
 
 import type { JsonlNode } from '@/types/jsonl';
 
@@ -35,7 +9,6 @@ function isPromptNode(node: JsonlNode): node is UserNode {
   return node.kind === 'user' && node.userKind === 'prompt';
 }
 
-/** The node's raw JSONL line. Overlay kinds (stream-event, …) carry none. */
 function rawOf(node: JsonlNode): Record<string, unknown> | null {
   return 'raw' in node ? (node.raw as Record<string, unknown>) : null;
 }
@@ -45,30 +18,17 @@ export function uuidOf(node: JsonlNode): string | null {
   return typeof uuid === 'string' && uuid.length > 0 ? uuid : null;
 }
 
-/**
- * True for the renderer's own optimistic echo: a user prompt with no uuid,
- * still waiting for the CLI to write its copy.
- */
 export function isPendingPromptPlaceholder(node: JsonlNode): boolean {
   return isPromptNode(node) && uuidOf(node) === null;
 }
 
-/**
- * True for the CLI's persisted record of something the user typed: a prompt,
- * or a built-in slash command's echo, which classifies as 'local-command'
- * because the model never answers it. Its stdout is 'local-command' too, but
- * carries no `<command-name>`, so it never matches a placeholder's text.
- */
+/** A built-in slash command's echo is 'local-command'; its stdout is too, but carries no `<command-name>`. */
 export function isCliPromptRecord(node: JsonlNode): boolean {
   if (node.kind !== 'user') return false;
   if (node.userKind !== 'prompt' && node.userKind !== 'local-command') return false;
   return uuidOf(node) !== null;
 }
 
-/**
- * The prompt's text, with image and other non-text blocks dropped — the CLI
- * persists images as their own blocks and we only compare what was typed.
- */
 function promptText(node: JsonlNode): string {
   const message = rawOf(node)?.message as { content?: unknown } | undefined;
   const content = message?.content;
@@ -87,19 +47,12 @@ function promptText(node: JsonlNode): string {
     .trim();
 }
 
-/**
- * The command a CLI record describes, when the record is a slash-command
- * envelope. The CLI rewrites a typed `/foo bar` into
- * `<command-name>/foo</command-name>` plus `<command-message>` /
- * `<command-args>` siblings before persisting it, so the persisted text never
- * equals what the user typed. Both orderings occur in real transcripts.
- */
+/** The CLI persists a typed `/foo bar` as `<command-name>` envelopes, in either order, so its text never equals what was typed. */
 function commandNameOf(text: string): string | null {
   const match = /<command-name>\s*\/?([^<\s]+)\s*<\/command-name>/.exec(text);
   return match ? match[1] : null;
 }
 
-/** The command a typed prompt invokes, or null when it is ordinary prose. */
 function typedCommandOf(text: string): string | null {
   if (!text.startsWith('/')) return null;
   const word = text.slice(1).split(/\s/, 1)[0];
@@ -113,12 +66,7 @@ function isSamePrompt(placeholderText: string, recordText: string): boolean {
   return commandNameOf(recordText) === typed;
 }
 
-/**
- * Index of the placeholder `incoming` is the CLI's copy of, or -1.
- *
- * Scans oldest-first so two identical prompts in flight reconcile in the order
- * they were sent.
- */
+/** Oldest-first, so two identical prompts in flight reconcile in send order. */
 export function findPendingPromptMatch(messages: JsonlNode[], incoming: JsonlNode): number {
   if (!isCliPromptRecord(incoming)) return -1;
   const text = promptText(incoming);
@@ -130,11 +78,6 @@ export function findPendingPromptMatch(messages: JsonlNode[], incoming: JsonlNod
   return -1;
 }
 
-/**
- * `messages` with the matching placeholder replaced by `incoming`, or null
- * when there is nothing to reconcile — in which case the caller appends as
- * normal. Never mutates the input.
- */
 export function reconcilePendingPrompt(
   messages: JsonlNode[],
   incoming: JsonlNode,
@@ -152,20 +95,8 @@ function timeOf(node: JsonlNode): number {
 }
 
 /**
- * `messages` with `incoming` added in file order relative to any echo still
- * waiting on its record. Never mutates the input.
- *
- * A turn's final answer is written to the JSONL before the CLI emits `result`
- * on stdout, and `result` drains the prompt queue at once — so the next
- * prompt's echo is appended before the answer's record has come through the
- * tail's poll. Appended blindly, the answer then renders BELOW the prompt it
- * preceded. A persisted record written before an echo was stamped belongs
- * above it; the echo is stamped when the prompt is sent, not when it was
- * typed, so an answer the prompt waited on is always the earlier of the two.
- *
- * Only persisted records (those with a uuid) are moved: they have a place in
- * the file to honour. Codex events and synthetic markers do not, and arrive
- * in the order they happened.
+ * The answer reaches the JSONL before `result`, which drains the queue, so the next echo can be appended first. A
+ * persisted record written before an echo's stamp goes above it; only records with a uuid move.
  */
 export function appendCliRecord(messages: JsonlNode[], incoming: JsonlNode): JsonlNode[] {
   const writtenAt = timeOf(incoming);

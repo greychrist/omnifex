@@ -1,13 +1,6 @@
 import type { CSSProperties } from 'react';
 import { ThemeMode } from '@/contexts/ThemeContext';
 
-/**
- * Claude-themed syntax highlighting theme factory
- * Returns different syntax themes based on the current theme mode
- * 
- * @param theme - The current theme mode
- * @returns Prism syntax highlighting theme object
- */
 export const getClaudeSyntaxTheme = (theme: ThemeMode): Record<string, CSSProperties> => {
   const themes = {
     gray: {
@@ -15,12 +8,12 @@ export const getClaudeSyntaxTheme = (theme: ThemeMode): Record<string, CSSProper
       background: 'transparent',
       comment: '#71717a',
       punctuation: '#a1a1aa',
-      property: '#fbbf24', // Yellow
-      tag: '#a78bfa', // Light Purple
-      string: '#34d399', // Green
-      function: '#93bbfc', // Light Blue
-      keyword: '#d8b4fe', // Light Purple
-      variable: '#c084fc', // Purple
+      property: '#fbbf24',
+      tag: '#a78bfa',
+      string: '#34d399',
+      function: '#93bbfc',
+      keyword: '#d8b4fe',
+      variable: '#c084fc',
       operator: '#a1a1aa',
     },
     light: {
@@ -28,12 +21,12 @@ export const getClaudeSyntaxTheme = (theme: ThemeMode): Record<string, CSSProper
       background: 'transparent',
       comment: '#9ca3af',
       punctuation: '#6b7280',
-      property: '#dc2626', // Red
-      tag: '#7c3aed', // Purple
-      string: '#059669', // Green
-      function: '#2563eb', // Blue
-      keyword: '#9333ea', // Purple
-      variable: '#8b5cf6', // Violet
+      property: '#dc2626',
+      tag: '#7c3aed',
+      string: '#059669',
+      function: '#2563eb',
+      keyword: '#9333ea',
+      variable: '#8b5cf6',
       operator: '#6b7280',
     },
   };
@@ -171,7 +164,7 @@ export const getClaudeSyntaxTheme = (theme: ThemeMode): Record<string, CSSProper
       color: colors.property,
     },
     'regex': {
-      color: '#06b6d4', // Cyan
+      color: '#06b6d4',
     },
     'important': {
       color: colors.property,
@@ -213,5 +206,4 @@ export const getClaudeSyntaxTheme = (theme: ThemeMode): Record<string, CSSProper
   };
 };
 
-// Export default dark theme for backward compatibility
 export const claudeSyntaxTheme = getClaudeSyntaxTheme('gray');

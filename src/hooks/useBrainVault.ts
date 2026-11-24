@@ -14,16 +14,7 @@ export interface UseBrainVault {
   clearVaultPath: () => Promise<void>;
 }
 
-/**
- * One account's vault, and nothing else.
- *
- * The account is state, not a prop, because switching it must invalidate
- * everything derived from it in the same tick. Showing account 1's note list
- * under account 2's badge for even one frame is exactly the cross-account leak
- * the per-vault design exists to make impossible — so `status` and `notes` are
- * cleared synchronously on switch rather than replaced when the new load
- * resolves.
- */
+/** The account is state so a switch clears `status` and `notes` synchronously: one frame of the old list is a cross-account leak. */
 export function useBrainVault(): UseBrainVault {
   const [accountId, setAccountIdState] = useState<number | null>(null);
   const [status, setStatus] = useState<BrainVaultStatus | null>(null);
@@ -31,11 +22,7 @@ export function useBrainVault(): UseBrainVault {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /**
-   * Guards against a slow load for a previous account overwriting a newer one.
-   * Without it, switching quickly can land account 1's notes in account 2's
-   * pane — the same leak the synchronous clear prevents, arriving late.
-   */
+  /** A slow load for a previous account must not overwrite a newer one. */
   const loadToken = useRef(0);
 
   const load = useCallback(async (id: number): Promise<void> => {
@@ -46,11 +33,7 @@ export function useBrainVault(): UseBrainVault {
       const next = await api.brainStatus(id);
       if (loadToken.current !== token) return;
       setStatus(next);
-      // An unconfigured or missing vault has nothing to list, and asking would
-      // make the registry lazily CREATE one — the opposite of what a status
-      // screen should do.
-      // Frontmatter, not just paths: the Notes table sorts on project, type
-      // and dates, none of which a path carries.
+      // Asking for an unconfigured vault's list would lazily create one.
       const list = next.configured && next.exists ? await api.brainListNoteMeta(id) : [];
       if (loadToken.current !== token) return;
       setNotes(list);
@@ -67,7 +50,6 @@ export function useBrainVault(): UseBrainVault {
   const setAccountId = useCallback((id: number): void => {
     setAccountIdState((current) => {
       if (current === id) return current;
-      // Synchronous invalidation — see the hook doc above.
       loadToken.current++;
       setStatus(null);
       setNotes([]);
@@ -85,8 +67,6 @@ export function useBrainVault(): UseBrainVault {
     if (accountId !== null) await load(accountId);
   }, [accountId, load]);
 
-  /** Runs an action, then reloads. A rejection becomes visible error state
-   *  rather than an unhandled rejection the user never sees. */
   const act = useCallback(
     async (fn: (id: number) => Promise<unknown>): Promise<void> => {
       if (accountId === null) return;

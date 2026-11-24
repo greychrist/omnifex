@@ -1,9 +1,3 @@
-// Cost Report chart — turning period keys into axis ticks and week markers.
-//
-// Pure and separate from the component for the same reason costChartData is:
-// recharts needs a real layout box, so the shaping is what gets tested.
-
-/** Period keys as `aggregateByModel` emits them, one shape per groupBy. */
 const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 const WEEK = /^(\d{4})-W(\d{2})$/;
 const MONTH = /^(\d{4})-(\d{2})$/;
@@ -13,36 +7,23 @@ const MONTH_NAMES = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
-/** Ticks the x-axis can hold side by side at 10px before they collide. */
 const MAX_TICKS = 31;
 
 const MS_PER_DAY = 86_400_000;
 
-/** `YYYY-MM-DD` for a UTC timestamp. Dates are handled in UTC throughout: the
- *  period keys are calendar strings and must not shift with the local zone. */
+/** UTC throughout: period keys are calendar strings and must not shift with the local zone. */
 function toIsoDate(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-/** Monday of the week containing `date`, as `YYYY-MM-DD`.
- *
- *  Monday because that is what SQLite's `%W` grouping uses; a Sunday-based
- *  week here would draw separators that disagree with the week buckets the
- *  same page shows one button away. */
+/** Monday: SQLite's `%W` grouping uses it, so separators agree with the week buckets. */
 function mondayOf(date: string): string {
   const ms = Date.parse(`${date}T00:00:00Z`);
-  // getUTCDay is Sunday=0; shift so Monday=0.
   const dow = (new Date(ms).getUTCDay() + 6) % 7;
   return toIsoDate(ms - dow * MS_PER_DAY);
 }
 
-/**
- * The Monday that opens a `%Y-W%W` week, or null if the period isn't a week.
- *
- * Week 01 starts on the year's first Monday, so week N starts N-1 weeks after
- * it. Week 00 is the partial week before that first Monday and starts on
- * January 1st — the one case where the arithmetic doesn't apply.
- */
+/** Week 00 is the partial week before the year's first Monday and starts on January 1st. */
 export function weekStartDate(period: string): string | null {
   const m = WEEK.exec(period);
   if (!m) return null;
@@ -54,14 +35,6 @@ export function weekStartDate(period: string): string | null {
   return toIsoDate(firstMonday + (week - 1) * 7 * MS_PER_DAY);
 }
 
-/**
- * The axis label for a period key.
- *
- * The year is dropped: every bar on screen is inside the selected range, so
- * repeating `2026-` on all 31 ticks spends the width that stops them
- * colliding and tells the reader nothing. The tooltip still carries the full
- * period.
- */
 export function formatPeriodTick(period: string): string {
   const day = DAY.exec(period);
   if (day) return `${Number(day[2])}/${Number(day[3])}`;
@@ -75,17 +48,7 @@ export function formatPeriodTick(period: string): string {
   return period;
 }
 
-/**
- * The periods that open a new week, for drawing week separators — empty
- * unless the periods are days, since week and month buckets are already one
- * bar per period.
- *
- * Keyed on the containing Monday rather than "is this a Monday?": a week with
- * no spend on its Monday still has a first bar, and that bar belongs on the
- * far side of the line.
- *
- * The first period is never a boundary; the axis is already the edge there.
- */
+/** Keyed on the containing Monday: a week with no Monday spend still has a first bar. */
 export function weekBoundaries(periods: string[]): string[] {
   const out: string[] = [];
   let previous: string | null = null;
@@ -98,14 +61,7 @@ export function weekBoundaries(periods: string[]): string[] {
   return out;
 }
 
-/**
- * recharts' `interval` for the x-axis: 0 labels every bar, n skips n between
- * labels.
- *
- * Every bar gets a label whenever they fit, which for a month of days they
- * do. Past that the ticks thin evenly rather than colliding — recharts' own
- * `minTickGap` culling would drop them unevenly, which reads as missing days.
- */
+/** Thins ticks evenly: recharts' `minTickGap` culls unevenly, which reads as missing days. */
 export function tickInterval(count: number, maxTicks: number = MAX_TICKS): number {
   if (count <= maxTicks) return 0;
   return Math.ceil(count / maxTicks) - 1;

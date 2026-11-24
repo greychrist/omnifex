@@ -1,12 +1,12 @@
 export const BRANCH_COLORS_PALETTE = [
-  '#3b82f6', // blue (also the main-folder default)
-  '#a78bfa', // violet
-  '#10b981', // emerald
-  '#f59e0b', // amber
-  '#ec4899', // pink
-  '#06b6d4', // cyan
-  '#ef4444', // red
-  '#84cc16', // lime
+  '#3b82f6',
+  '#a78bfa',
+  '#10b981',
+  '#f59e0b',
+  '#ec4899',
+  '#06b6d4',
+  '#ef4444',
+  '#84cc16',
 ];
 
 const MAIN_FOLDER_BLUE = '#3b82f6';

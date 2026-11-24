@@ -14,9 +14,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 const THEME_STORAGE_KEY = 'theme_preference';
 
-// Normalize any legacy stored theme ('dark', 'custom', 'white') to a currently-
-// supported mode. Keeps older preference files working after we dropped
-// 'dark' and 'custom' from the available set.
+// Stored values from older builds ('dark', 'custom', 'white') map to a supported mode.
 function normalizeTheme(raw: string | null): ThemeMode {
   if (raw === 'light') return 'light';
   return 'gray';
@@ -26,18 +24,15 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [theme, setThemeState] = useState<ThemeMode>('gray');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Apply theme to document
   const applyTheme = useCallback(async (themeMode: ThemeMode) => {
     const root = document.documentElement;
 
-    // Remove every known theme class (including legacy ones) so switching is
-    // idempotent even if a stale class was set by an older build.
+    // Includes legacy classes an older build may have set.
     root.classList.remove('theme-dark', 'theme-gray', 'theme-light', 'theme-custom', 'theme-white');
 
     root.classList.add(`theme-${themeMode}`);
 
-    // Clear any inline --color-* variables a legacy custom theme might have
-    // set, so they don't linger and override the selected theme.
+    // A legacy custom theme may have set inline --color-* variables.
     const legacyColorVars = [
       '--color-background', '--color-foreground', '--color-card', '--color-card-foreground',
       '--color-primary', '--color-primary-foreground', '--color-secondary',
@@ -65,8 +60,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     logAndForget('theme-context:load-theme', loadTheme());
   }, [applyTheme]);
 
-  // Rejects when the write fails (the theme still applies), so Settings can
-  // report it. `api.saveSetting` has already logged the error.
   const setTheme = useCallback(async (newTheme: ThemeMode) => {
     try {
       setIsLoading(true);

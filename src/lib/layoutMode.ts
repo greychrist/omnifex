@@ -1,21 +1,6 @@
-/**
- * Which shape of UI to draw.
- *
- * Three independent facts, not a device list:
- *  - `narrow`: the viewport is phone-or-portrait-iPad width. The session list
- *    is the root, a session is a pushed view, the tab strip hides.
- *  - `touch`:  the primary pointer is coarse. Targets grow, swipe and
- *    pull-to-refresh are on, permission prompts become a sheet.
- *  - `web`:    no native bridge — served by the daemon to a browser. Some affordances
- *    (file dialogs, Finder) do not exist here regardless of size.
- *
- * An iPad in landscape with a Magic Keyboard is `touch` but not `narrow`; a
- * desktop window dragged thin is `narrow` but not `touch`. Both are real and
- * both must look right, which is why these are separate flags rather than an
- * `isMobile` boolean.
- */
+// Independent flags, never an isMobile boolean: an iPad with a keyboard is touch but not narrow,
+// and a thin desktop window is narrow but not touch.
 
-/** Below this CSS-pixel width the split layout collapses. iPad portrait is 768–834. */
 export const NARROW_MAX_WIDTH = 900;
 
 export interface LayoutInputs {
@@ -38,7 +23,6 @@ export function computeLayoutMode(input: LayoutInputs): LayoutMode {
   };
 }
 
-/** Class names mirrored onto <html> so plain CSS can branch too. */
 export function layoutClassNames(mode: LayoutMode): string[] {
   const out: string[] = [];
   if (mode.narrow) out.push('omnifex-narrow');

@@ -1,15 +1,12 @@
 import type { RateLimitSnapshot } from '@/lib/api';
 
-/** What `rate-limits:updated` carries: a fresh snapshot for one window, or
- *  word that the account no longer has a window (`removed`). */
+/** `removed`: the account no longer has that window. */
 export interface RateLimitUpdate {
   account_name?: string;
   snapshot?: RateLimitSnapshot;
   removed?: string;
 }
 
-/** Folds one `rate-limits:updated` payload into an account's snapshots,
- *  keyed by `rate_limit_type`. Returns `prev` itself when nothing changes. */
 export function applyRateLimitUpdate(
   prev: Record<string, RateLimitSnapshot>,
   payload: RateLimitUpdate | undefined,

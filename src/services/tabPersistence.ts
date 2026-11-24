@@ -1,8 +1,3 @@
-/**
- * Tab Persistence Service
- * Handles saving and restoring tab state to/from localStorage
- */
-
 import type { Tab } from '@/contexts/TabContext';
 import type { AgentKind } from '@/lib/api';
 
@@ -14,10 +9,7 @@ interface SerializedTab {
   id: string;
   type: Tab['type'];
   title: string;
-  /**
-   * Optional in the serialized shape so we can deserialize tab records
-   * saved by pre-Codex builds. Missing → `'claude'` on restore.
-   */
+  /** Missing on pre-Codex records; restored as `'claude'`. */
   agent?: AgentKind;
   sessionId?: string;
   claudeFileId?: string;
@@ -32,49 +24,27 @@ interface SerializedTab {
   icon?: string;
   createdAt: string;
   updatedAt: string;
-  // Note: We don't persist sessionData as it's a complex object
 }
 
 // eslint-disable-next-line @typescript-eslint/no-extraneous-class -- utility-class pattern intentional; namespace-style functions less idiomatic in this codebase.
 export class TabPersistenceService {
-  /**
-   * Check if tab persistence is enabled
-   */
   static isEnabled(): boolean {
     const enabled = localStorage.getItem(PERSISTENCE_ENABLED_KEY);
-    // Default to true if not set
     return enabled === null || enabled === 'true';
   }
 
-  /**
-   * Enable or disable tab persistence
-   */
   static setEnabled(enabled: boolean): void {
     localStorage.setItem(PERSISTENCE_ENABLED_KEY, String(enabled));
     if (!enabled) {
-      // Clear saved tabs when disabling persistence
       this.clearTabs();
     }
   }
-  /**
-   * Save tabs to localStorage
-   */
   static saveTabs(tabs: Tab[], activeTabId: string | null): void {
-    // Don't save if persistence is disabled
     if (!this.isEnabled()) return;
     
     try {
-      // Every tab is persisted, including running ones. This used to drop
-      // `status === 'running'` as "likely stale", which was true under Tauri
-      // where the CLI died with the app. It is false now: the daemon owns
-      // every CLI process and they outlive the renderer, so a running tab is
-      // precisely the one worth restoring — its session is still live and
-      // resumable. Dropping it meant any reload silently closed every tab
-      // that was mid-turn, which is most of the ones you care about.
-      // The `running` → `idle` normalization below is what keeps a restored
-      // tab honest; the filter was never what did that work.
+      // Persist running tabs too: the daemon's CLI outlives the renderer, so they are the ones worth restoring.
 
-      // Serialize tabs (excluding complex objects)
       const serializedTabs: SerializedTab[] = tabs.map(tab => ({
         id: tab.id,
         type: tab.type,
@@ -87,8 +57,8 @@ export class TabPersistenceService {
         accountName: tab.accountName,
         accountColor: tab.accountColor,
         accountIcon: tab.accountIcon,
-        status: tab.status === 'running' ? 'idle' : tab.status, // Reset running status
-        hasUnsavedChanges: false, // Reset unsaved changes
+        status: tab.status === 'running' ? 'idle' : tab.status,
+        hasUnsavedChanges: false,
         order: tab.order,
         icon: tab.icon,
         createdAt: tab.createdAt instanceof Date ? tab.createdAt.toISOString() : tab.createdAt,
@@ -97,10 +67,7 @@ export class TabPersistenceService {
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(serializedTabs));
       
-      // Save active tab ID. Guarded against an id naming no tab in the list,
-      // not against a running one — the active tab is the likeliest to be
-      // mid-turn, and dropping the pointer landed you on an arbitrary tab
-      // after every reload.
+      // Guard only against an id naming no tab, never against a running one.
       if (activeTabId && tabs.some(tab => tab.id === activeTabId)) {
         localStorage.setItem(ACTIVE_TAB_KEY, activeTabId);
       }
@@ -109,11 +76,7 @@ export class TabPersistenceService {
     }
   }
 
-  /**
-   * Load tabs from localStorage
-   */
   static loadTabs(): { tabs: Tab[], activeTabId: string | null } {
-    // Don't load if persistence is disabled
     if (!this.isEnabled()) {
       return { tabs: [], activeTabId: null };
     }
@@ -128,25 +91,16 @@ export class TabPersistenceService {
 
       const serializedTabs = JSON.parse(savedTabsJson) as SerializedTab[];
       
-      // Deserialize tabs
       const tabs: Tab[] = serializedTabs.map(serialized => ({
         ...serialized,
-        // Back-compat: tabs saved by pre-Codex builds have no `agent`
-        // field. Default to 'claude' so the Tab invariant
-        // (`agent: AgentKind`) holds for every restored tab.
         agent: serialized.agent ?? 'claude',
         createdAt: new Date(serialized.createdAt),
         updatedAt: new Date(serialized.updatedAt),
-        sessionData: undefined, // Will be loaded when tab is activated
-        status: serialized.status === 'running' ? 'idle' : serialized.status // Ensure no running status
+        sessionData: undefined,
+        status: serialized.status === 'running' ? 'idle' : serialized.status
       }));
 
-      // The Usage dashboard was removed once it turned out to be unreachable
-      // (its only entry point was a window event nothing dispatched) and the
-      // Cost Report supersedes it. A tab persisted by an older build would
-      // otherwise restore into a type nothing renders — a blank tab, no error.
-      // Collapsed rather than merely retyped, so two of them cannot break the
-      // find-or-create singleton the opener relies on.
+      // The removed Usage tab collapses into one Cost Report tab, keeping the find-or-create singleton intact.
       let seenCostReport = false;
       const migrated = tabs
         .map((tab) => (
@@ -161,32 +115,23 @@ export class TabPersistenceService {
           return true;
         });
 
-      // Validate and filter out any invalid tabs
       const validTabs = migrated.filter(tab => {
-        // Basic validation
         if (!tab.id || !tab.type || !tab.title) return false;
         
-        // Type-specific validation
         switch (tab.type) {
           case 'chat':
-            // Chat tabs without sessionId or projectPath might be invalid
-            // But we'll keep them as they might be new sessions
             return true;
           case 'claude-file':
-            // Claude file tabs need a file ID
             return !!tab.claudeFileId;
           default:
-            // Other tab types (projects, agents, cost-report, etc.) are always valid
             return true;
         }
       });
 
-      // Ensure proper ordering
       const orderedTabs = validTabs
         .sort((a, b) => a.order - b.order)
         .map((tab, index) => ({ ...tab, order: index }));
 
-      // Validate active tab ID
       const activeTabId = savedActiveTabId && orderedTabs.some(tab => tab.id === savedActiveTabId)
         ? savedActiveTabId
         : orderedTabs.length > 0 ? orderedTabs[0].id : null;
@@ -194,27 +139,19 @@ export class TabPersistenceService {
       return { tabs: orderedTabs, activeTabId };
     } catch (error) {
       console.error('Failed to load tabs:', error);
-      // Clear corrupted data
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(ACTIVE_TAB_KEY);
       return { tabs: [], activeTabId: null };
     }
   }
 
-  /**
-   * Clear saved tabs
-   */
   static clearTabs(): void {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(ACTIVE_TAB_KEY);
   }
 
-  /**
-   * Migrate from old storage format if needed
-   */
   static migrateFromOldFormat(): void {
     try {
-      // Migrate from opcode_tabs (v1) format
       const oldKey = 'opcode_tabs';
       const oldData = localStorage.getItem(oldKey);
       if (oldData && !localStorage.getItem(STORAGE_KEY)) {
@@ -223,7 +160,6 @@ export class TabPersistenceService {
         console.log('Migrated tab data from v1 format');
       }
 
-      // Migrate from opcode_* (v2) keys to greychrist_* keys
       const migrations: [string, string][] = [
         ['opcode_tabs_v2', STORAGE_KEY],
         ['opcode_active_tab_v2', ACTIVE_TAB_KEY],

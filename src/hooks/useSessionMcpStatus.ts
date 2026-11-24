@@ -2,32 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type SessionMcpServerStatus } from '@/lib/api';
 import { logAndForget } from '@/lib/fireAndLog';
 
-/**
- * The session's MCP servers as the CLI reports them now — what the Session
- * context panel lists and what its MCP heading counts.
- *
- * It used to be fetched inside the list, which mounts only with its section
- * open, so the heading had to count from `system:init` instead. A session
- * opened from its transcript has no init, and the heading showed no count at
- * all while Mods and Plugins did. Same shape as useSessionPlugins.
- *
- * While enabled and the list is empty it asks again every `pollMs`: the CLI's
- * control channel answers nothing until it has read its first prompt, so an
- * empty list right after Start means "not yet". It stops at the first
- * non-empty answer, on disable, and on unmount.
- *
- * `watchUntil` is a second, independent loop for a row action (Authenticate,
- * Disable, ...): it polls the same status every `pollMs`, writes `servers` on
- * each non-empty tick, and resolves true once `done` holds for the named
- * server, false at `timeoutMs` or unmount. An empty tick is skipped. It never
- * touches the initial-load loop above.
- */
 export type McpWatchUntil = (
   serverName: string,
   done: (server: SessionMcpServerStatus | undefined) => boolean,
   timeoutMs?: number,
 ) => Promise<boolean>;
 
+/**
+ * Polls while the list is empty: the CLI's control channel answers nothing until it has read its first
+ * prompt, so empty right after Start means "not yet".
+ */
 export function useSessionMcpStatus(
   tabId: string,
   enabled: boolean,
@@ -78,11 +62,9 @@ export function useSessionMcpStatus(
       try {
         const result = (await api.sessionMcpServerStatus(tabId)) ?? [];
         if (!mountedRef.current) return false;
-        // The main process answers [] on its own timeout, on a control error
-        // and when the engine is not live: no answer this tick, not "none".
+        // [] means no answer this tick (timeout, control error, engine not live), not "none".
         if (result.length > 0) {
-          // Unchanged answer → keep the reference, so a long watch does not
-          // re-render the session tab on every tick.
+          // Keep the reference so a long watch does not re-render the tab every tick.
           setServers((prev) => (prev !== null && JSON.stringify(prev) === JSON.stringify(result) ? prev : result));
           if (done(result.find((s) => s.name === serverName))) return true;
         }

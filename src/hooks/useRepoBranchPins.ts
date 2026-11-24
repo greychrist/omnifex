@@ -1,13 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type BranchColor } from '@/lib/api';
 
-/**
- * Branch color pins for each repo a session shows, keyed by the path asked
- * for (a repo's `root.path`). Pins belong to the repo, so an edit made from
- * any session or the project screen reaches every tab: the daemon announces
- * `branch-colors-changed` and this reloads. Few repos, tiny lists — reloading
- * them all beats matching a worktree path to its main checkout here.
- */
 export function useRepoBranchPins(repoPaths: string[]): Record<string, Record<string, string>> {
   const [pins, setPins] = useState<Record<string, Record<string, string>>>({});
   const key = repoPaths.join('\0');

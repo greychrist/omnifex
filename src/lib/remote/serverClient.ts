@@ -1,16 +1,4 @@
-/**
- * `ProtocolClient` over a browser-compatible WebSocket.
- *
- * Owns exactly the transport concerns: open, `hello`, request/response
- * correlation, reconnect with backoff, and surfacing pushes. It does not know
- * what a session is. Re-subscribing after a reconnect is the shim's job —
- * only the shim knows which sessions the UI is showing and the last seq it
- * saw for each.
- *
- * Requests made while (re)connecting are queued rather than rejected: the
- * iPad backgrounds this app constantly, and a tap that lands during the
- * half-second the socket takes to come back should not fail.
- */
+/** Transport only; re-subscribing after a reconnect is the shim's job. Requests made while (re)connecting are queued, not rejected. */
 import {
   PROTOCOL_VERSION,
   decodeServerMessage,
@@ -26,7 +14,6 @@ import type {
   Unsubscribe,
 } from '@/protocol/interfaces';
 
-/** The subset of the WebSocket surface this client uses — injectable for tests. */
 export interface WebSocketLike {
   readonly readyState: number;
   send(data: string): void;
@@ -43,16 +30,12 @@ export interface ServerClientOptions {
   url: string;
   clientId: string;
   clientKind: 'desktop' | 'web';
-  /** Defaults to the global `WebSocket`. */
   createSocket?: WebSocketFactory;
-  /** `false` disables reconnect; otherwise exponential backoff between the two. */
   reconnect?: { initialMs: number; maxMs: number } | false;
-  /** A queued or in-flight request older than this is rejected. */
   requestTimeoutMs?: number;
   log?: (message: string, meta?: Record<string, unknown>) => void;
 }
 
-/** Client-side failure, distinct from a daemon `ProtocolError`. */
 export class RemoteClientError extends Error {
   constructor(
     readonly code: 'DISCONNECTED' | 'TIMEOUT' | 'PROTOCOL_VERSION_MISMATCH' | (string & {}),
@@ -69,7 +52,6 @@ interface Pending {
   method: string;
   resolve: (v: unknown) => void;
   reject: (e: unknown) => void;
-  /** Null for the methods that are deliberately not on a clock — see `rawRequest`. */
   timer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -96,7 +78,6 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
   let seq = 0;
 
   const pending = new Map<string, Pending>();
-  /** Frames to send once the socket is open and greeted. */
   const outbox: string[] = [];
   const pushListeners = new Set<(m: ServerMessage) => void>();
   const stateListeners = new Set<(s: ConnectionState) => void>();
@@ -141,18 +122,7 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
     }
     const requestId = `c${++seq}`;
     return new Promise<T>((resolve, reject) => {
-      // The protocol's own methods answer promptly or not at all, so a clock
-      // on them turns a wedged daemon into an error instead of a spinner.
-      //
-      // `rpc.invoke` is the exception, and it is not a small one: it proxies an
-      // arbitrary IPC handler, and on the desktop those have no deadline at
-      // all. Indexing nine sessions into the Brain takes a minute, a backfill
-      // takes hours — and rejecting at 30s did not stop any of it, it only
-      // stopped the UI hearing how it ended. The call then reported
-      // "rpc.invoke timed out after 30000ms" over work that went on to finish
-      // and bill, with no completion refresh behind it. The socket is the
-      // honest liveness signal, and `onclose` below already fails everything
-      // in flight on it.
+      // The protocol's methods are on a clock; `rpc.invoke` is not: it proxies handlers that run for hours, and `onclose` is the liveness signal.
       const timer =
         method === 'rpc.invoke'
           ? null
@@ -238,7 +208,6 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
         .catch((err: unknown) => {
           const code = (err as { code?: string }).code;
           if (code === 'PROTOCOL_VERSION_MISMATCH') {
-            // No point retrying: this client cannot talk to that daemon.
             wantConnected = false;
             failAll(new RemoteClientError('PROTOCOL_VERSION_MISMATCH', (err as Error).message));
             setState('disconnected');
@@ -250,15 +219,12 @@ export function createServerClient(opts: ServerClientOptions): ServerClient {
     };
     ws.onmessage = (ev) => handleFrame(ev.data);
     ws.onerror = () => {
-      // `onclose` always follows; nothing to do here but note it.
       log('socket error');
     };
     ws.onclose = (ev) => {
       if (socket !== ws) return;
       socket = null;
       log('socket closed', { code: ev.code, reason: ev.reason });
-      // In-flight requests cannot be answered by the next socket: the daemon
-      // never saw them or has no way to route the reply. Fail them now.
       for (const [id, p] of pending) {
         if (p.timer) clearTimeout(p.timer);
         p.reject(new RemoteClientError('DISCONNECTED', `${p.method}: connection lost`));

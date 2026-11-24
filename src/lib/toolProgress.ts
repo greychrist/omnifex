@@ -1,13 +1,6 @@
 import type { JsonlNode } from '@/types/jsonl';
 
-/**
- * Live, never-persisted progress for in-flight tool calls.
- *
- * The CLI emits `type: "tool_progress"` on the stream-json stdout path only —
- * it is absent from every transcript on disk — so this is an overlay channel
- * like `stream-event`, reduced into a per-tab map and read at render time.
- * Nothing here ever reaches `messages[]`.
- */
+// tool_progress is stdout-only, never on disk: an overlay that never reaches messages[].
 
 export type ToolProgressNode = Extract<JsonlNode, { kind: 'tool-progress' }>;
 
@@ -15,16 +8,13 @@ export interface ToolProgressRetry {
   attempt: number;
   maxRetries: number;
   retryDelayMs: number;
-  /** HTTP status that triggered the retry, or null when the CLI had none. */
   errorStatus: number | null;
   errorCategory: string;
 }
 
 export interface ToolProgressEntry {
-  /** `elapsed_time_seconds` from the newest frame. */
   elapsedSeconds: number;
-  /** Wall clock when that frame arrived, so a chip can interpolate between the
-   *  CLI's 30-second beats instead of jumping by half-minutes. */
+  /** Lets a chip interpolate between the CLI's 30-second beats. */
   arrivedAtMs: number;
   retry: ToolProgressRetry | null;
 }
@@ -35,14 +25,7 @@ export const EMPTY_TOOL_PROGRESS: ToolProgressMap = new Map<string, ToolProgress
 
 const HEARTBEAT_SUFFIX = /-heartbeat-\d+$/;
 
-/**
- * The real tool_use id a progress frame belongs to.
- *
- * The CLI mints a synthetic id per beat (`${toolUseID}-heartbeat-${n++}`) and
- * sets `parent_tool_use_id` to `Se.parentToolUseID ?? n`, which resolves to the
- * enclosing Task id for a tool running inside a subagent. Stripping the suffix
- * is the only rule that is correct in both the nested and top-level cases.
- */
+/** The CLI mints `${toolUseID}-heartbeat-${n}` per beat; stripping the suffix is right both nested and top-level. */
 export function anchorToolUseId(toolUseId: string): string {
   return toolUseId.replace(HEARTBEAT_SUFFIX, '');
 }
@@ -58,13 +41,7 @@ function sameRetry(a: ToolProgressRetry | null, b: ToolProgressRetry | null): bo
   );
 }
 
-/**
- * Fold one frame into the per-tab map.
- *
- * Pure, idempotent, and reference-stable: a frame that changes nothing returns
- * `prev` itself, so a duplicate delivery — a remote client's reconnect replay,
- * say — cannot cost a render.
- */
+/** Returns `prev` when nothing changed, so a duplicate (reconnect replay) costs no render. */
 export function reduceToolProgress(
   prev: ToolProgressMap,
   node: ToolProgressNode,
@@ -74,9 +51,7 @@ export function reduceToolProgress(
   const existing = prev.get(key);
   const raw = node.raw;
 
-  // A retry frame is the only thing that speaks about `retry`. A heartbeat
-  // leaves whatever is there alone: the two channels interleave, and a beat
-  // arriving mid-retry must not report the retry as resolved.
+  // Only a retry frame speaks about retry; a heartbeat mid-retry must not resolve it.
   let retry: ToolProgressRetry | null = existing?.retry ?? null;
   if (raw.subagent_retry) {
     const r = raw.subagent_retry;
@@ -88,8 +63,7 @@ export function reduceToolProgress(
       errorCategory: r.error_category,
     };
   } else if (raw.subagent_type !== undefined) {
-    // `subagent_type` with no `subagent_retry` IS the CLI's resolved signal —
-    // the emitter spreads `...resolved !== true && { subagent_retry }`.
+    // subagent_type without subagent_retry is the CLI's resolved signal.
     retry = null;
   }
 
@@ -107,13 +81,6 @@ export function reduceToolProgress(
   return next;
 }
 
-/**
- * Drop every entry whose tool is no longer of interest.
- *
- * Called with an empty keep set at turn end — a finished turn has no running
- * tools. Hygiene, not correctness: the chip already refuses to paint progress
- * for a tool whose result has landed, so a stale entry is invisible either way.
- */
 export function pruneToolProgress(
   prev: ToolProgressMap,
   keepIds: Set<string>,

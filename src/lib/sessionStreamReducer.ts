@@ -5,38 +5,14 @@ import { computeMessageCost, type ModelPricingInput, type UsageTokens } from '@/
 
 export type { PermissionRequestPayload };
 
-/**
- * Pure reducer for JSONL stream nodes flowing into the renderer.
- *
- * Extracted from ClaudeCodeSession.handleStreamMessage so the non-UI logic
- * (append decisions, session-id extraction, permission detection,
- * userInterrupted suppression, post-turn refresh requests) can be tested
- * without React.
- *
- * The reducer is intentionally narrow — currentActivity gerunds, raw JSONL
- * appending, session metrics, and cost tracking still live in the
- * component. Folding those in is a follow-up.
- *
- * Caveat: not actually pure — computeCost mutates `ctx.seenCostKeys` (the
- * caller-owned dedup set) as a side effect, by design; see the field's doc
- * comment on StreamReducerContext.
- */
-
 export interface StreamReducerContext {
   projectPath: string;
-  /** Whether the messages array already contains a system:init message. */
   hasExistingInit: boolean;
-  /** Whether extractedSessionInfo state has been set this session. */
   hasExtractedSession: boolean;
-  /** Latest value of userInterruptedRef — used to suppress the CLI's post-cancel error result. */
   userInterrupted: boolean;
-  /** Current messages.length, snapshotted before this message is folded in. */
   messagesLength: number;
-  /** Optional pricing overrides (per MTok), loaded once per session. */
   pricingOverrides?: readonly ModelPricingInput[] | undefined;
-  /** Dedup set for cost accounting: requestId/message.id keys already priced.
-   *  Live streams re-deliver assistant messages per content block; without
-   *  this, session cost inflates. Owned by the caller, reset per session. */
+  /** requestId/message.id keys already priced; live streams re-deliver assistant messages per content block. */
   seenCostKeys?: Set<string>;
 }
 
@@ -55,22 +31,10 @@ export type StreamReducerEffect =
   | { kind: 'queuePostCompactDirective' }
   | { kind: 'showPermissionPrompt'; payload: PermissionRequestPayload };
 
-/**
- * Activity update for the in-flight indicator.
- *
- * - `literal`: a tool-specific label (e.g. `Searching for "foo"`).
- * - `gerund`: caller picks one of the rotating gerunds — kept out of the
- *   reducer so the reducer stays deterministic.
- */
 export type ActivityUpdate =
   | { kind: 'literal'; label: string }
   | { kind: 'gerund' };
 
-/**
- * Per-message deltas to fold into `sessionMetrics`. All numeric fields
- * accumulate; `bumpLastActivity` says "this message implies activity, so
- * snap lastActivityTime to now".
- */
 export interface MetricsDelta {
   toolsExecuted: number;
   toolsFailed: number;
@@ -93,45 +57,22 @@ export const EMPTY_METRICS_DELTA: MetricsDelta = {
   bumpLastActivity: false,
 };
 
-/**
- * How the caller should fold this message into messages[].
- *
- * - 'append': normal `setMessages(prev => [...prev, msg])` push.
- * - 'insertBeforeFirstUser': system:init insertion semantics —
- *   splice the message in before the first user message, otherwise
- *   append. Mirrors the original component's "init goes above the
- *   first prompt" rendering.
- * - 'skip': drop the message (duplicate init, suppressed interrupted result).
- */
 export type AppendMode = 'append' | 'insertBeforeFirstUser' | 'skip';
 
 export interface StreamReducerResult {
   append: AppendMode;
-  /**
-   * When set, the caller appends THIS node instead of the original message.
-   * Used to keep a turn-closer in messages[] while rewriting its presentation
-   * (e.g. a user-cancel result kept in the transcript, but with
-   * is_error stripped so it renders as a benign completion, not a failure).
-   */
+  /** Keeps a turn-closer in messages[] while rewriting its presentation. */
   replaceWith?: JsonlNode;
   effects: StreamReducerEffect[];
-  /** New live session id from a system:init message, if any. */
   sessionIdUpdate?: string;
-  /** Set extractedSessionInfo (only on the first init for this session). */
   extractedSessionInfo?: { sessionId: string; projectId: string };
-  /** Permission UI payload extracted from a permission_request message. */
   pendingPermission?: PermissionRequestPayload;
-  /** Tell the caller to clear userInterruptedRef. */
   clearUserInterrupted?: boolean;
-  /** Updated activity label, or `gerund` to ask the caller to pick one. */
   activityUpdate?: ActivityUpdate;
-  /** Metric deltas — always present; defaults to EMPTY_METRICS_DELTA. */
   metrics: MetricsDelta;
-  /** USD cost to add to the session's cumulative cost. 0 if no usage data. */
   costDelta: number;
 }
 
-/** Same projectId derivation the original component used. */
 function deriveProjectId(projectPath: string): string {
   return projectPath.replace(/[^a-zA-Z0-9]/g, '-');
 }
@@ -213,10 +154,6 @@ function toolUseLabel(name: string, input: Record<string, unknown>): string {
   return builder ? builder(input) : `Running ${name}`;
 }
 
-/**
- * Inspect content blocks and produce activity + metric deltas.
- * Returns `null` for activityUpdate when no relevant block was seen.
- */
 function inspectAssistantContent(
   blocks: unknown[],
 ): { activity: ActivityUpdate | null; metrics: MetricsDelta } {
@@ -288,13 +225,9 @@ function inspectUserContent(blocks: unknown[]): {
 }
 
 function computeCost(node: JsonlNode, ctx: StreamReducerContext): number {
-  // Only assistant nodes are priced. cli-stream-result usage is the CLI's
-  // rollup of the same assistant messages — counting both double-counts.
+  // Only assistants: cli-stream-result usage is the CLI's rollup of them.
   if (node.kind !== 'assistant') return 0;
-  // Live-forwarded subagent assistants (--forward-subagent-text) carry their
-  // own usage, but persisted parent transcripts never contain these lines —
-  // pricing them would make live cost disagree with the same session's cost
-  // on reload. Subagent totals surface via subagent row meta instead.
+  // Forwarded subagent assistants never reach persisted transcripts; pricing them makes live cost disagree with reload.
   const parentToolUseId = (node.raw as { parent_tool_use_id?: unknown }).parent_tool_use_id;
   if (typeof parentToolUseId === 'string' && parentToolUseId.length > 0) return 0;
   const raw = node.raw as {
@@ -315,9 +248,6 @@ export function reduceSessionStreamMessage(
   node: JsonlNode,
   ctx: StreamReducerContext,
 ): StreamReducerResult {
-  // Defensive: stream-event overlay nodes are intercepted before the reducer.
-  // If a future code path bypasses that branch, ensure these never land in
-  // messages[] as garbage entries.
   if (node.kind === 'stream-event' || node.kind === 'rate-limit' || node.kind === 'lifecycle') {
     return {
       append: 'skip',
@@ -346,11 +276,6 @@ export function reduceSessionStreamMessage(
     activity = inspected.activity;
   }
 
-  // Errors surfaced as system messages contribute to the cumulative count.
-  // A `system:status` message is a transient per-turn phase ping (e.g.
-  // `requesting`, `compacting`) — surface it as the live activity label so
-  // the "Running…" row says something during the silent pre-response gap.
-  // The next assistant tool/text block overwrites it, so it never lingers.
   if (node.kind === 'system') {
     const raw = node.raw as { subtype?: string; error?: unknown; status?: string | null };
     if (raw.subtype === 'error' || raw.error) {
@@ -370,11 +295,7 @@ export function reduceSessionStreamMessage(
     activityUpdate: activity ?? undefined,
   };
 
-  // system:init — extract session id, kick off live CLI info fetches,
-  // skip duplicates without suppressing the fetches (they fire on every init,
-  // including post-rebind / restart). The classifier routes every system:init
-  // to kind:'cli-stream-init'; the raw payload keeps its original shape, so
-  // session_id is still read off raw.
+  // The fetches fire on every init (including restarts); only the duplicate row is skipped.
   if (node.kind === 'cli-stream-init') {
     const raw = node.raw as { session_id?: string };
     const sid = raw.session_id;
@@ -400,31 +321,13 @@ export function reduceSessionStreamMessage(
     return result;
   }
 
-  // CLI emits compact_boundary after a manual or auto compaction; refresh the
-  // header context-usage popover immediately rather than waiting for the next
-  // turn's result.
-  //
-  // The same boundary is where the context goes lossy, so it is also where the
-  // post-compaction re-read directive gets queued. Queued rather than sent
-  // because the boundary usually arrives mid-turn. See postCompactPrompt.ts
-  // for why it is sent at all.
-  //
-  // It also asks for a drain, and that is not redundant with the one on
-  // `cli-stream-result`: the CLI does not guarantee the result comes after the
-  // boundary. Work session 3445e547 (2.1.273) put the result two records
-  // EARLIER, so the only drain trigger had already fired by the time the
-  // directive existed and it sat in the queue forever. The drain effect peeks
-  // before it commits, so firing it mid-turn is a noop rather than a reorder.
+  // Also drains: the CLI can emit the result before the boundary, which stranded the directive in the queue.
   if (node.kind === 'system' && node.subtype === 'compact_boundary') {
     effects.push({ kind: 'refreshContextUsage' });
     effects.push({ kind: 'queuePostCompactDirective' });
     effects.push({ kind: 'processQueuedPrompt' });
   }
 
-  // Model-fallback family — the CLI just switched (or refused and switched)
-  // the running model. Refresh immediately so the header summary names the
-  // actual model instead of lagging until the turn's result arrives.
-  // (`error_during_execution` is excluded: an error, not a model change.)
   if (
     node.kind === 'system' &&
     (node.subtype === 'model_fallback' ||
@@ -435,8 +338,6 @@ export function reduceSessionStreamMessage(
     effects.push({ kind: 'refreshContextUsage' });
   }
 
-  // The in-message form of the same event: an assistant message opening with
-  // a `fallback` content block (e.g. Fable → Opus safety fallback).
   if (node.kind === 'assistant') {
     const content = (node.raw as { message?: { content?: unknown } }).message?.content;
     if (
@@ -447,21 +348,13 @@ export function reduceSessionStreamMessage(
     }
   }
 
-  // Result nodes arrive as kind:'cli-stream-result' (the classifier routes
-  // every `type:'result'` line there). They mean "turn complete, awaiting
-  // next input" — not exit. conversationStatus derivation owns the spinner
-  // signal; the reducer handles queue drain and context refresh.
   if (node.kind === 'cli-stream-result') {
     const raw = node.raw as { is_error?: boolean };
     if (ctx.userInterrupted) {
       result.clearUserInterrupted = true;
       if (raw.is_error === true) {
-        // Deliberate user cancel. Keep the result row in messages[] (it is
-        // the reducer's context-refresh trigger and the transcript's own
-        // turn bracket) but neutralize is_error so it renders as a benign
-        // completion badge instead of a red "failed" card — a cancel is not a
-        // failure. Don't drain the prompt queue: the user stopped on purpose,
-        // so queued prompts must not auto-fire.
+        // A cancel keeps the result row (context-refresh trigger, turn bracket) with is_error cleared,
+        // and must not drain the queue.
         result.replaceWith = {
           ...node,
           raw: { ...(node.raw as Record<string, unknown>), is_error: false },

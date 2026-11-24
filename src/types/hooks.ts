@@ -1,19 +1,12 @@
-/**
- * Types for Claude Code hooks configuration
- */
-
 export interface HookCommand {
   type: 'command';
   command: string;
-  timeout?: number; // Optional timeout in seconds (default: 60)
-  /** What a failed hook (couldn't start, timed out, exit code other than
-   *  0/2, invalid JSON) does. `'continue'` (the CLI default) lets the action
-   *  through; `'block'` treats it as exit 2. Added in CLI 2.1.295. */
+  timeout?: number; // seconds
+  /** On a failed hook: `'continue'` (CLI default) lets the action through; `'block'` treats it as exit 2. */
   onFailure?: 'continue' | 'block';
 }
 
-/** Events where the CLI ignores `onFailure` and never blocks on a failed
- *  hook (2.1.295's `Stop,SubagentStop,TaskCompleted,TeammateIdle` set). */
+/** The CLI ignores `onFailure` on these events. */
 export const ON_FAILURE_IGNORED_EVENTS: ReadonlySet<string> = new Set([
   'Stop',
   'SubagentStop',
@@ -22,52 +15,28 @@ export const ON_FAILURE_IGNORED_EVENTS: ReadonlySet<string> = new Set([
 ]);
 
 export interface HookMatcher {
-  matcher?: string; // Pattern to match tool names (regex supported)
+  matcher?: string;
   hooks: HookCommand[];
 }
 
-/**
- * Every hook event the CLI fires, in lifecycle order.
- * Source: https://code.claude.com/docs/en/hooks (checked 2026-08-05, CLI
- * 2.1.222; model-switch events added 2026-10-24, CLI 2.1.310). The editor
- * previously knew only five of these. `npm run cli-review:diff` checks this
- * list against the installed CLI on every release review.
- */
+/** Every hook event the CLI fires, in lifecycle order; `npm run cli-review:diff` checks it against the CLI. */
 export const HOOK_EVENTS = [
-  // Session
   'SessionStart', 'Setup', 'SessionEnd', 'Stop', 'StopFailure',
-  // Model (CLI 2.1.251)
   'PreModelSwitch', 'PostModelSwitch',
-  // Prompt
   'UserPromptSubmit', 'UserPromptExpansion', 'MessageDisplay',
-  // Tools
   'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PostToolBatch',
-  // Permissions
   'PermissionRequest', 'PermissionDenied',
-  // Subagents & tasks
   'SubagentStart', 'SubagentStop', 'TaskCreated', 'TaskCompleted', 'TeammateIdle',
-  // Context
   'PreCompact', 'PostCompact', 'InstructionsLoaded',
-  // Workspace
   'ConfigChange', 'CwdChanged', 'DirectoryAdded', 'FileChanged',
   'WorktreeCreate', 'WorktreeRemove',
-  // Notifications
   'Notification',
-  // MCP
   'Elicitation', 'ElicitationResult',
 ] as const;
 
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
-/**
- * Hooks as they appear in settings.json.
- *
- * EVERY event uses the same nesting — `Event → [{matcher?, hooks: [...]}]` —
- * including the events that ignore `matcher` and always fire. An earlier
- * version of this type modelled Notification/Stop/SubagentStop as a flat
- * `HookCommand[]`, which mis-read real configs and wrote back a shape the CLI
- * silently never executes.
- */
+/** Every event nests `Event → [{matcher?, hooks}]`, even matcher-less ones; a flat array is silently never executed. */
 export type HooksConfiguration = Partial<Record<HookEvent, HookMatcher[]>>;
 
 export const HOOK_EVENT_GROUPS = [
@@ -85,14 +54,10 @@ export const HOOK_EVENT_GROUPS = [
 export type HookEventGroup = (typeof HOOK_EVENT_GROUPS)[number];
 
 export interface HookMatcherInfo {
-  /** What the matcher filters on, shown next to the field. */
   hint: string;
-  /** Concrete values the CLI accepts — the vocabulary is per-event and not
-   *  guessable, so the editor offers these directly. */
   examples: string[];
 }
 
-/** Tool-name patterns offered for the five events whose matcher is a tool. */
 export const COMMON_TOOL_MATCHERS = [
   'Task',
   'Bash',
@@ -116,7 +81,6 @@ export interface HookEventInfo {
   label: string;
   description: string;
   group: HookEventGroup;
-  /** `false` for events that always fire and silently ignore `matcher`. */
   matcher: false | HookMatcherInfo;
 }
 
@@ -342,15 +306,10 @@ export const HOOK_EVENT_INFO: Record<HookEvent, HookEventInfo> = {
   },
 };
 
-/** Whether the CLI honours a `matcher` on this event. */
 export function eventSupportsMatcher(event: HookEvent): boolean {
   return HOOK_EVENT_INFO[event].matcher !== false;
 }
 
-/**
- * Events bucketed for the picker, in `HOOK_EVENT_GROUPS` order (lifecycle,
- * not alphabetical) with events in `HOOK_EVENTS` order inside each bucket.
- */
 export function groupedHookEvents(): [HookEventGroup, HookEvent[]][] {
   return HOOK_EVENT_GROUPS.map((group) => [
     group,
@@ -385,7 +344,6 @@ export interface HookValidationResult {
 
 export type HookScope = 'user' | 'project' | 'local';
 
-// Hook templates
 export interface HookTemplate {
   id: string;
   name: string;
@@ -402,13 +360,7 @@ export const HOOK_TEMPLATES: HookTemplate[] = [
     description: 'Log all bash commands to a file for auditing',
     event: 'PreToolUse',
     matcher: 'Bash',
-    // NOTE: jq's string-interpolation syntax is `\(...)` (e.g.
-    // `"\(.tool_input.command)"`). To put a literal `\(` in this JS
-    // source string we'd need `\\(`. The original author wrote `\(`,
-    // which JS resolves to `(`, so the resulting jq command logs the
-    // literal text instead of interpolating. Removing the unnecessary
-    // JS escapes here matches today's runtime exactly; users who want
-    // real interpolation should swap `(` → `\\(` in their hook.
+    // Plain `(`, not jq's `\(`: logs literal text rather than interpolating, as it always has.
     commands: ['jq -r \'"(.tool_input.command) - (.tool_input.description // "No description")"\' >> ~/.claude/bash-command-log.txt']
   },
   {

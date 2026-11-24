@@ -1,12 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type SessionCostSnapshot } from '@/lib/api';
 
-/**
- * Live computed session cost. Starts a main-process
- * watcher over the session's JSONL (+ subagents), seeds from the watch
- * response, then follows `session-cost:<sessionId>` push events. Cleans up
- * watcher + listener on unmount / arg change.
- */
 export function useSessionCost(args: {
   configDir?: string;
   projectPath?: string;

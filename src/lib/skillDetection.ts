@@ -5,30 +5,14 @@ export interface SkillInjection {
   skillName: string;
 }
 
-/** Read message.content from an assistant or user JsonlNode. */
 function getContent(m: JsonlNode): unknown[] | null {
   const content = (m as unknown as { raw?: { message?: { content?: unknown } } }).raw?.message?.content;
   return Array.isArray(content) ? content : null;
 }
 
 /**
- * A user-role message is "skill-injected" when the CLI names the `Skill`
- * tool_use that produced it in `sourceToolUseID`. The CLI injects the skill's
- * SKILL.md body as a user-role text message after the tool runs, and we
- * render it distinctly from a real user-typed prompt.
- *
- * Detection is position-independent, and that is the point. This used to
- * require the record to sit IMMEDIATELY after the Skill tool_result, which
- * held only while the CLI emitted exactly one companion per invocation. CLI
- * 2.1.270 emits two on a re-invocation — a "(Re-invocation of …)" preamble,
- * then the body — so adjacency matched the preamble and the body fell
- * through to `user.prompt`, rendering a skill's instructions as if the user
- * had typed them.
- *
- * `sourceToolUseID` is only present on the CLI's persisted JSONL; stream-json
- * strips it along with `isMeta` and `turnCompanion`. That is safe to depend
- * on because committed transcript rows now come from the JSONL exclusively
- * (see daemon/services/sessions/stream-forward.ts).
+ * Position-independent: CLI 2.1.270 emits a re-invocation preamble before the body.
+ * `sourceToolUseID` exists only in persisted JSONL, where committed rows come from.
  */
 export function detectSkillInjection(
   message: JsonlNode,
@@ -39,9 +23,6 @@ export function detectSkillInjection(
   const sourceToolUseID = (message.raw as { sourceToolUseID?: unknown }).sourceToolUseID;
   if (typeof sourceToolUseID !== 'string' || sourceToolUseID.length === 0) return null;
 
-  // Boundary normalization (lib/normalizeMessage) wraps the CLI's bare-string
-  // user prompts into single-text-block arrays at ingress, so by the time
-  // this runs `content` is always an array (or the message has no content).
   const content = getContent(message);
   if (!content) return null;
   const hasToolResult = content.some((c) => (c as { type?: unknown } | null)?.type === 'tool_result');
@@ -50,7 +31,6 @@ export function detectSkillInjection(
   if (!hasText) return null;
 
   const tu = transcriptIndex(allMessages).toolUses.get(sourceToolUseID);
-  // A companion from some other tool (Task, Bash) is not a skill body.
   if (tu?.name !== 'Skill') return null;
   const input = tu.input;
   const skillName =

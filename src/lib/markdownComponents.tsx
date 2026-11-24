@@ -14,20 +14,9 @@ import { useSessionActions } from "@/contexts/SessionActionsContext";
 type SyntaxTheme = Record<string, CSSProperties>;
 type CodeComponentProps = ComponentProps<"code"> & ExtraProps;
 
-// Pinned over the code card's top-right corner rather than given a header
-// row, so a fence is no taller with it than without. The solid backing is
-// what keeps a long first line from showing through the icon.
 const FENCE_COPY_CLASS = "absolute top-1 right-1 bg-card/90";
 
-/**
- * An untagged fence: prose's own <pre> card, plus a copy button. The text is
- * read off the rendered <pre> at click time — the children are React nodes,
- * and what is on screen is exactly what was inside the fence.
- *
- * The wrapper has no padding or border, so the <pre>'s prose margins collapse
- * through it and the wrapper's top edge IS the card's top edge — which is
- * where the absolutely positioned button lands.
- */
+/** No padding or border, so the <pre>'s margins collapse through and the button lands on the card's own edge. */
 function UntaggedFence(props: ComponentProps<"pre">): React.JSX.Element {
   const preRef = useRef<HTMLPreElement>(null);
   return (
@@ -44,12 +33,7 @@ function UntaggedFence(props: ComponentProps<"pre">): React.JSX.Element {
 
 type LinkKind = "web" | "file" | "other";
 
-/**
- * A scheme-less href is a file path: react-markdown passes `/Users/…` and
- * `reports/x.md` through untouched, and the browser would resolve either
- * against the app's own page. Other schemes (mailto:, …) and in-page anchors
- * keep default behaviour, which main's navigation policy contains.
- */
+/** react-markdown passes a scheme-less href untouched, and the browser would resolve it against the app's own page. */
 function linkKind(href: string | undefined): LinkKind {
   if (!href || href.startsWith("#")) return "other";
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(href)?.[1]?.toLowerCase();
@@ -59,11 +43,7 @@ function linkKind(href: string | undefined): LinkKind {
 
 const logOpenFailure = (err: unknown): void => { console.error("[markdown-link]", err); };
 
-/**
- * Web links open in the browser and file links in their default app — never
- * in the app window, which a bare `/Users/…` link replaced (2026-10-22). A
- * relative file link resolves against the session's project directory.
- */
+/** Never navigate the app window. A relative file link resolves against the session's project directory. */
 function MarkdownLink({ node: _node, href, children, ...props }: ComponentProps<"a"> & ExtraProps): React.JSX.Element {
   const session = useSessionActions();
   const kind = linkKind(href);
@@ -84,41 +64,8 @@ function MarkdownLink({ node: _node, href, children, ...props }: ComponentProps<
 }
 
 /**
- * Returns the `components` map for `react-markdown`'s ReactMarkdown component.
- *
- * Dispatch (driven entirely by the fenced-block language class):
- * - `language-markdown` / `language-md` → <MarkdownBlock> (Rendered/Source tabs)
- * - `language-mermaid`                  → <MermaidBlock> (drawn diagram)
- * - Any other `language-*`              → Prism <SyntaxHighlighter>
- * - No language class                   → plain <code> (covers inline code
- *                                          and fenced-but-untagged blocks)
- *
- * Every fenced block gets a copy button: untagged ones on the <pre> (see
- * `UntaggedFence`), tagged ones on their card, markdown ones in
- * MarkdownBlock's own toolbar. Inline code never reaches either path.
- *
- * Links go through `MarkdownLink`: web links to the browser, file paths to
- * their default app.
- *
- * `react-markdown` v9 removed the `inline` prop on the `code` component;
- * dispatch is by className alone, since v9 never assigns a `language-*`
- * class to inline code.
- *
- * The shape replaces the two duplicated `code()` overrides previously
- * inlined in `StreamMessage.tsx`.
- *
- * @param syntaxTheme — the resolved Prism theme object from
- *   `getClaudeSyntaxTheme(theme)`. Passed through to SyntaxHighlighter for
- *   non-markdown fenced blocks. MarkdownBlock fetches its own theme via
- *   `useTheme()` so this argument is unused for the markdown branch.
- * @param options.streaming — the message is still arriving (the in-flight
- *   bubble). Mermaid fences then show their source: a half-streamed diagram
- *   does not parse and would flash an error on every chunk.
- *
- * The return type intersects `Components` with `{ code: ... }` so callers
- * (and tests) can destructure `code` as a non-optional component without
- * a non-null assertion. The `as Components` cast at the return site
- * satisfies react-markdown's structural index-signature constraint.
+ * react-markdown v9 never gives inline code a `language-*` class, so dispatch is by className alone.
+ * `streaming`: Mermaid fences show source, since a half-streamed diagram flashes a parse error per chunk.
  */
 export function buildMarkdownComponents(
   syntaxTheme: SyntaxTheme,
@@ -126,20 +73,7 @@ export function buildMarkdownComponents(
 ): Components & { code: (props: CodeComponentProps) => React.JSX.Element } {
   return {
     a: MarkdownLink,
-    // Conditional <pre> passthrough.
-    //
-    // react-markdown wraps every fenced code block in <pre><code>…</code></pre>,
-    // and Tailwind Typography styles <pre> as a dark, padded, rounded card.
-    // For *tagged* fences (`language-*`), our `code` override returns a
-    // <MarkdownBlock>, <MermaidBlock> or Prism <SyntaxHighlighter> — each supplies its own
-    // chrome, so the prose <pre> on top produces a visible card-in-card.
-    // We strip the wrapper for those.
-    //
-    // For *untagged* fences (just ``` … ```), the `code` override returns
-    // a plain <code>. The surrounding <pre> is the *only* element preserving
-    // newlines (white-space: pre); removing it collapses multiline ASCII
-    // trees onto one wrapped line. Keep the default <pre> in that case so
-    // prose can style it as a normal code card.
+    // Tagged fences bring their own chrome, so their <pre> would be card-in-card. Untagged keep it: it alone preserves newlines.
     pre({ node, children, ...props }) {
       const codeChild = node?.children[0];
       const classNames = codeChild?.type === "element" ? codeChild.properties.className : undefined;
@@ -166,23 +100,7 @@ export function buildMarkdownComponents(
       }
 
       return lang ? (
-        // The Claude syntax theme is transparent and the outer prose <pre>
-        // (from react-markdown) is stripped for tagged fences, so this
-        // wrapper supplies the visible code-panel chrome (var(--color-card),
-        // matching prose's own <pre>).
-        //
-        // We let SyntaxHighlighter render its own <pre> (its default —
-        // PreTag is omitted) so that `<code>` ends up inside a <pre>.
-        // That makes the `.prose pre code` reset in styles.css fire and
-        // zero out the inline-code padding which would otherwise manifest
-        // as a leading first-line indent on multi-line blocks. Note:
-        // `not-prose` does NOT work here — this repo's prose CSS is
-        // hand-rolled and doesn't include the not-prose escape selectors.
-        //
-        // The inner <pre>'s chrome (background / border-radius / margin
-        // from `.prose pre`) is overridden via inline customStyle, which
-        // always beats external CSS — so the wrapper's chrome stays the
-        // only visible card.
+        // SyntaxHighlighter renders its own <pre> so the `.prose pre code` reset applies; this repo's prose CSS has no not-prose escape.
         <div className="relative rounded-md border border-border/50 bg-card overflow-hidden my-3">
           <SyntaxHighlighter
             style={syntaxTheme}

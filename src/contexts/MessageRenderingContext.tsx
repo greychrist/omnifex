@@ -30,9 +30,8 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     logAndForget('message-rendering-context:iife', (async () => {
       try {
         const current = await api.getSetting(MESSAGE_RENDERING_CONFIG_KEY);
-        // No v6 yet: migrate from where v5 lived (never written to).
         const raw = current ?? await api.getSetting(LEGACY_MESSAGE_RENDERING_CONFIG_KEY);
-        const parsed = parseConfig(raw);            // v5 migrates; anything else not v6 resets
+        const parsed = parseConfig(raw);
         let savedVersion: unknown = null;
         try {
           savedVersion = (JSON.parse(raw ?? 'null') as { version?: unknown } | null)?.version ?? null;
@@ -61,19 +60,7 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     return () => { cancelled = true; };
   }, []);
 
-  // Mirror the chat Content typeface to a CSS variable on :root so any
-  // markdown/prose surface in the chat (assistant text, thinking, tool
-  // widgets, fenced markdown blocks) can pick it up via a single rule in
-  // styles.css. Without this, those surfaces inherit body's --font-sans —
-  // i.e. the App font — which makes the chat Content picker look like it
-  // only affects the user-prompt body.
-  //
-  // Size and weight ride the same mechanism (`--chat-content-size` /
-  // `--chat-content-weight`). They CAN'T go through the Tailwind class path
-  // (contentClassNames) like the header does: the content body renders inside
-  // `.prose` / `.prose-sm`, whose own `font-size` rules in styles.css beat
-  // utility classes — so without these variables only the typeface changed
-  // and size/weight were silently ignored.
+  // Size and weight must be CSS variables, not utility classes: `.prose` font-size rules in styles.css beat them.
   const { typeface, size, weight } = config.typography.content;
   useEffect(() => {
     const root = document.documentElement.style;
@@ -82,18 +69,11 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     root.setProperty("--chat-content-weight", String(FONT_WEIGHT_VALUE[weight]));
   }, [typeface, size, weight]);
 
-  // Same pattern for the embedded terminal. OneShotTerminal reads `--font-terminal`
-  // first, falling back to `--font-mono`, so a missing var (e.g. context
-  // not wrapped) means the user gets the global mono default instead of an
-  // empty stack.
   useEffect(() => {
     const stack = resolveTypeface(config.terminal.typeface).cssFamily;
     document.documentElement.style.setProperty("--font-terminal", stack);
   }, [config.terminal.typeface]);
 
-  // Modern's font, answer size and prompt tint (Settings › Chats › Modern),
-  // read by the `.modern-format` rules in styles.css. Null leaves the
-  // stylesheet's own fallback.
   const modern = config.modern;
   useEffect(() => {
     const root = document.documentElement.style;
@@ -103,8 +83,6 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     }
   }, [modern]);
 
-  // Applies at once; the returned promise settles with the write, so the
-  // Settings screen can report whether it landed.
   const setConfig = useCallback(async (next: MessageRenderingConfig, persist = true) => {
     setConfigState(next);
     if (persist) {
@@ -112,10 +90,7 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
     }
   }, []);
 
-  // Memoize so the provider value keeps a stable identity across re-renders
-  // that don't change config/loaded — without this, every provider render
-  // hands consumers a fresh object and re-renders all of them (every chat
-  // message subscribes to this context).
+  // Memoized: every chat message subscribes to this context.
   const value = useMemo(() => ({ config, setConfig, loaded }), [config, setConfig, loaded]);
 
   return (
@@ -125,12 +100,7 @@ export const MessageRenderingProvider: React.FC<{ children: React.ReactNode }> =
   );
 };
 
-/**
- * Supplies an explicit config to a subtree without touching the live persisted
- * config. Used by the Appearance preview so sample messages render through the
- * real MessageFrame against a synthesized config (a category style, or an
- * in-progress override edit). `setConfig` is a no-op.
- */
+/** `setConfig` is a no-op. */
 export const MessageRenderingPreviewProvider: React.FC<{
   config: MessageRenderingConfig;
   children: React.ReactNode;
@@ -140,11 +110,7 @@ export const MessageRenderingPreviewProvider: React.FC<{
   </MessageRenderingContext.Provider>
 );
 
-/**
- * Renders a subtree through `config` instead of the saved one, keeping the
- * parent's `setConfig` and `loaded`. Memoised: every transcript row reads this
- * context, so a fresh value per render would re-render the whole session.
- */
+/** Memoized: every transcript row reads this context. */
 export const MessageRenderingOverrideProvider: React.FC<{
   config: MessageRenderingConfig;
   children: React.ReactNode;
@@ -161,8 +127,6 @@ export const MessageRenderingOverrideProvider: React.FC<{
 export function useMessageRenderingConfig(): MessageRenderingContextValue {
   const ctx = useContext(MessageRenderingContext);
   if (!ctx) {
-    // Graceful fallback for any component rendered outside the provider
-    // (e.g. isolated tests). Returns defaults; updates are silently dropped.
     return {
       config: createDefaultConfig(),
       setConfig: async () => {},

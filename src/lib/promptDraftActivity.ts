@@ -1,9 +1,4 @@
-/**
- * The composer's typing hint to the CLI (`prompt_draft_activity`, CLI
- * 2.1.326). The CLI asks for one ping at the first key and about one every
- * 10 seconds while typing goes on; between turns it may use the time to get
- * the next request ready, during a turn it does nothing. It carries no text.
- */
+// CLI 2.1.326 asks for one ping at the first key and about one every 10 s while typing; it carries no text.
 import { api } from './api';
 
 export const DRAFT_ACTIVITY_INTERVAL_MS = 10_000;
@@ -29,7 +24,6 @@ export function createDraftActivityPinger(
   };
 }
 
-/** The app-wide pinger, one clock per tab. */
 export const pingPromptDraftActivity: DraftActivityPinger = createDraftActivityPinger(
   (tabId) => api.sessionPromptDraftActivity(tabId),
 );

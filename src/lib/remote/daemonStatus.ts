@@ -1,13 +1,3 @@
-/**
- * What the title bar's Daemon button shows: where `/healthz` is for the
- * daemon this page is attached to, and the shape of its answer.
- *
- * The socket URL is the only thing the renderer knows about the daemon's
- * address (the Mac app reports it through `remote:url`; the web client is
- * served by the daemon itself), so the health URL is derived from it rather
- * than configured twice.
- */
-
 export interface DaemonHealthInfo {
   ok: boolean;
   version: string;

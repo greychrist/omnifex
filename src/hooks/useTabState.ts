@@ -4,14 +4,12 @@ import { Tab } from '@/contexts/TabContext';
 import type { AgentKind } from '@/lib/api';
 
 interface UseTabStateReturn {
-  // State
   tabs: Tab[];
   activeTab: Tab | undefined;
   activeTabId: string | null;
   tabCount: number;
   chatTabCount: number;
 
-  // Operations
   createChatTab: (projectId?: string, title?: string, projectPath?: string, agent?: AgentKind) => string;
   createProjectsTab: () => string | null;
   createMCPTab: () => string | null;
@@ -71,7 +69,6 @@ export const useTabState = (): UseTabStateReturn => {
   }, [addTab, chatTabCount]);
 
   const createProjectsTab = useCallback((): string | null => {
-    // Allow multiple projects tabs
     return addTab({
       type: 'projects',
       title: 'Projects',
@@ -83,7 +80,6 @@ export const useTabState = (): UseTabStateReturn => {
   }, [addTab]);
 
   const createMCPTab = useCallback((): string | null => {
-    // Check if MCP tab already exists (singleton)
     const existingTab = tabs.find(tab => tab.type === 'mcp');
     if (existingTab) {
       setActiveTab(existingTab.id);
@@ -101,7 +97,6 @@ export const useTabState = (): UseTabStateReturn => {
   }, [addTab, tabs, setActiveTab]);
 
   const createLimaTab = useCallback((): string | null => {
-    // Singleton — reuse the existing tab if one is already open
     const existingTab = tabs.find(tab => tab.type === 'lima');
     if (existingTab) {
       setActiveTab(existingTab.id);
@@ -119,9 +114,7 @@ export const useTabState = (): UseTabStateReturn => {
   }, [addTab, tabs, setActiveTab]);
 
   const createBrainTab = useCallback((): string | null => {
-    // Singleton — reuse the existing tab if one is already open. The Brain tab
-    // is scoped to one account at a time, so a second instance would only
-    // create two views of the same vault that can silently disagree.
+    // Singleton: the Brain tab is scoped to one account, and two instances could silently disagree.
     const existingTab = tabs.find(tab => tab.type === 'brain');
     if (existingTab) {
       setActiveTab(existingTab.id);
@@ -139,9 +132,7 @@ export const useTabState = (): UseTabStateReturn => {
   }, [addTab, tabs, setActiveTab]);
 
   const createCostReportTab = useCallback((): string | null => {
-    // Singleton — the page's whole value is one filter state applied across
-    // every panel at once, so a second instance would just be two views that
-    // silently disagree about what is being compared.
+    // Singleton: its value is one filter state across every panel.
     const existingTab = tabs.find(tab => tab.type === 'cost-report');
     if (existingTab) {
       setActiveTab(existingTab.id);
@@ -158,7 +149,6 @@ export const useTabState = (): UseTabStateReturn => {
   }, [addTab, tabs, setActiveTab]);
 
   const createSettingsTab = useCallback((): string | null => {
-    // Check if settings tab already exists (singleton)
     const existingTab = tabs.find(tab => tab.type === 'settings');
     if (existingTab) {
       setActiveTab(existingTab.id);
@@ -176,7 +166,6 @@ export const useTabState = (): UseTabStateReturn => {
   }, [addTab, tabs, setActiveTab]);
 
   const createClaudeMdTab = useCallback((): string | null => {
-    // Check if claude-md tab already exists (singleton)
     const existingTab = tabs.find(tab => tab.type === 'claude-md');
     if (existingTab) {
       setActiveTab(existingTab.id);
@@ -194,7 +183,6 @@ export const useTabState = (): UseTabStateReturn => {
   }, [addTab, tabs, setActiveTab]);
 
   const createClaudeFileTab = useCallback((fileId: string, fileName: string): string => {
-    // Check if tab already exists for this file
     const existingTab = tabs.find(tab => tab.type === 'claude-file' && tab.claudeFileId === fileId);
     if (existingTab) {
       setActiveTab(existingTab.id);
@@ -216,9 +204,7 @@ export const useTabState = (): UseTabStateReturn => {
     const tab = getTabById(id);
     if (!tab) return true;
 
-    // Check for unsaved changes
     if (!force && tab.hasUnsavedChanges) {
-      // In a real implementation, you'd show a confirmation dialog here
       const confirmed = window.confirm(`Tab "${tab.title}" has unsaved changes. Close anyway?`);
       if (!confirmed) return false;
     }
@@ -275,18 +261,16 @@ export const useTabState = (): UseTabStateReturn => {
   }, [tabs]);
 
   const canAddTab = useCallback((): boolean => {
-    return tabs.length < 20; // MAX_TABS from context
+    return tabs.length < 20; // TabContext's MAX_TABS
   }, [tabs.length]);
 
   return {
-    // State
     tabs,
     activeTab,
     activeTabId,
     tabCount,
     chatTabCount,
 
-    // Operations
     createChatTab,
     createProjectsTab,
     createMCPTab,

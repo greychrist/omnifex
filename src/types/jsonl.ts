@@ -1,17 +1,3 @@
-/**
- * Source-of-truth taxonomy for messages flowing through the renderer's
- * message pipeline. Every JSONL line the CLI writes maps to exactly one
- * variant (or is dropped by the classifier): every real CLI emission, one
- * variant per visually meaningful category, no synthesis. Overlay variants
- * come from the CLI stream in CLI mode and never touch the renderer's
- * messages[] — they drive separate UI surfaces (partials buffer,
- * rate-limit service, subagent rows / hook progress / status badges).
- *
- * Inventory drawn from 126 real session JSONL files. See the design spec
- * for the per-kind line counts.
- */
-
-/** Generic raw-line shell. Every JSONL line carries at least `type`. */
 export interface RawLineBase {
   type: string;
   sessionId?: string;
@@ -43,35 +29,15 @@ export interface UserRaw extends RawLineBase {
   cwd?: string;
   promptId?: string;
   permissionMode?: string;
-  /** True when the record was synthesized by the harness, not typed by the user. */
   isMeta?: boolean;
-  /** Set when a meta record was emitted on behalf of a specific tool_use (e.g. Skill bodies). */
   sourceToolUseID?: string;
-  /**
-   * Marker for a /compact summary, and the only thing that identifies one.
-   * Present on every persisted record; absent from the stream-json envelope,
-   * which since the transcript inversion no longer delivers committed rows.
-   */
+  /** The only marker of a /compact summary; absent from the stream-json envelope. */
   isCompactSummary?: boolean;
-  /**
-   * Set alongside `isCompactSummary` for a plain compaction, but NOT for a
-   * directed summarize (that path emits `summarizeMetadata` instead).
-   */
+  /** Set with `isCompactSummary` for a plain compaction, not for a directed summarize. */
   isVisibleInTranscriptOnly?: boolean;
-  /**
-   * Live-stream only, and no longer read. Every CLI emitter hard-codes `true`
-   * except the compact-summary yield, which emits `!isCompactSummary`; that
-   * made an explicit `false` a usable proxy back when stream-json carried the
-   * transcript. It never appears on disk (0 occurrences across 890 personal
-   * transcripts), so nothing classifies on it now. Declared to document the
-   * wire shape, not because anything consumes it.
-   */
+  /** Live-stream only, never on disk: nothing may classify on it. */
   isReplay?: boolean;
-  /**
-   * Live-stream shorthand for `isMeta || isVisibleInTranscriptOnly`. Too
-   * coarse to identify a compact summary on its own — it also covers every
-   * skill body and image marker.
-   */
+  /** `isMeta || isVisibleInTranscriptOnly`: too coarse to identify a compact summary. */
   isSynthetic?: boolean;
 }
 
@@ -86,16 +52,11 @@ export interface AttachmentRaw extends RawLineBase {
   cwd?: string;
 }
 
-/**
- * The CLI's input queue — not background tasks. `enqueue` on arrival,
- * `dequeue` when a turn starts on it, `remove` when it was folded into the
- * running turn instead (see queueWait.ts).
- */
+/** The CLI's input queue, not background tasks. */
 export interface QueueOpRaw extends RawLineBase {
   type: 'queue-operation';
   operation: string;
   content?: string;
-  /** On `remove`: why it left the queue, e.g. 'absorbed_mid_turn'. */
   reason?: string;
 }
 
@@ -115,11 +76,7 @@ export interface AiTitleRaw extends RawLineBase {
   aiTitle: string;
 }
 
-/**
- * A rename. Written by `/rename`, by a claude.ai rename relayed into the
- * process, and by the `rename_session` control request the status bar's
- * pencil sends. Outranks `ai-title` — see `pickSessionTitle`.
- */
+/** A rename; outranks `ai-title`. */
 export interface CustomTitleRaw extends RawLineBase {
   type: 'custom-title';
   customTitle: string;
@@ -138,21 +95,10 @@ export type UserKind =
   | 'meta-skill'
   | 'meta-attachment'
   | 'meta-other'
-  /** The summary the CLI writes after /compact. A `user` record, but not a prompt. */
   | 'compact-summary'
-  /**
-   * The echo of a typed built-in slash command and the stdout it produced.
-   * Both persist as `user` records, but a local command runs on the client —
-   * the model never sees either one and will never reply to them. A skill or
-   * custom command's echo is a 'prompt': the model answers it.
-   */
+  /** A built-in slash command's echo and stdout: run client-side, the model never replies. A skill's echo is a 'prompt'. */
   | 'local-command'
-  /**
-   * The `[Request interrupted by user]` marker the CLI writes when Stop is
-   * pressed. A `user` record with no isMeta, but nobody is owed a reply — it
-   * is the record OF the turn ending, so it closes the turn axis outright
-   * (see waitingOnClaude in sessionDerivedState.ts).
-   */
+  /** `[Request interrupted by user]`: a `user` record nobody owes a reply to. */
   | 'interrupt';
 
 export type SystemSubtype =
@@ -171,93 +117,35 @@ export type SystemSubtype =
   | 'status'
   | 'permission_denied'
   | 'thinking_tokens'
-  // Model-availability events. The CLI switches (or refuses to switch) models
-  // mid-session and explains why in `content` — e.g. Fable 5 safety fallbacks.
   | 'model_fallback'
   | 'model_refusal_fallback'
   | 'model_refusal_no_fallback'
   | 'session_writes_lost'
   | 'model_consent_fallback'
   | 'error_during_execution'
-  // Snapshot of the session's running background tasks, re-emitted whenever
-  // that set changes (an agent is launched, a background shell finishes).
-  // Bookkeeping, not narrative — the agents readout is where this belongs, so
-  // its kind defaults to Never in Appearance settings.
   | 'background_tasks_changed'
-  // The CLI's inference of what the user is building, emitted once per kind
-  // when it first detects one (`kind: 'ios_app'` is the only one as of
-  // 2.1.266). Bookkeeping the CLI keeps for itself — nothing to say in the
-  // transcript, so its kind defaults to Never. Classified rather
-  // than left to the catch-all so it doesn't draw an "Unrecognized record"
-  // card, which is exactly what `background_tasks_changed` used to do.
   | 'dev_intent'
-  // Stream-only (CLI >= 2.1.281): per-turn effort went inactive for the
-  // session's model because the API refused it, so an effort change now
-  // rewrites the cached prefix. Always `per_turn_effort_active: false`; a
-  // change to true arrives only on `init`. Cache plumbing for a host that
-  // warns before an effort change — nothing to say in the transcript, so
-  // its kind defaults to Never.
   | 'per_turn_effort_changed'
-  // Stream-only: an MCP server confirmed a URL-mode elicitation (a browser
-  // sign-in, typically) finished. The ElicitationDialog closed when the user
-  // opened the page, so there is nothing left to show — its kind defaults
-  // to Never.
   | 'elicitation_complete'
-  // Stream-only (CLI >= 2.1.282): the external_metadata patch a cloud worker
-  // sends, re-emitted for SDK hosts. Today it carries only the session's
-  // published-artifact list (`metadata.artifacts`, null once empty). Nothing
-  // in OmniFex reads it — its kind defaults to Never.
   | 'session_metadata'
-  // Stream-only (CLI >= 2.1.285): the session's custom name, sent at startup
-  // when it has one and after each rename (never for an AI-generated title).
-  // The CLI writes the same rename as a `custom-title` JSONL record, which is
-  // what the transcript's title row renders from — its kind defaults to
-  // Never as a duplicate.
   | 'session_title_changed'
-  // Stream-only (CLI >= 2.1.287): what a mod's $.ui.log / $.ui.toast would
-  // have drawn in the REPL, pushed to a headless host instead —
-  // `{plugin, text}`. The mod speaking to the user, so these render.
   | 'ui_log'
   | 'ui_toast'
-  // Stream-only (CLI >= 2.1.287): a mod's pinned status line,
-  // `{plugin, text|null}`, each replacing that plugin's last. Shown in the
-  // Session context panel's Mods section, not the transcript.
   | 'ui_status'
-  // Stream-only (CLI >= 2.1.287): mod drawing plumbing for a surface that
-  // renders mod UI, which OmniFex is not — and `commands_changed`, the
-  // full slash-command list after a mid-session change. Kinds default to
-  // Never.
   | 'ui_invalidate'
   | 'ui_focus'
   | 'ui_panes'
-  // CLI >= 2.1.314: the rows mods placed with $.ui.place, `{rows}`, for a
-  // surface to draw via ui_render. Display only; OmniFex draws no mod UI.
   | 'ui_placed'
   | 'ui_scroll'
-  // Stream-only (CLI >= 2.1.321, only to a CLAUDE_CODE_NOTIFICATIONS_HOST):
-  // a mod's OS notification `{plugin, source, title, text, key?, delay_ms?,
-  // at?, until_back?, rewritten}` and its withdrawal `{plugin, source,
-  // key?}`. The daemon raises the banner; the rows default to Never.
   | 'ui_notify'
   | 'ui_notify_cancel'
   | 'commands_changed'
-  // Stream-only (CLI >= 2.1.292): a tool call whose automatic permission
-  // check (auto mode's classifier) has waited ~4 s says `checking`, then
-  // `done` when the wait ends. `{tool_use_id, agent_id?, status}`. Never.
   | 'permission_check_status'
-  // The SendFeedback tool wrote a local draft feedback report to
-  // <CLAUDE_CONFIG_DIR>/feedback/drafts/. Display fields only — the body stays
-  // on disk, and nothing is sent until the user approves it via `/feedback`.
   | 'feedback_draft_queued';
 
-/**
- * One entry of a `system:background_tasks_changed` snapshot. Shape verified
- * against a live 2.1.235 stream — `task_type` is what distinguishes an agent
- * from a backgrounded shell.
- */
+/** `task_type` distinguishes an agent from a backgrounded shell. */
 export interface BackgroundTaskEntry {
   task_id: string;
-  /** 'local_agent' | 'local_bash' observed; open string on the wire. */
   task_type: string;
   description?: string;
 }
@@ -269,54 +157,30 @@ export interface SystemRaw extends RawLineBase {
   parentUuid?: string;
   cwd?: string;
   level?: string;
-  /** Present when subtype === 'notification'. */
   notification_type?: string;
   title?: string;
   body?: string;
-  /**
-   * Present when subtype === 'status' — a transient per-turn phase ping
-   * (e.g. 'requesting', 'compacting'). Open string on the wire; the docs
-   * only list 'compacting' | null but the CLI emits others. Surfaced as the
-   * live activity label via `phaseLabel`, never rendered in the transcript.
-   */
+  /** Open string: the CLI emits more than the documented 'compacting' | null. Never rendered in the transcript. */
   status?: string | null;
-  /** Present when subtype === 'thinking_tokens' — running estimate of the current turn's thinking size. */
   estimated_tokens?: number;
   estimated_tokens_delta?: number;
-  /** Present when subtype === 'background_tasks_changed' — the full set of
-   *  background tasks running at that moment, not a delta. */
+  /** The full set of running background tasks, not a delta. */
   tasks?: BackgroundTaskEntry[];
-  /** Present when subtype === 'stop_hook_summary' — one entry per Stop hook run. */
   hookInfos?: { command?: string; durationMs?: number }[];
   hookErrors?: unknown[];
-  /** True when a Stop hook blocked the turn from ending; `stopReason` says why. */
   preventedContinuation?: boolean;
   stopReason?: string;
-  /** Present when subtype === 'feedback_draft_queued' — the on-disk draft's
-   *  id, used by `/feedback` to discard or submit it. */
   draft_id?: string;
-  /** 'bug' | 'idea' | 'missing_capability' observed; open string on the wire. */
   draft_type?: string;
-  /** First ~200 chars of the sanitized draft body; the rest stays on disk. */
   details_preview?: string;
-  /** Present when subtype === 'compact_boundary' (camelCase on disk, 2.1.289). */
+  /** camelCase on disk. */
   compactMetadata?: { trigger?: string; preTokens?: number; postTokens?: number; durationMs?: number };
 }
 
-/**
- * One MCP server the CLI refused to load, from the init event's
- * `mcp_server_errors`. These servers are SKIPPED — unlike a server that
- * merely failed to start, they never appear in `mcp_servers` at all, so
- * without surfacing this the user just sees them missing.
- *
- * Shape verified against a live `--output-format stream-json` run:
- * `{ name: 'bad_type', type: 'unknown_type', message: 'Skipped — …' }`.
- */
+/** Servers the CLI skipped: they never appear in `mcp_servers`. */
 export interface McpServerConfigError {
   name: string;
-  /** CLI-side reason code, e.g. 'invalid_config' | 'unknown_type'. Open string. */
   type: string;
-  /** Human-readable explanation written by the CLI. */
   message: string;
 }
 
@@ -328,9 +192,6 @@ export interface CliInitRaw {
   model?: string;
   tools?: string[];
   mcp_servers?: unknown[];
-  /** Null on the vast majority of inits — only populated when a configured
-   *  server was rejected. Typed `unknown[]` because it crosses the CLI
-   *  boundary unvalidated; the reducer narrows it. */
   mcp_server_errors?: unknown[] | null;
   [k: string]: unknown;
 }
@@ -369,14 +230,7 @@ export interface RateLimitInfo {
   surpassedThreshold?: number;
 }
 
-/**
- * Payload nested under `rate_limit_info` on a transcript `rate_limit_event`
- * line (distinct from the live-stream `RateLimitInfo` above — the persisted
- * line additionally carries overage fields the runtime hook doesn't surface).
- * All fields are optional: the CLI omits utilization/resetsAt on some
- * events (see rate-limits.ts's COALESCE comment) and always degrades
- * gracefully rather than dropping the line.
- */
+/** All optional: the CLI omits utilization/resetsAt on some events. */
 export interface RateLimitEventInfo {
   status?: string;
   resetsAt?: number;
@@ -386,19 +240,7 @@ export interface RateLimitEventInfo {
   isUsingOverage?: boolean;
 }
 
-/**
- * Live progress for an in-flight tool call (`type: "tool_progress"`).
- *
- * Typed off the SDK message schema embedded in the CLI binary (2.1.270). Four
- * producers share the envelope: `tool_heartbeat` (every 30s while a tool runs),
- * `agent_api_retry` (a Task being retried), `repl_tool_call`, and
- * `bash_progress`/`powershell_progress` — the last of which is gated on
- * CLAUDE_CODE_REMOTE / CLAUDE_CODE_CONTAINER_ID and so never fires for us.
- *
- * `subagent_retry` is present only while the retry is UNRESOLVED: the emitter
- * spreads `...resolved !== true && { subagent_retry }`, so a frame carrying
- * `subagent_type` with no `subagent_retry` is how the CLI says "it recovered".
- */
+/** `subagent_retry` is present only while unresolved; `subagent_type` without it means it recovered. */
 export interface ToolProgressRaw {
   type: 'tool_progress';
   tool_use_id: string;
@@ -420,14 +262,6 @@ export interface ToolProgressRaw {
   };
 }
 
-/**
- * A top-level `progress` record. The CLI's merge-strategy map lists it
- * ("boundary-cleared") and its code builds them for hooks, agents, skills,
- * bash and tool heartbeats, but no transcript on this machine has one (checked
- * 2026-10-24, CLI 2.1.310). `data.type` names the variant — `hook_progress`,
- * `agent_progress`, `skill_progress`, `bash_progress`, `tool_heartbeat`,
- * `agent_api_retry`, … — so the renderer stays generic over it.
- */
 export interface ProgressRaw extends RawLineBase {
   type: 'progress';
   data?: { type?: string; [key: string]: unknown };
@@ -449,65 +283,35 @@ export interface UsageShape {
   [key: string]: unknown;
 }
 
-// Real-but-unhandled envelope types fall through to 'unknown' and render via
-// the catch-all card (KIND_REGISTRY "unknown"): e.g. 'mode', 'pr-link',
-// 'summary'. Promote one to its own kind when it deserves better chrome.
-// 'unknown' is the only conversation kind with a nullable receivedAt: several
-// real record types ('summary', 'mode') persist with no top-level timestamp,
-// and the catch-all must catch those too — ordering falls back to file
-// position, which the history loader preserves.
+// 'unknown' receivedAt is nullable: 'summary' and 'mode' records persist with no timestamp.
 
-/** Discriminated union — exactly one `kind` per node. */
 export type JsonlNode =
-  // Conversation content (persisted to JSONL)
   | { kind: 'assistant'; raw: AssistantRaw; sessionId: string; receivedAt: string }
   | { kind: 'user'; raw: UserRaw; sessionId: string; receivedAt: string; userKind: UserKind }
   | { kind: 'attachment'; raw: AttachmentRaw; sessionId: string; receivedAt: string }
   | { kind: 'unknown'; raw: Record<string, unknown>; sessionId: string; receivedAt: string | null }
-  // Closure carriers (background-bash plumbing)
   | { kind: 'queue-operation'; raw: QueueOpRaw; sessionId: string; receivedAt: string }
-  // CLI bookkeeping
   | { kind: 'last-prompt'; raw: LastPromptRaw; sessionId: string }
   | { kind: 'permission-mode'; raw: PermissionModeRaw; sessionId: string }
   | { kind: 'ai-title'; raw: AiTitleRaw; sessionId: string }
   | { kind: 'custom-title'; raw: CustomTitleRaw; sessionId: string }
   | { kind: 'file-history-snapshot'; raw: FileSnapshotRaw }
-  // System sub-variants
   | { kind: 'system'; subtype: SystemSubtype; raw: SystemRaw; sessionId: string; receivedAt: string }
-  // CLI engine-mode stream envelopes (engine/--output-format stream-json)
   | { kind: 'cli-stream-init'; raw: CliInitRaw; sessionId: string; receivedAt: string }
   | { kind: 'cli-stream-result'; raw: CliResultRaw; sessionId: string; receivedAt: string }
-  // rate_limit_event transcript line — a top-level `type`, NOT a `system`
-  // subtype (it has no `subtype` field at all). Kept distinct from the
-  // `rate-limit` overlay kind below: that kind is a live-stream-only signal
-  // that's intentionally skipped from messages[] (drives RateLimitWidget
-  // only), so reusing it here would make this transcript line invisible.
-  // receivedAt is nullable because real rate_limit_event lines have been
-  // observed with no top-level `timestamp` field (same tolerance as 'unknown').
+  // A top-level type, not a system subtype; distinct from the overlay `rate-limit` kind, which never enters messages[].
   | { kind: 'rate-limit-event'; raw: RateLimitEventRaw; sessionId: string; receivedAt: string | null }
-  // Top-level `progress` record (see ProgressRaw). Nullable receivedAt for the
-  // same reason as rate-limit-event: shape unobserved, so tolerate no timestamp.
   | { kind: 'progress'; raw: ProgressRaw; sessionId: string; receivedAt: string | null }
   // Overlay (CLI stream only — never enters messages[])
   | { kind: 'stream-event'; uuid: string; deltaText: string }
   | { kind: 'rate-limit'; info: RateLimitInfo }
   | { kind: 'lifecycle'; eventType: LifecycleKind; raw: unknown }
-  // Live-stream only, exactly like `stream-event`: the CLI emits tool_progress
-  // on the stream-json stdout path and never writes it to the JSONL on disk
-  // (verified against every transcript on this machine). Putting it in
-  // messages[] would make a live transcript and a reloaded one disagree.
-  //
-  // `anchorToolUseId` is the REAL tool id, and it has to be carried because
-  // neither wire field gives it directly: a heartbeat's own `tool_use_id` is
-  // synthetic (`<realId>-heartbeat-<n>`), and `parent_tool_use_id` is the
-  // enclosing Task id when the tool runs inside a subagent.
+  // Live-stream only, never on disk: in messages[] a live and a reloaded transcript would disagree.
+  // anchorToolUseId is the real tool id: a heartbeat's tool_use_id is synthetic, parent_tool_use_id is the enclosing Task.
   | { kind: 'tool-progress'; raw: ToolProgressRaw; anchorToolUseId: string }
-  // Synthetic control-change markers (live-session only; never produced by
-  // classifyJsonlLine — injected via appendMessage when a control picker fires).
+  // Synthetic, live-session only; never produced by classifyJsonlLine.
   | { kind: 'control-change'; control: 'effort' | 'model' | 'permission'; value: string; sessionId: string; receivedAt: string };
 
-/** Convenience: which kinds appear in the renderer's `messages[]`. */
 export type RenderedKind = Exclude<JsonlNode['kind'], 'stream-event' | 'rate-limit' | 'lifecycle' | 'tool-progress'>;
 
-/** Convenience: kinds that exist as overlay channels only. */
 export type OverlayKind = Extract<JsonlNode['kind'], 'stream-event' | 'rate-limit' | 'lifecycle' | 'tool-progress'>;

@@ -1,14 +1,6 @@
 /**
- * The `updatedInput` an AskUserQuestion answer carries back to the CLI, in
- * the shape its `AskUserQuestionOutput` documents:
- *
- *   { questions: <unchanged input>, answers: { [question]: string },
- *     annotations?: { [question]: { notes?: string } } }
- *
- * Multi-select picks join with ', '. "Other" is the host's own option (the
- * agent must not offer it); its typed text replaces the sentinel and is
- * noted, so the agent and AnsweredAskUserQuestionCard can tell it was typed.
- * Shared by every question card, whatever it looks like.
+ * The CLI's `AskUserQuestionOutput` shape. "Other" is the host's own option (the agent must not offer it);
+ * its typed text replaces the sentinel and is noted.
  */
 export const OTHER_VALUE = '__omnifex_other__';
 

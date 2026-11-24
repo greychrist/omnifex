@@ -1,17 +1,7 @@
-/**
- * What is loaded into a session — mods, plugins, MCP servers — as the
- * Session context panel and the context popover's summary row read it.
- *
- * Pure: everything comes from the session's messages (system:init, a mod's
- * ui_status frames) or the plugin list main returns.
- */
 import type { JsonlNode } from '@/types/jsonl';
 import type { SessionPluginInfo } from '@/lib/api';
 
-/**
- * Each mod's current pinned status line (`$.ui.status`), by plugin name.
- * Every call replaces that plugin's previous line; `text: null` clears it.
- */
+/** Each call replaces that plugin's previous line; `text: null` clears it. */
 export function modStatusLines(messages: JsonlNode[]): Record<string, string> {
   const lines = new Map<string, string>();
   for (const m of messages) {
@@ -35,7 +25,6 @@ export function latestInitMcpCount(messages: JsonlNode[]): number | null {
   return null;
 }
 
-/** Mods are listed once, in their own section, not again among plugins. */
 export function splitPlugins(all: SessionPluginInfo[]): { mods: SessionPluginInfo[]; plugins: SessionPluginInfo[] } {
   return {
     mods: all.filter((p) => p.mod !== null),
@@ -51,8 +40,6 @@ export interface LoadoutCounts {
 
 const count = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
-/** `1 mod · 14 plugins · 2 MCP servers`. Unknown and zero counts are left
- *  out; null when nothing is left to say. */
 export function loadoutSummary(c: LoadoutCounts): string | null {
   const parts: string[] = [];
   if (c.mods) parts.push(count(c.mods, 'mod', 'mods'));

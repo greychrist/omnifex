@@ -6,10 +6,6 @@ import type {
 } from "@/lib/types/permissionRequest";
 
 interface UsePermissionsReturn {
-  /**
-   * The currently-shown permission request, or null when none is open.
-   * `waitingForPermission` is just `pendingPermission !== null`.
-   */
   pendingPermission: PermissionRequestPayload | null;
   setPendingPermission: React.Dispatch<
     React.SetStateAction<PermissionRequestPayload | null>
@@ -20,12 +16,7 @@ interface UsePermissionsReturn {
     selectedSuggestions: PermissionSuggestion[],
   ) => void;
   handlePermissionDeny: (tabId: string) => void;
-  /**
-   * Allow the pending tool call but rewrite its input first. Used by the
-   * AskUserQuestion card to inject the user's selected answers as the
-   * tool's effective input — the CLI's runtime then surfaces them as the
-   * tool's output (`AskUserQuestionOutput.answers`).
-   */
+  /** The CLI surfaces the rewritten input as the tool's output (`AskUserQuestionOutput.answers`). */
   handlePermissionAllowWithInput: (
     tabId: string,
     updatedInput: Record<string, unknown>,

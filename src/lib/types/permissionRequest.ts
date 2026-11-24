@@ -1,32 +1,7 @@
-/**
- * Canonical shape of a pending permission request inside the renderer.
- *
- * The main process sends the wire payload as snake_case (it lives on the
- * CLI stream as a `permission_request` message). The renderer normalises
- * it to this camelCase shape at the boundary (the session stream
- * reducer) and every downstream consumer — `usePermissions` hook,
- * `PermissionCard`, `ClaudeCodeSession` — uses the same type.
- *
- * The payload covers three permission kinds:
- *
- * - `'tool'` (default; Claude): `toolName` / `toolInput` / `suggestions`
- *   carry the CLI's `canUseTool` payload. The PermissionCard renders the
- *   tool-name preview + suggestion rule editor.
- * - `'patch'` (Codex): the `payload` field carries the raw
- *   `applyPatchApproval` params (fileChanges, reason, callId,
- *   conversationId). The dialog renders a per-file diff preview.
- * - `'exec'` (Codex): the `payload` field carries the raw
- *   `execCommandApproval` params (command, cwd, reason). The dialog
- *   renders a shell-command preview.
- *
- * `kind` defaults to `'tool'` so legacy Claude requests continue to work
- * without any wire-format change.
- */
+/** Camel-cased at the stream reducer from the snake_case wire `permission_request`. `kind` omitted means `'tool'`. */
 export interface PermissionRequestPayload {
   requestId: string;
-  /** Permission kind. Omitted (treated as `'tool'`) on Claude tool prompts. */
   kind?: 'tool' | 'patch' | 'exec';
-  // ---- Claude tool fields (always populated for kind='tool') -----------
   toolName: string;
   toolInput: Record<string, unknown>;
   title?: string;
@@ -34,40 +9,17 @@ export interface PermissionRequestPayload {
   description?: string;
   decisionReason?: string;
   blockedPath?: string;
-  /**
-   * Folders to grant when the write escapes the working directories through a
-   * symlink. No `Edit(...)` rule stops that ask, so the card grants these
-   * (`addDirectories`) instead of offering a rule. Absent otherwise.
-   */
+  /** A symlink escape: no `Edit(...)` rule stops that ask, so the card grants these via `addDirectories`. */
   directoryGrant?: string[];
   suggestions: PermissionSuggestion[];
-  /**
-   * The CLI refuses a persistent rule for this ask — accepting one would
-   * grant more than the ask covers (MCP retroactive approvals; from CLI
-   * 2.1.235, edits whose content it could not fully display). The card
-   * offers allow-once / deny only, with no rule editor or scope.
-   */
+  /** The CLI refuses a persistent rule for this ask: offer allow-once / deny only. */
   suppressAlwaysAllowRule?: boolean;
-  // ---- Codex-specific fields (populated for kind='patch' / 'exec') -----
-  /** Which engine emitted the request. Defaults to `'claude'` historically. */
   agent?: 'claude' | 'codex';
-  /** One-line human summary the engine computed (used for notifications). */
   summary?: string;
-  /**
-   * Raw `applyPatchApproval` / `execCommandApproval` params from the Codex
-   * JSON-RPC server-request. Shape varies by build — consumers should
-   * shape-probe defensively (same pattern as `ApplyPatchItem`).
-   */
+  /** Raw Codex approval params; shape varies by build, so probe defensively. */
   payload?: unknown;
 }
 
-/**
- * One suggestion entry inside `PermissionRequestPayload.suggestions`.
- *
- * Mirrors the CLI's PermissionUpdate shape. `destination: 'session'` is
- * the in-memory variant (rule applies to the running query only); the
- * three settings destinations also persist the rule to disk.
- */
 export type PermissionSuggestion =
   | {
       type: 'addRules';
@@ -76,17 +28,12 @@ export type PermissionSuggestion =
       destination: 'session' | 'projectSettings' | 'userSettings' | 'localSettings';
     }
   | {
-      /** Widen the working directories; the CLI persists and applies it itself. */
       type: 'addDirectories';
       directories: string[];
       destination: 'session' | 'projectSettings' | 'userSettings' | 'localSettings';
     };
 
-/**
- * The pending card after main reports `permission_withdrawn` — the CLI took
- * the request back (an interrupted turn). Only the card for that request
- * closes; a different one on screen is a newer ask and stays.
- */
+/** Only the card for the withdrawn request closes; a different one on screen is a newer ask. */
 export function withoutWithdrawnPermission(
   current: PermissionRequestPayload | null,
   requestId: string,

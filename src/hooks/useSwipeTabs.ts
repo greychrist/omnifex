@@ -1,11 +1,4 @@
-/**
- * Swipe left/right between session tabs on a touch screen.
- *
- * Dispatches the same window events the tab strip and Cmd+[ / ] already
- * use, so a swipe is exactly a keyboard tab switch — one code path for the
- * actual switching. A swipe that starts inside anything that scrolls
- * sideways (a code block, a diff, a text field) is left to that element.
- */
+/** Dispatches the tab strip's own window events, so a swipe is exactly a keyboard tab switch. */
 import { useEffect, type RefObject } from 'react';
 
 import { detectSwipe, startsInsideHorizontalScroller, type Point } from '@/lib/touchGestures';

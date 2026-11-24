@@ -1,19 +1,4 @@
-/**
- * The one place that turns session facts into signals.
- *
- * Every emitter here is a **pure derivation over state the session already
- * holds** — the message array, the resolved context numbers, the settings.
- * Nothing subscribes, nothing is pushed, nothing is remembered. That is not an
- * implementation detail, it is the property the store depends on: re-running
- * this on every render must produce the same signals, so `emit` can be
- * idempotent and the whole model self-clears when a condition ends.
- *
- * It also means remote mode needs no special path. A session resumed from the
- * daemon replays the stream, the stream produces the messages, and the same
- * derivation rebuilds every `state` signal for free.
- *
- * See docs/superpowers/specs/2026-09-11-session-signals-design.md
- */
+/** Pure derivations over state the session already holds: re-running them every render must yield the same signals. */
 
 import type { JsonlNode } from '@/types/jsonl';
 import type { McpServerConfigError } from '@/types/jsonl';
@@ -34,13 +19,11 @@ import {
 import { deriveThinkingStatus, lastTurnThinkingTokens } from '@/lib/thinkingStatus';
 import type { SessionSignal, SignalAction } from './types';
 
-/** How much headroom one Snooze buys. Additive across presses. */
 export const BOUNDARY_SNOOZE_TOKENS = 20_000;
 
-/** What the session-activity pill is currently reporting. */
 export type SessionActivity = 'thinking' | 'active' | 'idle' | 'usage-limit' | 'stopped';
 
-/** Shape of an account mismatch, structurally matched to avoid an api.ts cycle. */
+/** Structural, to avoid an api.ts cycle. */
 export interface AccountMismatchFacts {
   expected: string;
   detected: string | null;
@@ -57,32 +40,21 @@ export interface SignalHandlers {
 export interface SignalInput {
   tabId: string;
   messages: JsonlNode[];
-  /** Resolved occupancy — the same number the gauge renders. */
   contextTokens: number;
   contextLimit: number;
   pressureSetting: ContextPressureSetting;
   jumpSetting: ContextJumpSetting;
-  /** Accumulated Snooze offset for this tab, from the store. */
   boundarySnoozeTokens: number;
-  /** `sessionStatus === 'started'` — is the CLI actually up? */
   sessionLive: boolean;
-  /** Is a main turn in flight right now? */
   turnInFlight: boolean;
-  /** Wall clock when the in-flight turn started, or null when idle. Measured
-   *  at the isLoading transition in AgentSession, NOT from
-   *  `cli-stream-result.duration_ms` — the status bar counts live from this
-   *  and freezes on `lastTurnMs`, and two clocks would make the number jump
-   *  at the moment it stopped moving. */
+  /** Measured at the isLoading transition, not from `duration_ms`: two clocks would make the status bar jump when it stops. */
   turnStartedAt: number | null;
-  /** How long the previous turn took, wall clock. Null before the first turn
-   *  completes. */
   lastTurnMs: number | null;
   cacheTtlChange: CacheTtlChange | null;
   mcpErrors: McpServerConfigError[] | null;
   /** Epoch SECONDS, matching `usageLimitWait`. */
   usageLimitResetsAt: number | null;
   accountMismatch: AccountMismatchFacts | null;
-  /** True only when restarting would actually change the credentials in use. */
   accountRestartable: boolean;
   handlers: SignalHandlers;
 }
@@ -99,15 +71,7 @@ export function deriveSessionSignals(input: SignalInput): SessionSignal[] {
   ];
 }
 
-/**
- * The activity pill's value — deliberately a *second* pill, not a rewrite of
- * the existing session-status one.
- *
- * `sessionStatus` (is the CLI process up?) is owned by the main process and
- * mirrored by `useSessionLifecycle`; docs/session-lifecycle.md forbids a
- * renderer store keeping its own copy. So this reports the orthogonal axis —
- * what the session is *doing* — and the two pills stack rather than merge.
- */
+/** A second pill: `sessionStatus` is the main process's, and no renderer store may keep its own copy. */
 function activitySignal(input: SignalInput): SessionSignal {
   const { messages, sessionLive, turnInFlight, usageLimitResetsAt } = input;
   const thinking = turnInFlight ? deriveThinkingStatus(messages) : null;
@@ -133,13 +97,9 @@ function activitySignal(input: SignalInput): SessionSignal {
     at: 0,
     meta: {
       status,
-      // Zero-arg fields rather than a union, so the pill can read one shape.
       thinkingTokens: thinking?.tokens ?? null,
       startedAt: thinking?.startedAt ?? null,
       resetsAt: usageLimitResetsAt,
-      // The status bar's two readouts. Both hold the PREVIOUS round's value
-      // while idle, which is the point: the figure is most worth reading right
-      // after the turn that produced it ends.
       turnStartedAt: turnInFlight ? input.turnStartedAt : null,
       lastTurnMs: input.lastTurnMs,
       turnThinkingTokens: lastTurnThinkingTokens(messages),
@@ -147,15 +107,7 @@ function activitySignal(input: SignalInput): SessionSignal {
   };
 }
 
-/**
- * One event per turn, so the popover is a log rather than a single alarm.
- *
- * Gated on `sessionLive` for the same reason the old notices were: a transcript
- * opened from disk must not announce a jump that happened days ago. Gated on
- * `jumpSetting.enabled` because that switch has always meant "stop telling me
- * about context growth", and routing it to a badge instead of a banner does
- * not change what the user asked for.
- */
+/** Gated on `sessionLive`: a transcript opened from disk must not announce a days-old jump. */
 function contextDeltaEvents(input: SignalInput): SessionSignal[] {
   const { messages, sessionLive, jumpSetting, tabId } = input;
   if (!sessionLive || !jumpSetting.enabled) return [];
@@ -191,19 +143,7 @@ function contextDeltaEvents(input: SignalInput): SessionSignal[] {
   });
 }
 
-/**
- * Where context sits against the budget — the meter's color, as a state.
- *
- * This is the `warn` half of what the old banner did. The banner escalated in
- * two steps (amber at 80% of budget, red at 100%) because a banner was the only
- * surface it had; with signals the two steps are different *kinds*. "Getting
- * full" is a value, so it tints the meter in place. "Do something about it" is
- * a call to action, so it goes to the attention slot — and only at `critical`.
- * Nothing is lost, both halves are just anchored to the thing they describe.
- *
- * Emitted even at level `none` so the meter always has a color to read, and
- * always the one the boundary action agrees with.
- */
+/** Emitted even at level `none`, so the meter always has a color matching the boundary action. */
 function contextLevelSignal(input: SignalInput): SessionSignal {
   const { contextTokens, contextLimit, pressureSetting, boundarySnoozeTokens, tabId } = input;
   const setting = withSnooze(pressureSetting, contextLimit, boundarySnoozeTokens);
@@ -226,21 +166,12 @@ function contextLevelSignal(input: SignalInput): SessionSignal {
       limit: contextLimit,
       budgetTokens,
       pct,
-      /** Where on the meter the budget sits — the "compact at N%" readout. */
       budgetPct: contextLimit > 0 ? Math.min(100, (budgetTokens / contextLimit) * 100) : 0,
     },
   };
 }
 
-/**
- * The compaction boundary, as the one call to action context can raise.
- *
- * The Snooze offset is applied *here*, to the budget, rather than being a
- * suppression flag in the store. That is what makes re-arm automatic: raise the
- * budget by 20k and the action simply stops evaluating true until usage crosses
- * the new line, at which point it is a fresh signal with no memory of the
- * snooze that preceded it.
- */
+/** The Snooze offset is applied to the budget here, not as a store flag: that is what makes re-arm automatic. */
 function boundaryAction(input: SignalInput): SessionSignal[] {
   const {
     contextTokens,
@@ -260,9 +191,7 @@ function boundaryAction(input: SignalInput): SessionSignal[] {
     setting,
     sessionLive,
   });
-  // Only `critical` is a call to action. `warn` is a value, and it is already
-  // reported by `context.level` — routing it here too would put an item in the
-  // attention slot that says nothing the meter's color has not already said.
+  // Only `critical` is a call to action; `warn` is already the meter's color.
   if (pressure.level !== 'critical') return [];
 
   const actions: SignalAction[] = [
@@ -270,8 +199,7 @@ function boundaryAction(input: SignalInput): SessionSignal[] {
       id: 'compact',
       label: 'Compact now',
       primary: true,
-      // Parity with the banner: /compact cannot run mid-turn, so the button
-      // goes inert rather than queueing a command the CLI will ignore.
+      // /compact cannot run mid-turn.
       disabled: turnInFlight,
       run: handlers.onCompact,
     },
@@ -311,14 +239,7 @@ function boundaryAction(input: SignalInput): SessionSignal[] {
   ];
 }
 
-/**
- * Add the snooze headroom without changing what the user configured.
- *
- * Converted to an absolute `tokens` budget even when the stored setting is a
- * percentage: "+20k" is a token quantity, and expressing it as a percentage of
- * the window would mean a snooze bought four times as much headroom on a 1M
- * session as on a 200k one.
- */
+/** Absolute tokens even for a percentage setting, so a snooze buys the same headroom on any window size. */
 function withSnooze(
   setting: ContextPressureSetting,
   limit: number,
@@ -355,14 +276,6 @@ function cacheTtlEvent(input: SignalInput): SessionSignal[] {
   ];
 }
 
-/**
- * Skipped MCP servers, routed to the MCP button rather than a banner.
- *
- * One signal per server, not one per set. The old banner keyed on the joined
- * name list so that fixing one broken entry re-reported whatever was still
- * wrong; per-server ids get that for free and additionally let a badge count
- * mean "two servers are broken" instead of "one notice exists".
- */
 function mcpSkippedEvents(input: SignalInput): SessionSignal[] {
   const { mcpErrors, tabId } = input;
   if (!mcpErrors?.length) return [];
@@ -375,7 +288,6 @@ function mcpSkippedEvents(input: SignalInput): SessionSignal[] {
     priority: 'normal' as const,
     key: `mcp.skipped.${error.name}`,
     title: `${error.name} was skipped`,
-    // The CLI's own message names the offending field and the type it expected.
     detail: error.message || error.type,
     at: 0,
     meta: { server: error.name, type: error.type },
@@ -399,8 +311,7 @@ function accountMismatchAction(input: SignalInput): SessionSignal[] {
         ? `${accountMismatch.configDir} is signed in as ${accountMismatch.detected}.`
         : `${accountMismatch.configDir} is not signed in.`,
       at: 0,
-      // Empty, not absent, when a restart would change nothing: the session is
-      // already fine and only the recorded expectation was wrong.
+      // Empty, not absent: a restart would change nothing.
       actions: accountRestartable
         ? [{ id: 'restart', label: 'Restart session', primary: true, run: handlers.onRestartSession }]
         : [],

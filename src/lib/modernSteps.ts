@@ -1,18 +1,8 @@
-/**
- * How the Modern format words a run of work, after shadcn's Trace examples:
- * each step is a sentence whose verb follows its state ("Reading c.ts",
- * "Read c.ts", "Failed to read c.ts"), and the run's header counts the steps
- * ("Worked in 5 steps, 1 failed") with the time beside it. Pure, so the
- * wording is tested without rendering.
- */
-
 export type StepState = 'running' | 'done' | 'error';
 
 export interface StepText {
   title: string;
-  /** Secondary badges under the step: a host, a path, a subagent type. */
   badges?: string[];
-  /** Draw the badges in the code face, as Trace does for file paths. */
   codeBadges?: boolean;
 }
 
@@ -33,7 +23,6 @@ function host(url: unknown): string | undefined {
   }
 }
 
-/** [running, done, failed] forms of one verb. */
 type Verb = readonly [string, string, string];
 const READ: Verb = ['Reading', 'Read', 'Failed to read'];
 const WRITE: Verb = ['Writing', 'Wrote', 'Failed to write'];
@@ -49,13 +38,10 @@ const LIST: Verb = ['Listing', 'Listed', 'Failed to list'];
 const REPLY: Verb = ['Replying to', 'Replied to', 'Failed to reply to'];
 const RESOLVE: Verb = ['Resolving', 'Resolved', 'Failed to resolve'];
 
-/** A tool's name without its `mcp__<server>__` prefix. */
 export function bareToolName(name: string): string {
   return /^mcp__.+?__(.+)$/.exec(name)?.[1] ?? name;
 }
 
-/** The claude-artifacts server's calls (Claude Design), worded by what they
- *  do; null for one with no wording of its own. */
 function describeArtifactCall(tool: string, input: Record<string, unknown>, state: StepState): StepText | null {
   switch (tool) {
     case 'guide':
@@ -109,8 +95,6 @@ function step(title: string, badges: (string | undefined)[] = [], codeBadges = f
 export function describeToolStep(name: string, input: Record<string, unknown>, state: StepState): StepText {
   switch (name) {
     case 'Bash': {
-      // What ran, as Trace words it ("Ran pnpm --version"); the model's own
-      // description of the command is the line's tooltip.
       const command = (str(input.command) ?? '').split('\n')[0];
       return step(`${verb(RUN, state)} ${command || 'a command'}`);
     }
@@ -136,8 +120,6 @@ export function describeToolStep(name: string, input: Record<string, unknown>, s
     case 'Skill':
       return step(`${verb(USE, state)} ${str(input.skill) ?? 'a skill'}`);
     case 'ToolSearch': {
-      // "select:a,b,c" names the tools outright: list them as the model
-      // would say them, without their mcp__<server>__ prefixes.
       const query = str(input.query);
       const selected = query?.startsWith('select:')
         ? query.slice('select:'.length).split(',').map((t) => bareToolName(t.trim())).filter(Boolean).join(', ')
@@ -154,19 +136,14 @@ export function describeToolStep(name: string, input: Record<string, unknown>, s
   }
 }
 
-/** What a step does, which picks its icon. Status is the line's color and
- *  title, never the icon — as in shadcn's Trace. */
 export type StepKind =
   | 'command' | 'commit' | 'branch' | 'read' | 'edit' | 'create' | 'search' | 'explore'
   | 'web' | 'agent' | 'tasks' | 'question' | 'skill' | 'design' | 'mcp' | 'tool';
 
-/** The MCP server the CLI builds for Artifacts (Claude Design) once
- *  CLAUDE_CODE_ARTIFACT is on; it stands in for the built-in tools. */
+/** The MCP server the CLI builds for Artifacts once CLAUDE_CODE_ARTIFACT is on. */
 export const ARTIFACTS_SERVER = 'claude-artifacts';
 const BUILT_IN_ARTIFACT_TOOLS = new Set(['Artifact', 'ArtifactComments', 'ArtifactData', 'ArtifactCheck']);
 
-/** A Claude Design call: the built-in Artifact tools, or the claude-artifacts
- *  server's. */
 export function isArtifactTool(name: string): boolean {
   return BUILT_IN_ARTIFACT_TOOLS.has(name) || name.startsWith(`mcp__${ARTIFACTS_SERVER}__`);
 }
@@ -195,12 +172,6 @@ export function stepKind(name: string, input: Record<string, unknown>): StepKind
   }
 }
 
-/**
- * The kind a Claude Design call resembles, so inside a folded Design run the
- * calls are told apart by the icons (and colors) already set for those
- * kinds. The palette marks only the run itself and the publishes — where the
- * design ships.
- */
 function artifactKind(name: string): StepKind {
   if (name === 'Artifact') return 'design';
   if (name === 'ArtifactComments') return 'question';
@@ -215,8 +186,7 @@ function artifactKind(name: string): StepKind {
 
 export interface WebSource { title: string; url: string }
 
-/** The pages a web step used: the one a fetch read, or the links a search
- *  returned (its result carries them as `Links: [{title,url}…]` sections). */
+/** A search's result carries its links as `Links: [{title,url}…]` sections. */
 export function webSources(name: string, input: Record<string, unknown>, resultText: string | undefined): WebSource[] {
   if (name === 'WebFetch') {
     const url = str(input.url);
@@ -235,19 +205,17 @@ export function webSources(name: string, input: Record<string, unknown>, resultT
         if (typeof url === 'string') out.push({ title: typeof title === 'string' && title ? title : url, url });
       }
     } catch {
-      // Not the shape we know; the step shows no sources rather than garbage.
+      // Not the shape we know: show no sources rather than garbage.
     }
   }
   return out;
 }
 
-/** "32s", "1m 10s". */
 export function shortDuration(ms: number): string {
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
-/** A finished run's header: its title, and the time it took beside it. */
 export function traceHeader({
   steps,
   failed,
@@ -261,13 +229,11 @@ export function traceHeader({
   return ms !== null && ms >= 1000 ? { title, description: shortDuration(ms) } : { title };
 }
 
-/** shadcn Reasoning's line: "Thinking" while it thinks, "Thought for 5s" after. */
 export function reasoningTitle({ running, ms }: { running: boolean; ms: number | null }): string {
   if (running) return 'Thinking';
   return ms !== null && ms >= 1000 ? `Thought for ${shortDuration(ms)}` : 'Thought';
 }
 
-/** A thought's token estimate as the classic card wrote it: "~608 tokens". */
 export function thinkingTokensLabel(tokens: number): string {
   return `~${tokens.toLocaleString('en-US')} token${tokens === 1 ? '' : 's'}`;
 }

@@ -1,17 +1,3 @@
-// Devtools entry point for the render profiler.
-//
-// The lag this measures was reported in a PACKAGED build, where there is no
-// dev overlay and no StrictMode — but the app menu still carries
-// `role: 'toggleDevTools'`, so a console handle is the whole UI we need:
-//
-//   __omnifexProfile.on()      // then reload once
-//   ...click a tab, drag a tab...
-//   __omnifexProfile.status()  // last report
-//   __omnifexProfile.off()
-//
-// Reports also print as they land, so the numbers show up next to the
-// interaction that produced them rather than having to be asked for.
-
 import type { ProfileReport, RenderProfiler } from '@/lib/renderProfiler';
 import { renderProfiler } from '@/lib/renderProfiler';
 
@@ -36,11 +22,7 @@ function defaultLog(report: ProfileReport): void {
   );
 }
 
-/**
- * Attach the handle to `target` (the window, in the app) and subscribe the
- * printer. Idempotent: a second call on the same target is a no-op, so a
- * hot-reload can't stack duplicate subscribers and double-print every report.
- */
+/** Idempotent, so a hot reload cannot stack duplicate subscribers. */
 export function installRenderProfilerConsole(
   target: Record<string, unknown>,
   profiler: RenderProfiler = renderProfiler,

@@ -1,13 +1,3 @@
-/**
- * Derive subagent state from the Claude CLI stream.
- *
- * Thin facade over `subagentEvents.ts`. Translation, reduction, and the
- * inferred-closure post-pass live there; this file is the renderer-facing
- * shape (`Subagent` rendered by BackgroundWorkRows, `clearCompleted` for the
- * "Clear done" button, `hasRunningSubagent` for callers that want to know
- * if any row is still in flight) plus the `colorIndexFor` palette hash.
- */
-
 import type { JsonlNode } from '@/types/jsonl';
 import {
   applyEvents,
@@ -32,67 +22,33 @@ export interface Subagent {
   taskId?: string;
   agentType?: string;
   description: string;
-  /** The Agent dispatch's brief. See SubagentState.prompt. */
   prompt?: string;
   status: SubagentStatus;
   startedAt?: string;
   endedAt?: string;
   latest: SubagentProgressEvent | null;
   events: SubagentProgressEvent[];
-  /** The agent's final report. See SubagentState.summary. */
   summary?: string;
-  /** What it is doing now, in the CLI's words. See SubagentState.progressSummary. */
   progressSummary?: string;
   colorIndex: number;
-  // True when dispatched with run_in_background:true. The CLI fires an
-  // immediate ACK tool_result for these (a dispatch confirmation, not the
-  // actual return value), so the reducer must not flip these to "completed"
-  // on the ACK — only TaskNotification(Xml) or the inferred-closure rule
-  // do that.
+  /** run_in_background: its immediate ACK tool_result is not a completion. */
   isBackground?: boolean;
-  /** Set from `CliTaskUpdatedMessage.patch.error` when the CLI reports a
-   *  subagent failure. Undefined for successful subagents and for failures
-   *  that closed via tool_result / TaskNotification (which carry summaries
-   *  but not a structured error string). */
   error?: string;
-  /** Which carrier finalised this row, if any. `'parent_result'` indicates
-   *  the inferred-closure path (no direct closure carrier was seen). */
   closureSource?: SubagentState['closureSource'];
-  /** `task_started.ambient` — a watcher or housekeeping task rather than work
-   *  the user is waiting on. Hidden from `countActiveSubagents`, not from the
-   *  bar. */
   ambient?: boolean;
-  /** The model the subagent ran on. Live from its forwarded frames while it
-   *  runs; the disk meta merged in via `applySubagentMeta` wins once read. */
+  /** Live from forwarded frames; the disk meta from applySubagentMeta wins once read. */
   model?: string;
-  /** The subagent's OWN reasoning effort, which can differ from the
-   *  session's when the dispatch set `effort:`. Same provenance as `model`.
-   *  Undefined when the run used the session default. */
   effort?: string;
-  /** For a NESTED subagent (spawnDepth >= 2): the `toolUseId` of the row that
-   *  dispatched it. Undefined on rows dispatched from the main stream.
-   *  Rows carrying this were synthesised from sidecars — the main stream has
-   *  no dispatch for them. */
   parentToolUseId?: string;
-  /** Authoritative end-of-run totals from the parent Task's `toolUseResult`,
-   *  merged in via `applySubagentMeta`. Preferred over the live
-   *  `latest.*` numbers when present (the stream's running totals can lag
-   *  the final tally). */
+  /** Preferred over live `latest.*` totals, which can lag the final tally. */
   finalTotalTokens?: number;
   finalDurationMs?: number;
   finalToolUseCount?: number;
 }
 
-/**
- * Per-subagent metadata sourced from disk (model + authoritative totals),
- * keyed by the dispatching Task's `tool_use_id`. Mirrors the main-process
- * `SubagentMeta` shape without coupling this module to the IPC layer.
- */
 export interface SubagentMetaInput {
   agentId?: string;
   agentType?: string;
-  /** The subagent's own description, from its sidecar. Only load-bearing for
-   *  nested rows, which have no dispatch in the main stream to label them. */
   description?: string;
   model?: string;
   effort?: string;
@@ -104,7 +60,6 @@ export interface SubagentMetaInput {
   toolUseCount?: number;
 }
 
-/** Closing status + run stats carried by one `task-notification`. */
 export interface NotificationStats {
   status: 'completed' | 'failed';
   summary?: string;
@@ -113,25 +68,14 @@ export interface NotificationStats {
   durationMs?: number;
 }
 
-/**
- * Index every XML `task-notification` in the stream by its `tool_use_id`.
- *
- * The reducer deliberately drops notifications that name no dispatched row,
- * which is exactly the shape a NESTED subagent's notification takes: its
- * dispatch was issued inside the parent's transcript, so the main stream never
- * sees it. The row for it is synthesised later from sidecars — by which point
- * the reducer has moved on. This index lets `applySubagentMeta` reunite the
- * two. Costs one extra translation pass; callers should memoise on `messages`
- * as they already do for `deriveSubagents`.
- */
+/** The reducer drops notifications naming no dispatched row, which is a nested subagent's shape; this lets applySubagentMeta reunite them. */
 export function notificationStatsByToolUse(
   messages: JsonlNode[],
 ): Record<string, NotificationStats> {
   const out: Record<string, NotificationStats> = {};
   for (const ev of messagesToEvents(messages)) {
     if (ev.kind !== 'TaskNotificationXml') continue;
-    // Last notification wins: a resumed agent re-notifies with its running
-    // totals, and the newest is the one worth showing.
+    // Last wins: a resumed agent re-notifies with its running totals.
     out[ev.toolUseId] = {
       status: ev.status,
       summary: ev.summary,
@@ -143,21 +87,12 @@ export function notificationStatsByToolUse(
   return out;
 }
 
-/** What a subagent's live-forwarded frames last said: its model and its
- *  newest narration. */
 export interface ForwardedLive {
   model?: string;
   text?: string;
 }
 
-/**
- * Index live-forwarded frames by `agent_id` (CLI >= 2.1.292).
- *
- * A nested subagent's row is synthesised from sidecars in
- * `applySubagentMeta`, after the reducer has run, so its frames — which name a
- * dispatch the main stream never saw — have nowhere to land in the reducer.
- * The sidecar carries the same agentId, and this reunites the two.
- */
+/** Nested rows are synthesised after the reducer, so their forwarded frames are reunited here by agent_id. */
 export function forwardedByAgentId(messages: JsonlNode[]): Record<string, ForwardedLive> {
   const out: Record<string, ForwardedLive> = {};
   for (const m of messages) {
@@ -176,12 +111,6 @@ export function forwardedByAgentId(messages: JsonlNode[]): Record<string, Forwar
   return out;
 }
 
-/**
- * Merge disk-sourced metadata onto derived subagent rows by `toolUseId`.
- * Pure — returns a new array and never mutates the input. Rows without a
- * matching entry pass through untouched. `agentType` is only filled when the
- * dispatch didn't already supply one (the dispatch's `subagent_type` wins).
- */
 export function applySubagentMeta(
   subs: Subagent[],
   meta: Record<string, SubagentMetaInput>,
@@ -194,9 +123,7 @@ export function applySubagentMeta(
     return {
       ...sub,
       agentType: sub.agentType ?? m.agentType,
-      // For an Agent task the task id IS the agent id, and it is what joins
-      // the row to its transcript's cost (subagentRunStats). A foreground row
-      // reloaded from disk never saw task_started, so only the meta has it.
+      // The task id IS the agent id; a foreground row reloaded from disk only has it from meta.
       taskId: sub.taskId ?? m.agentId,
       model: m.model ?? sub.model,
       effort: m.effort ?? sub.effort,
@@ -206,29 +133,20 @@ export function applySubagentMeta(
     };
   });
 
-  // agentId -> the row it belongs to, so a nested entry's `parentAgentId`
-  // can be resolved to the toolUseId that rows are actually keyed by.
   const rowByAgentId = new Map<string, Subagent>();
   for (const row of merged) {
     const agentId = meta[row.toolUseId]?.agentId;
     if (agentId) rowByAgentId.set(agentId, row);
   }
 
-  // Synthesise rows for nested subagents. Only entries with a parentAgentId
-  // qualify: a depth-1 entry without a row means the dispatch simply hasn't
-  // been read yet, and inventing one would duplicate it when it arrives.
+  // Nested entries only: a depth-1 entry without a row hasn't been read yet, and inventing one would duplicate it.
   const nested: { parent: Subagent; row: Subagent }[] = [];
   for (const [toolUseId, m] of Object.entries(meta)) {
     if (!m.parentAgentId) continue;
     if (merged.some((s) => s.toolUseId === toolUseId)) continue;
     const parent = rowByAgentId.get(m.parentAgentId);
-    // An orphan has nothing to attach to — a floating row with no context
-    // reads worse than omitting it.
     if (!parent) continue;
-    // The child's own task-notification, if the main stream carried one. It
-    // is the only source of a nested agent's status and run stats.
     const notif = notifications[toolUseId];
-    // What its forwarded frames said, keyed by the sidecar's agentId.
     const liveFrames = m.agentId ? live[m.agentId] : undefined;
     const description = m.description ?? parent.description;
     const latest: SubagentProgressEntry | null = notif
@@ -248,15 +166,8 @@ export function applySubagentMeta(
         taskId: m.agentId,
         parentToolUseId: parent.toolUseId,
         agentType: m.agentType,
-        // The child's own label when the sidecar carries one; the parent's
-        // only as a fallback, which otherwise renders siblings identically.
         description,
-        // Prefer the child's own notification. Without one we are guessing:
-        // since CLI 2.1.232 an agent backgrounds its own children and returns
-        // without them, so a finished parent no longer implies a finished
-        // child (observed: parent done at 24s, children at 74s and 82s).
-        // `completed_inferred` renders with the distinct icon that says the
-        // closure was deduced rather than reported.
+        // Since CLI 2.1.232 a finished parent no longer implies finished children.
         status: notif?.status ?? (parent.status === 'running' ? 'running' : 'completed_inferred'),
         closureSource: notif ? 'task_notification_xml' : undefined,
         summary: notif?.summary,
@@ -270,8 +181,6 @@ export function applySubagentMeta(
   }
   if (nested.length === 0) return merged;
 
-  // Splice each child in directly after its parent so the branch reads as a
-  // group rather than as unexplained rows at the end of the list.
   const out: Subagent[] = [];
   for (const row of merged) {
     out.push(row);
@@ -292,22 +201,8 @@ export function colorIndexFor(toolUseId: string): number {
   return hash % SUBAGENT_PALETTE_SIZE;
 }
 
-/**
- * Color allocator for subagent rows. Stateful within a session — tracks
- * which palette indices are currently held by live tool_use_ids so new
- * subagents get a guaranteed-unique index until the palette saturates.
- *
- * Stability contract:
- *  - Same toolUseId → same index for the allocator's lifetime
- *  - Different toolUseIds → different indices when ≤ palette size are live
- *  - On release(toolUseId), the index frees up for the next allocation
- *  - When > palette size are live simultaneously, the overflow falls back
- *    to hash-mod and accepts collisions
- */
 export interface SubagentColorAllocator {
-  /** Get-or-assign the color index for this toolUseId. */
   acquire(toolUseId: string): number;
-  /** Release the slot held by toolUseId. Safe to call on unknown ids. */
   release(toolUseId: string): void;
 }
 
@@ -319,7 +214,6 @@ export function createSubagentColorAllocator(): SubagentColorAllocator {
     acquire(toolUseId: string): number {
       const existing = assigned.get(toolUseId);
       if (existing !== undefined) return existing;
-      // Pick lowest unused index, hash-mod fallback if all used.
       let chosen = -1;
       for (let i = 0; i < SUBAGENT_PALETTE_SIZE; i++) {
         if (!used.has(i)) { chosen = i; break; }
@@ -333,8 +227,7 @@ export function createSubagentColorAllocator(): SubagentColorAllocator {
       const idx = assigned.get(toolUseId);
       if (idx === undefined) return;
       assigned.delete(toolUseId);
-      // Only free the slot if no other toolUseId holds it (hash-mod fallback
-      // can produce collisions where multiple ids map to the same index).
+      // Hash-mod fallback can give several ids the same index.
       for (const otherIdx of assigned.values()) {
         if (otherIdx === idx) return;
       }
@@ -346,28 +239,13 @@ export function createSubagentColorAllocator(): SubagentColorAllocator {
 export const isTaskLifecycleMarker = _isTaskLifecycleMarker;
 export const isTaskNotificationCarrier = _isTaskNotificationCarrier;
 
-/**
- * Build the subagent list from the message stream.
- *
- * Pipeline:
- *   1. `messagesToEvents` — pure CLI→event translation
- *   2. `applyEvents` — fold events into per-`tool_use_id` state with an
- *      intrinsic terminal lock
- *   3. `inferredClosureEvents` — generate `ClosedByParentResult` events
- *      for rows still in `running` whose parent emitted a `type: 'result'`
- *      that is not the most recent message
- *   4. Re-apply the inferred events so they go through the same reducer
- *      (preserving terminal-lock semantics)
- */
 export function deriveSubagents(
   messages: JsonlNode[],
   allocator?: SubagentColorAllocator,
 ): Subagent[] {
   const baseEvents = messagesToEvents(messages);
   const states = applyEvents(baseEvents);
-  // A resume restarts the clock for the inferred-closure guard: the `result`
-  // that ended the turn before the resume says nothing about the new run, so
-  // the row's anchor moves forward to the resume itself.
+  // A resume moves the inferred-closure anchor: an earlier result says nothing about the new run.
   const anchors = dispatchIndicesFromEvents(baseEvents);
   for (const ev of baseEvents) {
     if (ev.kind !== 'AgentResumed') continue;
@@ -376,16 +254,11 @@ export function deriveSubagents(
     }
   }
   const closureEvents = inferredClosureEvents(messages, states, anchors);
-  // Apply closure events directly to the existing state map. We don't
-  // re-run them through `applyEvents` because that starts from an empty
-  // map; the inferred-closure semantics are simple enough to inline here
-  // and the terminal-lock check below preserves the same invariant
-  // (`isTerminal` ↔ status ∈ TERMINAL_STATUSES).
   for (const ev of closureEvents) {
     if (ev.kind !== 'ClosedByParentResult') continue;
     const s = states.get(ev.toolUseId);
     if (!s) continue;
-    if (s.status !== 'running') continue; // terminal lock
+    if (s.status !== 'running') continue;
     s.status = 'completed_inferred';
     s.closureSource = 'parent_result';
     s.endedAt = s.endedAt ?? new Date().toISOString();
@@ -414,9 +287,7 @@ export function deriveSubagents(
     model: s.model,
   });
 
-  // Owners first, so a nested row can read its owner's color — and so a
-  // nested row never consumes a palette slot of its own (it shares its
-  // owner's, exactly like the rows applySubagentMeta synthesises).
+  // Owners first: a nested row shares its owner's color and never takes a palette slot.
   const rows = new Map<string, Subagent>();
   for (const s of all) {
     if (s.parentToolUseId) continue;
@@ -426,14 +297,11 @@ export function deriveSubagents(
   for (const s of all) {
     if (!s.parentToolUseId) continue;
     const owner = rows.get(s.parentToolUseId);
-    // An owner we never saw dispatched leaves the row at top level rather
-    // than dropping it — a visible orphan beats a task that ran invisibly.
+    // A visible orphan beats a task that ran invisibly.
     owned.push(toRow(s, owner ? owner.colorIndex : (allocator ? allocator.acquire(s.toolUseId) : colorIndexFor(s.toolUseId))));
   }
   if (owned.length === 0) return Array.from(rows.values());
 
-  // Splice each owned task directly beneath its owner so the branch reads as
-  // a group, mirroring applySubagentMeta's placement of nested agent rows.
   const out: Subagent[] = [];
   for (const row of rows.values()) {
     out.push(row);
@@ -451,27 +319,12 @@ export function clearCompleted(subs: Subagent[]): Subagent[] {
   return subs.filter((s) => s.status === 'running');
 }
 
-/**
- * True when at least one subagent is still in `running` status. Kept for
- * callers that want the predicate, but the typing-bubble bridge in
- * `ClaudeCodeSession.tsx` no longer routes through it — a stuck-running
- * row must not fake a live turn. See the design spec
- * `docs/superpowers/specs/2026-05-11-subagent-tracking-refactor-design.md`.
- */
+/** Not an in-flight signal: a stuck-running row must not fake a live turn. */
 export function hasRunningSubagent(subs: Subagent[]): boolean {
   return subs.some((s) => s.status === 'running');
 }
 
-/**
- * How many subagents count as ACTIVITY — running, and not ambient.
- *
- * Deliberately separate from `hasRunningSubagent`, which means "still open".
- * The CLI's own schema says ambient tasks — every `skip_transcript` task, plus
- * every live-update watcher — must be excluded from activity indicators, and
- * conflating the two predicates is how the tab badge came to count watchers as
- * work in progress. Callers that want "is anything still open" keep the other
- * one; callers that draw a badge want this.
- */
+/** Ambient tasks are not activity (CLI contract); a badge wants this, not hasRunningSubagent. */
 export function countActiveSubagents(subs: Subagent[]): number {
   return subs.reduce((n, s) => (s.status === 'running' && !s.ambient ? n + 1 : n), 0);
 }

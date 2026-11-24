@@ -1,24 +1,8 @@
 import type { ThemeMode } from '@/contexts/ThemeContext';
 
 /**
- * How diagrams look: mermaid's `base` theme painted from the app's own
- * tokens, in its `neo` look (soft shadows), with OmniFex's card shape — 1px
- * borders and the `rounded-md` 8px radius.
- *
- * The stock themes were what made diagrams read as rudimentary — `default`
- * draws lavender boxes in a yellow subgraph, `dark` flat grey slabs — and
- * neither knew anything about the surface they sit on. `base` is the one
- * theme whose colors come entirely from `themeVariables`.
- *
- * Hex, not oklch: mermaid derives shades with its own color maths, which does
- * not parse oklch. Each value is the styles.css token named beside it,
- * converted. A diagram sits in a `bg-card` box, so a node is the next surface
- * up (`secondary`) with the theme's `border`, the way the app draws a card
- * inside a card; a subgraph is set INTO the card (`background`).
- *
- * Checked in a real browser (2026-10-23) against what depends on mermaid's
- * SVG: the neo look keeps the `g.node` ids and `path[data-edge]` data-ids
- * svgGraph highlights by, and adds no `<foreignObject>` (PNG export).
+ * Hex, not oklch: mermaid's color maths cannot parse oklch. Each value is the styles.css token beside it.
+ * The neo look must keep the `g.node` ids and `path[data-edge]` data-ids svgGraph reads, and add no `<foreignObject>`.
  */
 export const THEME_SURFACES = {
   gray: {
@@ -41,17 +25,14 @@ export const THEME_SURFACES = {
   },
 } as const satisfies Record<ThemeMode, Record<string, string>>;
 
-/** Notes: the app's amber chip (`bg-amber-500/10 text-amber-500`), over each surface. */
 const NOTE = {
   gray: { bkg: '#3a2f17', border: '#7a5a14', text: '#fcd9a0' },
   light: { bkg: '#fff4dc', border: '#f5c46b', text: '#7a4a00' },
 } as const;
 
-// A system stack rather than the app's chosen font: an exported SVG is opened
-// elsewhere, where the app's webfont does not exist.
+// A system stack: an exported SVG is opened where the app's webfont does not exist.
 const FONT = '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif';
 
-/** The app's card shape: 1px borders, 8px (`rounded-md`) corners. */
 const THEME_CSS = `
   .node rect, .node polygon, .node circle, .node ellipse, .node path { stroke-width: 1px; }
   .node rect { rx: 8px; ry: 8px; }
@@ -62,7 +43,6 @@ const THEME_CSS = `
   .cluster-label text { font-weight: 600; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
 `;
 
-/** The visual half of mermaid's config; loadMermaid adds the safety half. */
 export function mermaidTheme(theme: ThemeMode) {
   const p = THEME_SURFACES[theme];
   const n = NOTE[theme];
@@ -104,11 +84,7 @@ export function mermaidTheme(theme: ThemeMode) {
       noteBorderColor: n.border,
       noteTextColor: n.text,
     },
-    // Markdown labels wrap at 200px by default, which stacked a four-line
-    // label into six; 280 keeps a typical label to the lines it was written in.
     flowchart: { padding: 14, nodeSpacing: 36, rankSpacing: 48, diagramPadding: 12, wrappingWidth: 280 },
-    // Actors drawn once, at the top: the mirrored row at the bottom doubled
-    // a short diagram's height for no information.
     sequence: { actorMargin: 60, boxMargin: 8, noteMargin: 10, messageMargin: 36, mirrorActors: false },
   };
 }

@@ -1,24 +1,9 @@
-// Cost Report chart — pivoting period × model rows into stacked-bar buckets.
-//
-// Pure and separate from the component: recharts needs a real layout box, so a
-// jsdom test of the chart itself proves nothing. The shaping is where the bugs
-// would be, so it lives here where it can be tested directly.
-
 import type { CostHistoryPeriodModel } from '@/lib/api';
 import { compareModels } from '@/lib/costChartPalette';
 
-/** One period's bucket: the period label plus one numeric key per model. */
 export type StackedBucket = { period: string } & Record<string, string | number>;
 
-/**
- * Pivot `[{period, model, cost_usd}]` into one row per period with a key per
- * model, ordered chronologically, with models in fixed slot order so the stack
- * order matches the legend.
- *
- * Every series is zero-filled in every period. Leaving a key undefined makes
- * recharts skip the segment, which tears the stack wherever a model simply
- * wasn't used that day.
- */
+/** Zero-fills every series: an undefined key makes recharts skip the segment and tears the stack. */
 export function toStackedSeries(rows: CostHistoryPeriodModel[]): {
   data: StackedBucket[];
   models: string[];
@@ -35,8 +20,6 @@ export function toStackedSeries(rows: CostHistoryPeriodModel[]): {
       for (const m of models) bucket[m] = 0;
       byPeriod.set(r.period, bucket);
     }
-    // Accumulate rather than assign: the query groups by period+model, but a
-    // caller that hands us pre-split rows must not silently lose one.
     bucket[r.model] = (bucket[r.model] as number) + r.cost_usd;
   }
 
@@ -46,15 +29,6 @@ export function toStackedSeries(rows: CostHistoryPeriodModel[]): {
   };
 }
 
-/**
- * The topmost model that actually renders in this period — the last one in
- * stack order with a non-zero value, or null when the period has no spend.
- *
- * Only the top of a stack is a data-end, so only it takes the 4px round.
- * Rounding every segment would make interior joins read as separate bars; and
- * rounding a zeroed series (which draws nothing) would leave the visible top
- * square.
- */
 export function topModelFor(bucket: StackedBucket, models: string[]): string | null {
   for (let i = models.length - 1; i >= 0; i -= 1) {
     if ((bucket[models[i]] as number) > 0) return models[i];
@@ -62,15 +36,7 @@ export function topModelFor(bucket: StackedBucket, models: string[]): string | n
   return null;
 }
 
-/**
- * SVG path for one stacked column segment, with the top corners rounded by
- * `radius` and the bottom left square (it either sits on the baseline or on
- * the segment below).
- *
- * The radius is clamped to the segment's own size. A 4px round on a 3px-tall
- * rect inverts the arc and renders as a notch out of the bar — the reason this
- * is a tested function rather than three inline template literals.
- */
+/** Radius clamped to the segment: a 4px round on a 3px rect renders as a notch. */
 export function segmentPath(
   x: number,
   y: number,
@@ -91,40 +57,16 @@ export function segmentPath(
   );
 }
 
-/** The most a cap ever rounds, in px. Past this a column starts reading as an
- *  arch rather than as a bar with a top edge you can measure against the axis. */
 const MAX_CAP_RADIUS = 6;
 
-/** Fraction of the bar's own width the cap uses below that ceiling. */
 const CAP_RATIO = 0.3;
 
-/**
- * The cap radius for a bar of this width.
- *
- * Relative, not fixed: the same chart draws 3 bars 200px wide and 31 bars 30px
- * wide depending on the range, and one constant cannot look like a cap in both
- * — it either vanishes on the wide bars or domes the narrow ones.
- */
 export function capRadius(width: number): number {
   if (!(width > 0)) return 0;
   return Math.min(MAX_CAP_RADIUS, Math.round(width * CAP_RATIO));
 }
 
-/**
- * The model that should carry the rounded cap: the topmost one whose segment
- * is actually tall enough to show it.
- *
- * `topModelFor` alone is not enough. A period is routinely $272 of Opus with
- * $0.29 of Haiku on top — the Haiku segment is the topmost non-zero one and is
- * under a pixel tall, so the cap landed on something invisible (clamped to its
- * own height) and every visible bar in the chart rendered square.
- *
- * `pxPerUnit` converts a bucket value to the height recharts will draw it at,
- * taken from the segment doing the asking. If nothing in the stack can carry a
- * full round — a very short bar — the topmost drawn segment takes it anyway
- * and `segmentPath` clamps; otherwise the shortest bars would be the only
- * square ones.
- */
+/** Not `topModelFor`: the topmost non-zero segment is often sub-pixel, leaving every visible bar square. */
 export function topCappedModel(
   bucket: StackedBucket,
   models: string[],

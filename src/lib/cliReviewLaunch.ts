@@ -4,33 +4,18 @@ import { slotToResolution } from '@/lib/accountResolution';
 import { renderCliReviewPrompt } from '@/lib/cliReviewPrompt';
 
 export interface CliReviewLaunchArgs {
-  /** OmniFex source checkout to run the review in (`CliReviewStatus.repo_dir`). */
   repoDir: string;
   reviewedVersion: string;
   installedVersion: string;
-  /** Account routing for `repoDir`, as returned by `resolveAccountForProject`. */
   pair: ResolvePair;
 }
 
 export interface CliReviewLaunch {
-  /** Chat-tab fields, ready for `addTab`. */
   tab: Omit<Tab, 'id' | 'order' | 'createdAt' | 'updatedAt'>;
-  /** False when no Claude account routes `repoDir` — the tab opens without
-   *  auto-start so the normal routing guidance is what the user sees. */
   hasAccount: boolean;
 }
 
-/**
- * Build the chat tab the Updates popover's drift warning launches.
- *
- * The prompt is the whole procedure (`cliReviewPrompt.ts`), not a slash-command
- * invocation: the old command file lived under a gitignored `.claude/`, so it
- * only ever existed on the author's machine.
- *
- * Claude-only by construction: the changelog under review is Claude Code's, so
- * a Codex slot is never a valid target even when it's the only one that routes
- * the folder.
- */
+/** Claude-only: the changelog under review is Claude Code's, so a Codex slot is never a target. */
 export function buildCliReviewLaunch({
   repoDir,
   reviewedVersion,

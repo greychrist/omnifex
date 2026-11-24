@@ -9,37 +9,20 @@ interface UsePublishTabStatusArgs {
   tabId: string;
   title: string;
   projectPath: string | null;
-  /** CLI session GUID, or null before the session has started. */
   sessionId: string | null;
   sessionStarted: boolean;
   isStarting: boolean;
-  /** The session's turn axis — `turn.status === 'running'`, mirrored from main. */
   turnRunning: boolean;
   hasError: boolean;
   messages: JsonlNode[];
-  /** Subagents already filtered through dismissals — same set the spinner sees. */
   subagents: Subagent[];
   contextUsage: SessionContextUsage | null;
   branch: string | null;
   filesChanged: number;
   filesUntracked: number;
-  /**
-   * The session's currently-pending permission, if any. Used to derive
-   * the popover's "Permission Request" / "Question Waiting" badge. Pass
-   * null when nothing is pending.
-   */
   pendingPermission: { toolName?: string } | null;
 }
 
-/**
- * Publishes this tab's busy/idle summary up to main on every change. Both
- * the status popover and the install gate read from the aggregated list,
- * so the renderer is the single source of truth for "is this tab busy?".
- *
- * On unmount, removes this tab's entry from the aggregator. Tabs in the
- * tab bar are mounted concurrently (`TabContent.tsx` toggles `hidden`),
- * so each ClaudeCodeSession instance publishes throughout its lifetime.
- */
 export function usePublishTabStatus({
   tabId,
   title,
@@ -66,29 +49,15 @@ export function usePublishTabStatus({
       (n, s) => (s.status === 'running' ? n + 1 : n),
       0,
     );
-    // The main turn is the session's own axis (see docs/session-lifecycle.md)
-    // — the same bit useSessionLifecycle folds into conversationStatus, so the
-    // tab popover and the in-session spinner can't disagree. Never read off
-    // the transcript: a resumed session whose old process died mid-turn
-    // loads a transcript that ends open, and is idle.
+    // Never read off the transcript: a resumed session whose process died mid-turn ends open, and is idle.
     const mainTurnInFlight = turnRunning;
     const waitingFor = deriveWaitingFor(pendingPermission);
-    // promptStatus: is the agent actually doing work right now?
-    // Spec: working iff (waiting on Claude response) OR (any in-progress
-    // task) OR (any running subagent). Does NOT include `waitingFor` —
-    // a session waiting on the user is "ready" for the user, not working.
-    //
-    // Uses `inProgress > 0`, NOT `taskSummary.running` — the latter also counts
-    // *pending* (planned-but-unstarted) todos, which would make this popover/
-    // gate path disagree with the header/TabManager spinner (driven by
-    // sessionDerivedState.hasOpenTasks, in_progress only). A session that ends
-    // with unstarted todos is idle, and both paths must agree on that.
+    // Excludes `waitingFor`: waiting on the user is ready, not working. `inProgress`, not `taskSummary.running`
+    // (which counts pending todos), so this agrees with the hasOpenTasks spinner.
     const hasInProgressTask = taskSummary.inProgress > 0;
     const promptStatus: 'working' | 'ready' =
       mainTurnInFlight || activeAgents > 0 || hasInProgressTask ? 'working' : 'ready';
-    // `busy` keeps its existing semantic (also folds in waitingFor) for
-    // the install-gate's "wait for idle" path — a paused-on-permission
-    // tab shouldn't be torn down mid-flight either.
+    // `busy` folds in waitingFor: the install gate must not tear down a tab paused on a permission.
     const busy = promptStatus === 'working' || waitingFor !== null;
 
     let status: TabStatusSummary['status'];
@@ -146,7 +115,7 @@ export function usePublishTabStatus({
 
   useEffect(() => {
     void api.publishTabStatus(summary).catch(() => {
-      // Failure is non-fatal — popover will catch up on next publish.
+      // Non-fatal: the next publish catches up.
     });
   }, [summary]);
 

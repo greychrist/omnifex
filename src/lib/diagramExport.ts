@@ -1,11 +1,4 @@
-/**
- * Getting a drawn diagram out of the app: SVG and PNG files, and a PNG on the
- * clipboard where the platform allows it.
- *
- * Callers pass a light-theme render (see MermaidBlock): exports are meant for
- * other people's documents, which are overwhelmingly white, so a dark-mode
- * diagram is never what should land there.
- */
+// Callers pass a light-theme render: exports land in other people's documents, which are white.
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8"?>\n';
 
@@ -13,7 +6,6 @@ function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-/** `diagram-YYYY-MM-DD-HHMM.<ext>`, in local time. */
 export function diagramFileName(ext: string, now: Date = new Date()): string {
   const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   return `diagram-${date}-${pad(now.getHours())}${pad(now.getMinutes())}.${ext}`;
@@ -23,17 +15,13 @@ function parse(svgMarkup: string): SVGSVGElement {
   return new DOMParser().parseFromString(svgMarkup, 'image/svg+xml').documentElement as unknown as SVGSVGElement;
 }
 
-/** Size of the drawing from its viewBox, rounded up to whole pixels. */
 export function viewBoxSize(svg: SVGSVGElement): { width: number; height: number } {
   const parts = (svg.getAttribute('viewBox') ?? '').trim().split(/[\s,]+/).map(Number);
   const [, , w = 0, h = 0] = parts;
   return { width: Math.ceil(w), height: Math.ceil(h) };
 }
 
-/**
- * A standalone SVG file. Mermaid emits `width="100%"` plus a `max-width`
- * style so it fits its container; a file opened on its own needs a real size.
- */
+/** Mermaid emits `width="100%"` and a `max-width` style; a standalone file needs a real size. */
 export function svgForExport(svgMarkup: string): string {
   const svg = parse(svgMarkup);
   const { width, height } = viewBoxSize(svg);
@@ -45,7 +33,6 @@ export function svgForExport(svgMarkup: string): string {
   return XML_HEADER + new XMLSerializer().serializeToString(svg);
 }
 
-/** Rasterises the SVG at `scale`× over white. */
 export async function svgToPng(svgMarkup: string, scale = 2): Promise<Blob> {
   const file = svgForExport(svgMarkup);
   const { width, height } = viewBoxSize(parse(svgMarkup));
@@ -76,12 +63,7 @@ export async function svgToPng(svgMarkup: string, scale = 2): Promise<Blob> {
   }
 }
 
-/**
- * Image copy needs the async clipboard. The iPad client served over plain
- * http has none, so the option is hidden there. Not a secure-context check:
- * the Mac app's page is plain http too, and its clipboard is the app's own
- * (`remote/nativeClipboard.ts`).
- */
+/** A feature check, not a secure-context one: the Mac app's page is plain http too, and its clipboard is the app's own. */
 export function canCopyImage(): boolean {
   return typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function';
 }

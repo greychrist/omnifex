@@ -1,29 +1,14 @@
 import { createContext, useContext } from 'react';
 
-/**
- * What a transcript card may ask its session to do. Provided by AgentSession
- * with stable callbacks, so reading it re-renders only the cards that use it —
- * not every StreamMessage, which a prop threaded through ClaudeTranscript
- * would. Null outside a live Claude session (history views, tests), and a
- * card then renders without actions.
- */
+/** A context, not a prop through ClaudeTranscript, so only the cards that use it re-render. Null outside a live session. */
 export interface SessionActions {
   projectPath: string;
   homeDir: string;
   permissionMode: string;
-  /** The session's turn is running (the daemon's `turn` axis). */
   turnRunning: boolean;
-  /**
-   * Send a prompt as if the user had typed it, except that if it has to
-   * queue it goes to the head, and if it is already sitting in a held queue
-   * it is taken out and sent now.
-   */
+  /** Queues at the head, and a prompt already in a held queue is taken out and sent now. */
   sendPrompt(text: string): void;
-  /**
-   * Add an allow rule to the project's `.claude/settings.local.json`. The CLI
-   * re-reads settings files mid-session (verified 2.1.284), so the rule
-   * applies to the running session as well as later ones.
-   */
+  /** The CLI re-reads settings files mid-session (verified 2.1.284), so the rule applies to the running session. */
   addAllowRule(rule: string): Promise<void>;
   setPermissionMode(mode: string): void;
 }

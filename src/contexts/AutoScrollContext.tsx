@@ -15,9 +15,8 @@ import {
 } from "@/lib/autoScrollFollow";
 
 interface AutoScrollContextType {
-  /** Distance from the bottom (px) within which the chat follows new messages. */
+  /** Pixels from the bottom within which the chat follows new messages. */
   followPx: number;
-  /** Persist a new distance (clamped) and apply it live to all transcripts. */
   setFollowPx: (next: number) => Promise<void>;
   isLoading: boolean;
 }
@@ -51,8 +50,6 @@ export const AutoScrollProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
-  // Rejects when the write fails (the distance still applies), so Settings
-  // can report it.
   const setFollowPx = useCallback(async (next: number) => {
     const clamped = clampFollowPx(next);
     setFollowPxState(clamped);

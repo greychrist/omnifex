@@ -1,41 +1,19 @@
-/**
- * Unified diff → structure, so a diff can be rendered as a diff.
- *
- * A `git diff` that arrives as Bash stdout used to render as one flat block
- * of success-green text: the color said "this command exited 0", which is
- * the least interesting fact about it, and nothing said which lines changed.
- * The dedicated `DiffViewer` never saw it, because that only ever gets `Edit`
- * and `apply_patch` payloads, which come as old/new strings rather than as a
- * diff someone else already computed.
- *
- * Parsing is deliberately conservative. `looksLikeUnifiedDiff` decides whether
- * a Bash result stops being text and becomes a diff, and a false positive
- * mangles ordinary output — so a hunk header is required, not merely lines
- * that begin with `+` or `-` (npm and pip print plenty of those).
- */
-
 export type DiffLineKind = 'add' | 'del' | 'ctx';
 
 export interface DiffLine {
   kind: DiffLineKind;
-  /** The line without its leading +/-/space marker. */
   text: string;
-  /** Line number on the old side, or null for an added line. */
   oldNumber: number | null;
-  /** Line number on the new side, or null for a removed line. */
   newNumber: number | null;
 }
 
 export interface DiffHunk {
-  /** The `@@ … @@` line verbatim, including any trailing section context. */
   header: string;
   lines: DiffLine[];
 }
 
 export interface DiffFile {
-  /** The path to show: the new path, or the old one for a deletion. */
   path: string;
-  /** The old path when it differs (a rename), else null. */
   oldPath: string | null;
   created: boolean;
   deleted: boolean;
@@ -48,48 +26,33 @@ export interface DiffFile {
 }
 
 export interface ParsedDiff {
-  /** Anything printed before the first file header. Never dropped. */
   preamble: string[];
   files: DiffFile[];
-  /** Body lines beyond the budget — 0 when everything was kept. */
   truncated: number;
 }
 
 const HUNK = /^@@+ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 const GIT_HEADER = /^diff --git (?:"?a\/(.+?)"?) (?:"?b\/(.+?)"?)$/;
 
-/**
- * The text as diff lines. `split('\n')` on trailing-newline text yields a
- * final empty element that is not a line — and an empty line is a legal
- * context line here, so left in place it counted as one, inflating every
- * line number and every +/- tally after it.
- */
+/** Drops split's trailing empty element: an empty line is a legal context line, and it inflated every count. */
 function toLines(text: string): string[] {
   const lines = text.split('\n');
   if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
   return lines;
 }
 
-/** Strip git's `a/` / `b/` prefix from a `---` / `+++` path. */
 function cleanPath(raw: string): string | null {
   const path = raw.replace(/\t.*$/, '').trim();
   if (path === '/dev/null') return null;
   return path.replace(/^"|"$/g, '').replace(/^[ab]\//, '');
 }
 
-/**
- * Whether this text should be rendered as a diff rather than as output.
- *
- * Requires a hunk header AND a file marker, which is what separates a real
- * diff from `git diff --stat`, a changelog, or an installer's +/- lines.
- */
+/** Needs a hunk header AND a file marker: a false positive mangles ordinary output (npm/pip +/- lines, --stat). */
 export function looksLikeUnifiedDiff(text: string): boolean {
   if (!text) return false;
   let sawFileMarker = false;
   for (const line of text.split('\n')) {
     if (line.startsWith('diff --git ') || line.startsWith('+++ ')) sawFileMarker = true;
-    // A binary file has no hunk to find, and `Binary files … differ` under a
-    // git header is as unambiguous as a hunk is.
     else if (sawFileMarker && line.startsWith('Binary files ')) return true;
     else if (sawFileMarker && HUNK.test(line)) return true;
   }
@@ -110,14 +73,7 @@ function emptyFile(path: string): DiffFile {
   };
 }
 
-/**
- * Parse unified diff text. Null when it is not a diff at all.
- *
- * `maxLines` caps how many body lines are kept across the whole diff — the
- * transcript is unvirtualised, so a 20,000-line diff would otherwise mount
- * 20,000 rows. Counts are tallied before the cap, so the header still tells
- * the truth about a diff that was only partly rendered.
- */
+/** `maxLines` caps kept body lines (the transcript is unvirtualised); counts are tallied before the cap. */
 export function parseUnifiedDiff(
   text: string,
   opts: { maxLines?: number } = {},
@@ -134,9 +90,7 @@ export function parseUnifiedDiff(
   let kept = 0;
   let truncated = 0;
 
-  // Returns the file rather than assigning it, so the assignment is visible
-  // to control-flow narrowing at each call site (a closure that assigned
-  // `file` left TS believing it was still null further down the loop).
+  // Returns the file rather than assigning it, so TS narrowing sees the assignment.
   const openFile = (f: DiffFile): DiffFile => {
     files.push(f);
     hunk = null;
@@ -182,7 +136,6 @@ export function parseUnifiedDiff(
 
     if (line.startsWith('--- ')) {
       const path = cleanPath(line.slice(4));
-      // A bare `diff -u` has no `diff --git` line to open the file with.
       if (!file || file.hunks.length > 0) file = openFile(emptyFile(path ?? '(unknown)'));
       if (path === null) file.created = true;
       else if (!file.oldPath && file.path === '(unknown)') file.path = path;
@@ -207,13 +160,10 @@ export function parseUnifiedDiff(
     }
 
     if (!hunk) {
-      // `index abc..def`, `similarity index`, mode changes — and, before any
-      // file has been opened, whatever the command printed first.
       if (!file) preamble.push(line);
       continue;
     }
 
-    // `\ No newline at end of file` annotates the line above; it is not one.
     if (line.startsWith('\\')) continue;
 
     const marker = line[0];
