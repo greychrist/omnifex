@@ -2,8 +2,9 @@
 # OmniFex verification gate. Stops at the first failing gate and keeps every
 # log so a failure is replayed from disk instead of re-run (re-running
 # resamples flakes).
-#   bash verify.sh          # check → build → test:coverage → test:swift → coverage:areas
-#   bash verify.sh --quick  # check → test → test:swift
+#   bash verify.sh          # check → lint → build → test:coverage → test:swift → coverage:areas
+#   bash verify.sh --quick  # check → lint → test → test:swift
+# lint fails on errors only; warnings are reported, not gated.
 ROOT=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 cd "$ROOT"
 LOGDIR=/tmp/omnifex-verify/$(date +%Y%m%d-%H%M%S)
@@ -35,6 +36,7 @@ gate() { # gate <name> <npm script>
 }
 
 gate check check || exit 1
+gate lint lint || exit 1
 if [ "${1:-}" = "--quick" ]; then
   gate test test && gate swift test:swift
 else

@@ -13,11 +13,14 @@ Run the gate, from the repo root, as one command:
 bash ${CLAUDE_SKILL_DIR}/scripts/verify.sh $ARGUMENTS
 ```
 
-- Default: `npm run check` → `npm run build` → `npm run test:coverage` →
+- Default: `npm run check` → `npm run lint` → `npm run build` → `npm run test:coverage` →
   `npm run test:swift` → `npm run coverage:areas`, stopping at the first
   failure.
-- `--quick`: `npm run check` → `npm test` → `npm run test:swift`. Fine during
+- `--quick`: `npm run check` → `npm run lint` → `npm test` → `npm run test:swift`. Fine during
   implementation; use the default before claiming full verification.
+- Lint fails on errors only. Warnings (mostly the `any` family) are reported,
+  not gated. Fix a new lint error; don't add an `eslint-disable` without a
+  `-- reason`.
 - It refuses to run on a node other than `.nvmrc`'s major (26): the native
   modules are built for that one ABI.
 - Every gate's full output is kept under `/tmp/omnifex-verify/<timestamp>/`.

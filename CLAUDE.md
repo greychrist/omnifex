@@ -201,6 +201,7 @@ before changing any of it.
   - `npm run dev` — the Vite dev server alone
   - `npm run build` — `tsc && vite build` of the renderer into `dist-web/`
   - `npm run check` — TypeScript check across renderer and daemon
+  - `npm run lint` — ESLint, typed rules; fails on errors only
   - `npm run package` — `out/OmniFex-darwin-arm64/OmniFex.app`, signed
   - `npm run make` — plus the release zip and DMG; `OMNIFEX_NOTARIZE=1`
     notarizes and staples both
@@ -361,9 +362,12 @@ Other account rules:
   tool widgets under `src/components/claude/tools/`.
 - Use `createDatabase(':memory:')` for DB-backed service tests.
 - Verification gate:
-  - Frontend-only change: `npm run check` and `npm run build`
-  - Main-process change: `npm run check` and `npm test`
-  - Cross-cutting or risky change: `npm run check`, `npm run build`, and `npm run test:coverage`
+  - Frontend-only change: `npm run check`, `npm run lint` and `npm run build`
+  - Main-process change: `npm run check`, `npm run lint` and `npm test`
+  - Cross-cutting or risky change: `npm run check`, `npm run lint`, `npm run build`, and `npm run test:coverage`
+- Lint gates on errors, not warnings. It was outside the gate until
+  2026-11-24 and had silently stopped running at all (typed rules crashed on
+  the stale `dist/`), which is how 436 errors piled up unseen.
 - If verification cannot run, say exactly why.
 
 ## Skills
