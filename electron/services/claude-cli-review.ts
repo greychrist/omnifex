@@ -66,6 +66,109 @@ import { probeBinaryVersion } from './util/exec-text';
  *    and no `Artifact` is working, not broken. Neither present = re-read
  *    the gate.
  *
+ * Last review: 2.1.330 -> 2.1.331 on 2026-11-23. Findings: none broken,
+ * nothing to fix.
+ *
+ *  Changelog coverage: 2.1.331 (~75 entries; mostly Code Mode, Claude apps
+ *  gateway, VS Code, terminal UI, Windows). Both ends installed. Script
+ *  exit 0. Merge map (47), system subtypes (84), hook_event_name (33),
+ *  control envelopes (5), control schemas (110), CLI flags (117), origin
+ *  kinds (14), can_use_tool keys (30) identical. /usage anchors unchanged
+ *  (`Estimated cost:` 2 -> 2). Coverage half: all none.
+ *  - SDK requests +`prompt_draft_activity` (SDK's new
+ *    notePromptDraftActivity()): we already send it since 2.1.326
+ *    (queries.ts promptDraftActivity) (a). Same name is the +1 subtype
+ *    literal.
+ *  - Type literals +progress_reminder_sent: a harness-scoped attachment,
+ *    sibling of silent_turn_reminder (chosen instead of it for some
+ *    models, `clearAt: next_user_message`). Not in contextLedger IN_SCOPE,
+ *    so it renders nothing, like the 190+133 silent_turn_reminder rows
+ *    already in our transcripts (a). +anthropic_marketplace (plugin
+ *    marketplace source kind), -tuple/-undefined (zod internals): inert.
+ *  - Describe +`agent_note {to, about, text, source}` on the stdout
+ *    `system`/`informational` frame a plugin writes when it leaves a note
+ *    for an agent, "so a host can draw the note itself instead of showing
+ *    `content`". Stdout-only; we draw informational from the JSONL
+ *    `content`, which still carries the text (a). Possible (c) later: a
+ *    dedicated note line; not worth it until one appears (0 so far).
+ *  - Describe moves, none asking anything of us: SendMessage `priority`
+ *    now/next/later; file_attachments +page_count; read_file
+ *    upload_if_larger / file_uuid / rootId contracts; ToolHost outcome
+ *    queries (ReadCalls); get_sandbox_dialog lists / setting-sources;
+ *    mcp_call soft_error_result; BesidePrompt / BesidePromptList ui
+ *    components (remote transport); plugin `optionalDependencies`;
+ *    fileCheckpointingEnabled "in an SDK session only an administrator's
+ *    false applies" (we never write it); startup-refusal reasons list;
+ *    diff null reasons; Code Mode cut-output note.
+ *  - Object keys +749 -75: env names (CLAUDE_CODE_DISABLE_RESPONSE_
+ *    COMPRESSION, _LAZY_WORKTREE, _HOST_STARTED_AHEAD...), OTLP exporter
+ *    names leaving, Bun crash-report keys. Nothing new on user/assistant
+ *    records or the initialize reply.
+ *  - Changelog, in our favor: Stop/SubagentStop hooks now see the last
+ *    reply; a reply going silent mid-thinking is retried once; MCP calls no
+ *    longer hang 30 min on malformed replies; /compact no longer loses
+ *    summary text quoting XML tags; crash on a nameless tool call;
+ *    `@file#10-12` attaches the range; Workflow agents' shells/MCP servers
+ *    reaped.
+ *  - Changelog, checked: PermissionDenied hook `retry: true` wording
+ *    change (HooksEditor takes free text, inert); PermissionRequest hooks
+ *    save `Skill(name:*)` rules beyond local settings and `Agent(model:*)`
+ *    no longer blocks follow-ups: CLI-side permission fixes, no rule-syntax
+ *    change, docs/permission-syntax.md unaffected; extraKnownMarketplaces
+ *    auto-update by default from 2026-11-30 (we don't write it). Skill-tool
+ *    `model:` gap not mentioned as fixed.
+ *  - Changelog, inert: Code Mode on Bedrock/Vertex/Foundry, gateway OIDC,
+ *    `claude doctor` connectivity, voice dictation, gen_ai span attrs,
+ *    /diff, /bug, /install-github-app, Remote Control, Windows, VS Code and
+ *    every terminal-UI fix.
+ *  - Open items re-checked in both accounts' projects/: easel's flag is
+ *    on (init lists plugin `cc-plugin-easel`), but OmniFex sessions never
+ *    get the tool. easel's session.start registers `chart` only when
+ *    `session.surfaces()` is non-empty, and a stream-json session with no
+ *    `ui_attach` has none. Its prompt.section hook still appends "If a tool
+ *    named mcp__easel__chart is available, call it..." to env_info, which
+ *    is the text 37 of our transcripts carry. That line is NOT a tool
+ *    listing. Probed 2026-11-23 in a scratch cwd: `-p` and
+ *    `--input-format stream-json` (OmniFex's flags) both had the plugin
+ *    loaded, no tool, ToolSearch "No matching deferred tools". Only a
+ *    terminal (`entrypoint: cli`) session's deferred_tools_delta listed it.
+ *    Its charts draw by replacing ToolUse / ToolResult through ui.render,
+ *    which needs a drawing surface; OmniFex draws no mod UI. So charts in
+ *    OmniFex = implement ui_attach + a ui_render tree renderer. (c), large.
+ *    The 2.1.330 note "NO entrypoint gate, so stream-json sessions get it"
+ *    missed the surface gate. appKeepsStatuses / task_list_statuses 0
+ *    real (hits are review-session text), supersedesUuids 0, plugin_note 0.
+ *  - progress_reminder_sent, for the agents UI: it is the ephemeral form
+ *    of the silent-turn nudge ("The user hasn't heard from you in a
+ *    while...", after 5 silent turns per tengu_hushed_lark or 60 s in the
+ *    timed variant). It carries text + model only, no done/total and no
+ *    agentId, and 0 of 319 transcripts with the reminder are subagent
+ *    files. It cannot replace the bundled mod's progress tool.
+ *
+ *  Script + prompt: no change needed; every real line was visible.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - easel: never offered to OmniFex sessions (no UI surface, see
+ *     above). Re-check only if OmniFex ever sends `ui_attach`, or if easel's
+ *     session.start drops the surfaces gate.
+ *   - Task ticker reload: first `appKeepsStatuses` / `task_list_statuses`
+ *     in one of our sessions, check its JSONL for a persisted form of the
+ *     statuses; a reloaded tab's panel is stale until then.
+ *   - Fullscreen /usage order: capture a subscriber render with windows
+ *     before `Session`; bound windowBlock at the Session header if so.
+ *   - plugin_note: check the first real one against contextLedger's
+ *     reading (plugin, rowUuid, content[]).
+ *   - agent_note (2.1.331): first real one, decide on a dedicated line.
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block).
+ *   - ui_notify: unverified against a real mod.
+ *   - `supersedes`: first `"supersedesUuids":[` in a transcript decides
+ *     whether the renderer must drop the named rows.
+ *   - Auto-mode classifier fallback removal: not in 2.1.331.
+ *   - Keychain expiry stop (2.1.329): first real occurrence confirms the
+ *     auth-expiry banner fires.
+ *   - Skill-tool `model:` ignored (2.1.326, upstream): not fixed in
+ *     2.1.331.
+ * *
  * Last review: 2.1.329 -> 2.1.330 on 2026-11-20. Findings: none broken.
  * One latent record (`host-row`) fixed.
  *
@@ -6030,7 +6133,7 @@ import { probeBinaryVersion } from './util/exec-text';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.330';
+export const REVIEWED_CLI_VERSION = '2.1.331';
 
 /**
  * app_settings key holding the user's explicit OmniFex-checkout override.
