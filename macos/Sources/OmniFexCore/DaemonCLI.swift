@@ -3,8 +3,7 @@ import Foundation
 /// How the app drives the daemon's own CLI (`omnifexd omnifex-server.js …`).
 ///
 /// The daemon is the app's: `ensure` spawns it non-detached, inside the app's
-/// process group, and the app stops it on quit. See
-/// docs/superpowers/specs/2026-11-18-daemon-dies-with-app-design.md.
+/// process group, and the app stops it on quit.
 public enum DaemonCLI {
     /// `stop` for this build's instance. A dev build always says `--dev`,
     /// which points the command at `~/.omnifex-dev`'s pid file — so quitting

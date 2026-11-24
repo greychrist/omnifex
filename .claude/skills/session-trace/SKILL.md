@@ -30,7 +30,7 @@ A prefix of the UUID is enough. It reads, in order:
 - **`turn.status: idle` but the UI spins** → renderer rollup: open tasks or
   subagents in the transcript (`sessionDerivedState.ts`), or a stale mirror in
   `useSessionLifecycle`. The turn is never inferred from the transcript — see
-  `docs/session-lifecycle.md` before proposing a fix that does.
+  `daemon/services/sessions/CLAUDE.md` before proposing a fix that does.
 - **Transcript ends on `tool_use` with no `tool_result`, daemon says idle** →
   the process died mid-turn; a `--resume` starts idle by construction. Not a
   bug unless the UI disagrees.

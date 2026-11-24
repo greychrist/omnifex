@@ -73,7 +73,7 @@ The Brain is a per-account **memory vault** distilled from those transcripts.
 - **A Home Screen app with push.** Behind `tailscale serve` (HTTPS), it installs as a standalone app and the daemon pushes a notification when a turn wants your attention.
 - **Upgrades take care of themselves.** A new app build replaces an older daemon on launch — at once when nothing is running, otherwise once the last turn finishes.
 - Mac-only by nature and unavailable from the iPad: file dialogs, Finder reveal, and the updater.
-- See [docs/remote-access.md](docs/remote-access.md) for setup, and the `daemon` readout on a session's status bar for live status.
+- For HTTPS on the iPad, run `tailscale serve --bg --https=443 http://127.0.0.1:47700` and add the page to the Home Screen. The `daemon` readout on a session's status bar shows live status.
 
 ### Context tracking & compaction
 

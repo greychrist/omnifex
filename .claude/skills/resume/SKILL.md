@@ -12,9 +12,8 @@ Repo state as of this invocation:
 !`bash ${CLAUDE_SKILL_DIR}/scripts/state.sh`
 ```
 
-1. If the branch or the recent commits name a feature, skim the matching plan
-   or spec under `docs/superpowers/plans/` / `docs/superpowers/specs/` and the
-   auto-memory index for that thread. Read nothing broader unless the state
+1. If the branch or the recent commits name a feature, check the auto-memory
+   index for that thread. Read nothing broader unless the state
    above is insufficient.
 2. If the working tree is dirty, `git diff` the changed files to see what was
    mid-flight.

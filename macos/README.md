@@ -1,7 +1,6 @@
 # OmniFex — macOS app
 
-The native shell around the renderer the OmniFex daemon serves. Design:
-`docs/superpowers/specs/2026-10-23-swift-shell-design.md`.
+The native shell around the renderer the OmniFex daemon serves.
 
 ## Targets
 

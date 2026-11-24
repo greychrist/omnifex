@@ -13,7 +13,7 @@ describe('American spelling', () => {
     const root = path.resolve(__dirname, '../..');
     let out = '';
     try {
-      out = execFileSync('git', ['grep', '-il', 'colour', '--', 'src', 'daemon', 'macos', 'docs', 'scripts', 'packaging', 'README.md', 'CLAUDE.md', 'CHANGELOG.md'], { cwd: root, encoding: 'utf8' });
+      out = execFileSync('git', ['grep', '-il', 'colour', '--', 'src', 'daemon', 'macos', 'scripts', 'packaging', 'README.md', 'CLAUDE.md', 'CHANGELOG.md'], { cwd: root, encoding: 'utf8' });
     } catch (err) {
       // git grep exits 1 when nothing matches.
       if ((err as { status?: number }).status !== 1) throw err;

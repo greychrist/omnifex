@@ -654,8 +654,7 @@ export const migrations: Migration[] = [
       'Add expected_email to accounts — the address the user asserts this ' +
       'config dir should be logged in as. Nullable; null means "do not check", ' +
       'so the session-start verification does no I/O for accounts that have ' +
-      'not opted in. See ' +
-      'docs/superpowers/specs/2026-07-27-account-email-verification-design.md',
+      'not opted in.',
     up: (db) => {
       // No-op when `accounts` is missing. A bare `table_info` pragma returns []
       // for a nonexistent table, which would read as "column absent" and send
@@ -725,8 +724,7 @@ export const migrations: Migration[] = [
       + 'rebuilt. Existing rows keep is_subagent = 0 and zeroed component '
       + 'costs until the next backfill sweep re-reads their transcripts, which '
       + 'happens on the first launch after this ships: scannedSignatures is '
-      + 'in-memory and starts empty every process. See '
-      + 'docs/superpowers/specs/2026-08-26-cost-report-page-design.md.',
+      + 'in-memory and starts empty every process.',
     up: (db) => {
       // Migration 16 creates this table with CREATE TABLE IF NOT EXISTS, so it
       // is not guaranteed present when the runner is pointed at a partial
@@ -812,8 +810,7 @@ export const migrations: Migration[] = [
       + 'fraction of that spend in the table. They are retained now, so the '
       + 'rows need to say what they were. Nullable rather than defaulted, so '
       + 'every existing row and every existing query keeps its exact current '
-      + 'meaning: NULL is not "unknown", it is "a real session". See '
-      + 'docs/superpowers/specs/2026-08-26-internal-session-archive-design.md.',
+      + 'meaning: NULL is not "unknown", it is "a real session".',
     up: (db) => {
       // Migration 16 creates this table with CREATE TABLE IF NOT EXISTS, so it
       // is not guaranteed present when the runner is pointed at a partial
@@ -845,8 +842,7 @@ export const migrations: Migration[] = [
       + 'guess would put invented numbers in the component panel. Pre-change '
       + 'SESSION SUMMARIZATION spend is not recoverable — those transcripts '
       + 'are gone and nothing else recorded them — and no figure is invented '
-      + 'for it. See '
-      + 'docs/superpowers/specs/2026-08-26-internal-session-archive-design.md.',
+      + 'for it.',
     up: (db) => {
       const has = (name: string): boolean =>
         db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name) !== undefined;

@@ -10,7 +10,7 @@ OmniFex (by GreyChrist) is a **native macOS** app for Claude Code: a Swift (AppK
 
 The shipping app is OmniFex. Internal identifiers like `greychrist.db`, the `greychrist-file://` protocol, and localStorage keys retain the legacy name to avoid migration churn — only the user-facing brand and the repo/folder name changed.
 
-The repo migrated from Tauri 2 (Rust) to Electron in April 2026, and from Electron to the Swift shell on 2026-10-23 (`docs/superpowers/specs/2026-10-23-swift-shell-design.md`): Electron had become only a window around a renderer that already talked to the daemon, and its release cadence decided when OmniFex could ship a Node security fix. The daemon drives the Claude CLI binary directly via `child_process` (stream-json), plus `node-pty` for the `/usage` scraper and Codex sign-in, which is why the app bundles Node (26, `Contents/MacOS/omnifexd`). The daemon's TypeScript lives in `daemon/` (named `electron/` until 2026-11-24); no Electron is left in the repo. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, or an Axum web server in source code is legacy noise. (The `@anthropic-ai/claude-agent-sdk-*` package names that remain in `daemon/services/claude-binary.ts` are intentional — they name the npm packages the binary resolver searches for, not a live dependency.)
+The repo migrated from Tauri 2 (Rust) to Electron in April 2026, and from Electron to the Swift shell on 2026-10-23: Electron had become only a window around a renderer that already talked to the daemon, and its release cadence decided when OmniFex could ship a Node security fix. The daemon drives the Claude CLI binary directly via `child_process` (stream-json), plus `node-pty` for the `/usage` scraper and Codex sign-in, which is why the app bundles Node (26, `Contents/MacOS/omnifexd`). The daemon's TypeScript lives in `daemon/` (named `electron/` until 2026-11-24); no Electron is left in the repo. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, or an Axum web server in source code is legacy noise. (The `@anthropic-ai/claude-agent-sdk-*` package names that remain in `daemon/services/claude-binary.ts` are intentional — they name the npm packages the binary resolver searches for, not a live dependency.)
 
 ## No worktrees
 
@@ -34,15 +34,21 @@ Do not create git worktrees for this repo. Work directly on branches inside the 
 
 ## Permissions Work
 
-Any change that touches Claude Code permission rules, path-rule formatting, or the permissions UI: read `docs/permission-syntax.md` **and** https://code.claude.com/docs/en/permissions before editing. Rule-format gotchas (`/` vs `//` paths, gitignore-style globs, shell-operator boundaries) are load-bearing and have caused every permissions regression to date.
+Any change that touches Claude Code permission rules, path-rule formatting, or the permissions UI: read https://code.claude.com/docs/en/permissions first. These gotchas have caused every permissions regression to date:
+
+- Only `Edit(path)` and `Read(path)` rules match files. `Write(path)`, `NotebookEdit(path)` and `Glob(path)` load but never match; build `Edit(...)`.
+- Path prefixes: `//path` is absolute, `~/path` is home, `/path` is relative to the settings source (project root for project settings), bare `path` is relative to cwd. `/Users/...` is not absolute.
+- The specifier is a glob: escape a literal `*`, `?`, `[` as `[*]`, `[?]`, `[[]` (`src/lib/rulePaths.ts`). Parentheses inside it are literal; the rule ends at its final `)`.
+- `Bash(cmd *)`: the space is a word boundary, and shell operators split commands, so `Bash(a *)` never covers `a && b`. Put `*` after the subcommand, never before it (`Bash(git * main)` also approves injected options).
+- Session lifecycle and the permission decider's rules live in `daemon/services/sessions/CLAUDE.md`.
 
 ## Session Lifecycle
 
-Any change that touches session status, conversation status, the spinner / in-flight predicate, the status popover, `useSessionLifecycle`, or anything under `daemon/services/sessions/`: read `docs/session-lifecycle.md` first. It defines the three orthogonal state axes (`sessionStatus`, `turn` — both owned by the session in main — and per-item task/subagent status), the `conversationStatus` rollup, the invariants between them, and the anti-patterns that have repeatedly caused session-stuck bugs. The turn is never inferred from the transcript.
+Any change that touches session status, conversation status, the spinner / in-flight predicate, the status popover, or `useSessionLifecycle`: read `daemon/services/sessions/CLAUDE.md` first. It defines the three state axes (`sessionStatus`, `turn`, per-item task/subagent status), the `conversationStatus` rollup and the invariants between them. The turn is never inferred from the transcript.
 
 ## The Brain
 
-A per-account memory vault: Markdown notes distilled from past sessions, repo artifacts, and explicit captures, searched over SQLite FTS5. Any change under `daemon/services/brain/`, `daemon/brain-mcp.ts`, `daemon/ipc/brain-handlers.ts`, or `src/components/brain/` should start from `docs/superpowers/specs/2026-08-11-brain-memory-vault-design.md` — the parent spec — plus whichever of the six `*-brain-*` specs covers the area. The most recent is `2026-08-14-brain-concurrent-indexing-design.md` (Plan 8).
+A per-account memory vault: Markdown notes distilled from past sessions, repo artifacts, and explicit captures, searched over SQLite FTS5.
 
 ### Shape
 
@@ -67,9 +73,8 @@ A per-account memory vault: Markdown notes distilled from past sessions, repo ar
 One **daemon** owns every CLI session and every service; **clients** talk to
 it over a versioned WebSocket protocol. The Mac app (`macos/`, Swift) is one
 client; the same renderer, served by the daemon, is a Safari Home Screen app
-on the iPad. Start from `docs/remote-access.md`,
-`docs/superpowers/specs/2026-10-23-swift-shell-design.md` and `macos/README.md`
-before changing any of it.
+on the iPad. Read `macos/README.md` and `daemon/remote/CLAUDE.md` before
+changing any of it.
 
 ### Shape
 
@@ -90,8 +95,7 @@ before changing any of it.
   adopt the daemon (the replace-outdated rules stay in
   `daemon/remote/launcher.ts` and `daemon-control.ts`), then loads the page
   the daemon serves and injects `window.__omnifexNative`.
-- **Lifetime** — the daemon is the app's (2026-11-18,
-  `docs/superpowers/specs/2026-11-18-daemon-dies-with-app-design.md`):
+- **Lifetime** — the daemon is the app's (since 2026-11-18):
   spawned non-detached into the app's process group, stopped on quit
   (`DaemonCLI` in `OmniFexCore`), and `daemon/remote/idle-watch.ts` as the
   backstop when the app dies without quitting. There is no LaunchAgent. A

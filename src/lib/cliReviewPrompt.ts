@@ -169,9 +169,9 @@ grep, a file read or a transcript behind it.
      \`daemon/services/agents/claude-cli-engine.ts\` (\`writeUserMessage\`, \`--permission-prompt-tool\`, \`control_request\`),
      \`daemon/services/sessions/queries.ts\` (\`sendControlRequest\`, \`apply_flag_settings\`),
      \`daemon/services/sessions/permissions.ts\`
-   - **Session lifecycle and turn state**: \`docs/session-lifecycle.md\`,
+   - **Session lifecycle and turn state**: \`daemon/services/sessions/CLAUDE.md\`,
      \`daemon/services/sessions/stream-forward.ts\`
-   - **Permission rules**: \`docs/permission-syntax.md\`, plus the official
+   - **Permission rules**: the Permissions Work section of \`CLAUDE.md\`, plus the official
      permissions docs. \`daemon/services/sessions/permissions.ts\`
      (\`buildDefaultRule\`, \`withDefaultRuleSuggestion\`) invents a rule
      whenever the CLI's \`permission_suggestions\` carry none, so a change in
