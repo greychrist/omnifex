@@ -207,30 +207,6 @@ describe('ClaudeCliEngine', () => {
     });
   });
 
-  // OmniFex's bundled mod (omnifex-mod/) rides in on --plugin-dir; the
-  // sessions layer decides which dirs, the engine only spells them.
-  describe('plugin dirs', () => {
-    async function argsWith(pluginDirs?: string[]) {
-      const fake = makeFakeChild();
-      mockedSpawn.mockReturnValue(fake as never);
-      const engine = createClaudeCliEngine({ tabId: 't', claudeBinaryPath: '/bin/claude' });
-      await engine.start({ ...baseParams, pluginDirs });
-      return mockedSpawn.mock.calls[0]![1] as string[];
-    }
-
-    it('passes one --plugin-dir per directory, in order', async () => {
-      const args = await argsWith(['/mods/a', '/mods/b']);
-      const pairs = args.flatMap((a, i) => (a === '--plugin-dir' ? [args[i + 1]] : []));
-      expect(pairs).toEqual(['/mods/a', '/mods/b']);
-    });
-
-    it('passes none when there are no dirs', async () => {
-      expect(await argsWith(undefined)).not.toContain('--plugin-dir');
-      mockedSpawn.mockClear();
-      expect(await argsWith([])).not.toContain('--plugin-dir');
-    });
-  });
-
   it('uses --resume (not --session-id) on a warm restart', async () => {
     const fake = makeFakeChild();
     mockedSpawn.mockReturnValue(fake as never);
@@ -280,11 +256,13 @@ describe('ClaudeCliEngine', () => {
     await engine.start(baseParams);
     await engine.send('hello there');
 
-    // Start writes the thinking-display request first (see
-    // claude-cli-engine-thinking-display.test.ts); the prompt follows it.
-    expect(fake.stdin._writes).toHaveLength(2);
-    expect(JSON.parse(fake.stdin._writes[0]!.trim()).request?.subtype).toBe('set_max_thinking_tokens');
-    const sent = JSON.parse(fake.stdin._writes[1]!.trim());
+    // Start writes initialize (agent summaries, see
+    // claude-cli-engine-agent-summaries.test.ts) and the thinking-display
+    // request (claude-cli-engine-thinking-display.test.ts); the prompt follows.
+    expect(fake.stdin._writes).toHaveLength(3);
+    expect(JSON.parse(fake.stdin._writes[0]!.trim()).request?.subtype).toBe('initialize');
+    expect(JSON.parse(fake.stdin._writes[1]!.trim()).request?.subtype).toBe('set_max_thinking_tokens');
+    const sent = JSON.parse(fake.stdin._writes[2]!.trim());
     expect(sent.type).toBe('user');
     expect(sent.message.content).toEqual([{ type: 'text', text: 'hello there' }]);
   });

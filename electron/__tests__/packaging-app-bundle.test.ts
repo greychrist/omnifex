@@ -48,9 +48,8 @@ describe('bundleLayout', () => {
     expect(l.node).toBe('/out/OmniFex.app/Contents/MacOS/omnifexd');
     expect(l.appRoot).toBe('/out/OmniFex.app/Contents/Resources/app');
     expect(l.build).toBe('/out/OmniFex.app/Contents/Resources/app/build');
-    // build/../.. is Resources: where webroot.ts and bundled-mod.ts look.
+    // build/../.. is Resources: where webroot.ts looks.
     expect(l.webRoot).toBe('/out/OmniFex.app/Contents/Resources/dist-web');
-    expect(l.mod).toBe('/out/OmniFex.app/Contents/Resources/omnifex-mod');
   });
 });
 

@@ -109,7 +109,6 @@ import { foldContextLedger } from "@/lib/contextLedger";
 import { useDaemonLink } from "@/hooks/useDaemonLink";
 import { GitWatchStatusIcon } from "./claude-code-session/GitWatchStatusIcon";
 import { deriveSubagents, applySubagentMeta, createSubagentColorAllocator, notificationStatsByToolUse, forwardedByAgentId, countActiveSubagents, type SubagentMetaInput } from '@/lib/subagentStreams';
-import { latestMainProgress, latestSubagentProgress, withStepProgress } from '@/lib/stepProgress';
 import { getTaskList, summarizeTaskList } from "@/lib/taskList";
 import { deriveWaitingFor, type TabWaitingFor } from "@/lib/tabWaitingFor";
 import { deriveBackgroundShells } from "@/lib/backgroundShells";
@@ -944,18 +943,9 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
   // Same for a nested subagent's live frames: keyed by agent_id, which its
   // sidecar also carries (CLI >= 2.1.292).
   const forwardedLive = useMemo(() => forwardedByAgentId(messages), [messages]);
-  // Each agent's own progress reports (the bundled mod's progress tool), from
-  // the same forwarded frames. Applied after the meta merge so nested rows,
-  // which only exist from then on, get theirs by agent id.
-  const stepProgressIndex = useMemo(() => latestSubagentProgress(messages), [messages]);
-  // The main session's own report for the current turn, for the turn readout.
-  const mainProgress = useMemo(() => latestMainProgress(messages), [messages]);
   const subagents = useMemo(
-    () => withStepProgress(
-      applySubagentMeta(baseSubagents, subagentMeta, notificationStats, forwardedLive),
-      stepProgressIndex,
-    ),
-    [baseSubagents, subagentMeta, notificationStats, forwardedLive, stepProgressIndex],
+    () => applySubagentMeta(baseSubagents, subagentMeta, notificationStats, forwardedLive),
+    [baseSubagents, subagentMeta, notificationStats, forwardedLive],
   );
   // Stable signature of completed rows — drives the meta fetch without
   // depending on `subagentMeta` itself (which the fetch sets), so resolving
@@ -2677,7 +2667,6 @@ export const AgentSession: React.FC<AgentSessionProps> = ({
       onRename={handleRenameSession}
       onSuggest={handleSuggestTitle}
       background={backgroundWithCost}
-      mainProgress={mainProgress}
       // Shown beside the account widget for now, so the two can be
       // compared before one of them goes. Same inputs as the widget.
       account={

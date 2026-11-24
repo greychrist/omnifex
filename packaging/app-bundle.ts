@@ -15,10 +15,9 @@
  *     Resources/app/build/       omnifex-server.js, brain-mcp.js
  *     Resources/app/node_modules the packages the bundles leave external
  *     Resources/dist-web/        the renderer
- *     Resources/omnifex-mod/     the bundled Claude Code mod
  *
- * `build/` is two levels under `Resources/`, so `webroot.ts` and
- * `bundled-mod.ts` find `dist-web/` and `omnifex-mod/` at `build/../..` —
+ * `build/` is two levels under `Resources/`, so `webroot.ts` finds
+ * `dist-web/` at `build/../..` —
  * the same relative step that reaches the repo root from `.vite/build`.
  */
 import { join } from 'node:path';
@@ -82,7 +81,6 @@ export interface BundleLayout {
   build: string;
   nodeModules: string;
   webRoot: string;
-  mod: string;
 }
 
 export function bundleLayout(app: string): BundleLayout {
@@ -101,7 +99,6 @@ export function bundleLayout(app: string): BundleLayout {
     build: join(appRoot, 'build'),
     nodeModules: join(appRoot, 'node_modules'),
     webRoot: join(resources, 'dist-web'),
-    mod: join(resources, 'omnifex-mod'),
   };
 }
 

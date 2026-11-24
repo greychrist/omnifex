@@ -139,13 +139,6 @@ export function createSessionsService(
    */
   autoRecapPolicy: (() => AutoRecapPolicy) | null = null,
   /**
-   * Plugin directories to load into each Claude spawn (`--plugin-dir`): the
-   * bundled OmniFex mod. Asked once per spawn, so a Settings change reaches
-   * the next session. main and the daemon both wire it to
-   * `createBundledModPluginDirs` (electron/services/bundled-mod.ts).
-   */
-  pluginDirs: (() => string[]) | null = null,
-  /**
    * Whether mods' `$.ui.notify` notifications are raised; read per
    * notification. The daemon wires it to the `mod_notifications_enabled`
    * setting; unset, they are on.
@@ -153,14 +146,6 @@ export function createSessionsService(
   modNotificationsEnabled: (() => boolean) | null = null,
 ): SessionsService {
   const sessions = new Map<string, SessionHandle>();
-  const safePluginDirs = (): string[] => {
-    try {
-      return pluginDirs?.() ?? [];
-    } catch (err) {
-      console.warn('[sessions] plugin dirs unavailable; starting without the bundled mod:', err);
-      return [];
-    }
-  };
   // Hoisted so both the public return and stop()'s plugin-cache eviction
   // share the same instance.
   const queryPassthroughs = createQueryPassthroughs(
@@ -322,9 +307,6 @@ export function createSessionsService(
     // (wired by listenToMessages). This is honest about the CLI's actual
     // model and unblocks the renderer immediately so `agent-output:`
     // events have a place to land.
-    // The bundled mod is auxiliary: a failure to name its dir costs the mod,
-    // never the session. Codex has no plugin mechanism.
-    const spawnPluginDirs = agent === 'claude' ? safePluginDirs() : [];
     const handle: SessionHandle = {
       agent,
       engine,
@@ -335,7 +317,6 @@ export function createSessionsService(
         configDir,
         model: params.model,
         permissionMode: params.permissionMode,
-        pluginDirs: spawnPluginDirs,
       },
       sessionId,
       sessionStatus: 'started',
@@ -396,7 +377,6 @@ export function createSessionsService(
       // Carried by session_start all along and dropped here, so a fresh
       // session ran at the model's default effort, not the picker's.
       effort: params.effort,
-      pluginDirs: spawnPluginDirs,
       sessionId,
       resume,
     }).then(async () => {

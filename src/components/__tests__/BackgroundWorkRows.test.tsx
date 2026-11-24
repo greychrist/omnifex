@@ -126,43 +126,29 @@ describe('SubagentRow run stats', () => {
     expect(bar?.firstElementChild?.className).not.toContain('brain-indeterminate-bar');
   });
 
-  // An agent that reports its steps (the bundled mod's progress tool) gets a
-  // determinate bar and a step line; one that does not keeps the sweep.
-  it('fills the bar to the agent\'s reported progress, with the step and note', () => {
+  // While an agent runs, the CLI's own progress label (task_progress.summary)
+  // is the line under its purpose. There is no step count, so the bar is the
+  // running sweep.
+  it("shows the CLI's latest progress summary under a running agent", () => {
     const { container } = render(
-      <SubagentRow
-        sub={makeSub({ toolUseId: 'a', status: 'running', stepProgress: { done: 2, total: 5, note: 'Read session-cost.ts' } })}
-      />,
+      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', progressSummary: 'Reading runtime.ts' })} />,
     );
+    expect(container.querySelector('[data-subagent-summary]')?.textContent).toBe('Reading runtime.ts');
     const bar = container.querySelector<HTMLElement>('[data-subagent-bar]');
-    expect(bar?.getAttribute('data-state')).toBe('running');
-    expect(bar?.getAttribute('data-progress')).toBe('2/5');
-    const fill = bar?.firstElementChild as HTMLElement;
-    expect(fill.style.width).toBe('40%');
-    expect(fill.className).not.toContain('brain-indeterminate-bar');
-    expect(container.querySelector('[data-subagent-step]')?.textContent).toBe('2/5 · Read session-cost.ts');
+    expect(bar?.hasAttribute('data-progress')).toBe(false);
+    expect((bar?.firstElementChild as HTMLElement).className).toContain('brain-indeterminate-bar');
   });
 
-  it('shows the step without a note when the agent gave none', () => {
+  it("drops the progress summary once the agent has finished", () => {
     const { container } = render(
-      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', stepProgress: { done: 0, total: 3 } })} />,
+      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'completed', progressSummary: 'Reading runtime.ts' })} />,
     );
-    expect(container.querySelector('[data-subagent-step]')?.textContent).toBe('0/3');
+    expect(container.querySelector('[data-subagent-summary]')).toBeNull();
   });
 
-  it('a finished agent\'s bar is full green whatever it last reported', () => {
-    const { container } = render(
-      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'completed', stepProgress: { done: 3, total: 5 } })} />,
-    );
-    const fill = container.querySelector<HTMLElement>('[data-subagent-bar]')?.firstElementChild as HTMLElement;
-    expect(fill.className).toContain('bg-emerald-400');
-    expect(fill.style.width).toBe('');
-    expect(container.querySelector('[data-subagent-step]')).toBeNull();
-  });
-
-  it('shows no step line for an agent that never reported', () => {
+  it('shows no summary line for an agent the CLI has not summarized yet', () => {
     const { container } = render(<SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running' })} />);
-    expect(container.querySelector('[data-subagent-step]')).toBeNull();
+    expect(container.querySelector('[data-subagent-summary]')).toBeNull();
   });
 
   it('fills the bar red when the agent failed', () => {
@@ -289,28 +275,26 @@ describe('SubagentRow purpose and brief', () => {
     expect(container.textContent).toContain('step log is kept only while the app is open');
   });
 
-  // Each progress report is a tool call, so the CLI logs it like any step —
-  // as the agent's own description, repeated. The report itself says more.
-  it('shows each progress report in the log as the step the agent reported', () => {
+  // A task_progress frame's own text is the agent's purpose, repeated. Where
+  // the CLI wrote a progress label on the frame, the log shows that instead.
+  it("shows the CLI's summary in the log on the frames that carry one", () => {
     const { container } = render(
       <SubagentRow
         sub={makeSub({
           toolUseId: 'a', status: 'running',
           events: [
-            { description: 'Demo', lastToolName: 'mcp__omnifex__progress' },
-            { description: 'Running List omnifex-mod', lastToolName: 'Bash' },
-            { description: 'Demo', lastToolName: 'mcp__omnifex__progress' },
+            { description: 'Demo', lastToolName: 'Read' },
+            { description: 'Demo', summary: 'Reading runtime.ts' },
           ],
-          stepHistory: [{ done: 0, total: 5 }, { done: 1, total: 5, note: 'Listed omnifex-mod' }],
         })}
       />,
     );
     fireEvent.click(container.querySelector('button')!);
     const lines = [...container.querySelectorAll('[data-subagent-log-entry]')].map((el) => el.textContent ?? '');
-    expect(lines[0]).toContain('0/5');
-    expect(lines[1]).toContain('Running List omnifex-mod');
-    expect(lines[2]).toContain('1/5 · Listed omnifex-mod');
-    expect(lines.join('\n')).not.toContain('Demo');
+    expect(lines[0]).toContain('Demo');
+    expect(lines[0]).toContain('Read');
+    expect(lines[1]).toContain('Reading runtime.ts');
+    expect(lines[1]).not.toContain('Demo');
   });
 
   it('shows no brief block for a row without a prompt', () => {

@@ -75,8 +75,6 @@ export const OMNIFEX_SYSTEM_PROMPT_APPENDIX =
  *  - `--setting-sources=user,project,local` loads CLAUDE.md, project
  *    settings, and skills (otherwise the CLI runs in isolated mode)
  *  - `--append-system-prompt` adds OMNIFEX_SYSTEM_PROMPT_APPENDIX
- *  - `--plugin-dir` (one per entry) loads OmniFex's bundled mod for this
- *    process only, with no install into the user's Claude config
  */
 function buildArgs(p: AgentStartParams): string[] {
   const args: string[] = [
@@ -116,9 +114,6 @@ function buildArgs(p: AgentStartParams): string[] {
   }
   if (p.allowedTools && p.allowedTools.length > 0) {
     args.push('--allowed-tools', p.allowedTools.join(','));
-  }
-  for (const dir of p.pluginDirs ?? []) {
-    args.push('--plugin-dir', dir);
   }
   return args;
 }
@@ -481,6 +476,16 @@ export function createClaudeCliEngine(
       childRef.once('spawn', onSpawn);
       childRef.once('error', onErr);
     });
+
+    // Turn on the CLI's own subagent progress summaries: each running agent's
+    // task_progress frame then carries a `summary` ("Reading runAgent.ts"),
+    // written by the CLI about every 30 s from the agent's recent steps. Only
+    // this option: the rest of initialize is one-time setup OmniFex gives on
+    // argv. The calls' spend is in each result's modelUsage, which the
+    // unlogged-spend rows already price (cost/unlogged-spend.ts). Not awaited,
+    // so a CLI that refuses it never stalls a start.
+    void sendControlRequest('initialize', { agentProgressSummaries: true })
+      .catch(() => { /* an older CLI sends no summaries */ });
 
     // Ask for summarized thinking. The CLI's default display ("updates")
     // streams only token counts — thinking_delta.thinking is always "" — so a

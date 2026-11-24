@@ -4,7 +4,6 @@
  * Monitor. Each row expands in place — a subagent to its progress log, a
  * shell to the tail of its output.
  */
-import { PROGRESS_TOOL } from '@/lib/stepProgress';
 import React, { useEffect, useState } from 'react';
 import {
   ChevronDown,
@@ -214,12 +213,9 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
       : sub.status === 'completed_inferred' ? 'inferred'
         : sub.status;
 
-  // How far through its work the agent says it is — only while it runs. Once
-  // it ends, the state (done, failed) is the truer answer than its last guess.
-  const step = barState === 'running' ? sub.stepProgress : undefined;
-  const stepLabel = step
-    ? `${step.done}/${step.total}${step.note ? ` · ${step.note}` : ''}`
-    : null;
+  // What the agent is doing now, in the CLI's words (task_progress.summary),
+  // only while it runs. Once it ends, the state (done, failed) says more.
+  const nowLabel = barState === 'running' ? sub.progressSummary ?? null : null;
 
   // The purpose is what the parent said the agent is for; it holds still.
   // What it is doing right now is in the expanded log, not under it: that
@@ -335,27 +331,24 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
             )}
           </span>
         )}
-        {stepLabel && (
-          <span data-subagent-step className="block pl-6 pt-0.5 text-[11px] text-foreground/80 truncate tabular-nums">
-            {stepLabel}
+        {nowLabel && (
+          <span data-subagent-summary className="block pl-6 pt-0.5 text-[11px] text-foreground/80 truncate">
+            {nowLabel}
           </span>
         )}
-        {/* How far along the agent says it is, when it reports its steps
-            through the bundled mod's progress tool; otherwise the run's state.
-            It used to fill to context %, which on a 1M-window model sat at
-            2–3% for the whole run. */}
+        {/* The run's state: a sweep while it runs. It used to fill to the step
+            count the agent reported through OmniFex's progress mod (removed
+            2026-11-24), and before that to context %, which on a 1M-window
+            model sat at 2–3% for the whole run. */}
         <span
           data-subagent-bar
           data-state={barState}
-          data-progress={step ? `${step.done}/${step.total}` : undefined}
           className="mt-1 ml-6 block h-0.5 rounded-full bg-white/10 overflow-hidden"
         >
           <span
-            style={step ? { width: `${Math.round((step.done / step.total) * 100)}%` } : undefined}
             className={cn(
               'block h-full rounded-full',
-              step ? cn('transition-[width] duration-500', color.dot)
-                : barState === 'running' ? cn('brain-indeterminate-bar w-1/3', color.dot) : 'w-full',
+              barState === 'running' ? cn('brain-indeterminate-bar w-1/3', color.dot) : 'w-full',
               barState === 'done' && 'bg-emerald-400',
               barState === 'inferred' && cn(color.dot, 'opacity-60'),
               barState === 'failed' && 'bg-destructive',
@@ -389,33 +382,26 @@ export const SubagentRow: React.FC<SubagentRowProps> = ({ sub, onDismiss, costs,
                   : 'No steps to show — the step log is kept only while the app is open.'}
             </div>
           )}
-          {(() => {
-            // Each progress report is itself a tool call, which the CLI logs as
-            // the agent's description repeated. Show the report instead: the
-            // k-th progress-tool entry is the k-th report.
-            let report = 0;
-            return sub.events.map((ev, i) => {
-              const step = ev.lastToolName === PROGRESS_TOOL ? sub.stepHistory?.[report++] : undefined;
-              const description = step
-                ? `${step.done}/${step.total}${step.note ? ` · ${step.note}` : ''}`
-                : ev.description || '…';
-              const bits = [
-                step ? '' : ev.lastToolName,
-                ev.toolUses ? `${ev.toolUses} tools` : '',
-                ev.totalTokens ? `${Math.round(ev.totalTokens / 1000)}k tok` : '',
-                formatElapsed(ev.durationMs),
-              ].filter(Boolean).join(' · ');
-              return (
-                <div key={i} data-subagent-log-entry className="flex items-start gap-2 text-[11px] font-mono leading-snug">
-                  <span className={cn('mt-[5px] h-1 w-1 rounded-full shrink-0', color.dot)} />
-                  <span className={cn('flex-1 min-w-0 break-words', step ? 'text-foreground' : 'text-foreground/80')}>
-                    {description}
-                  </span>
-                  {bits && <span className="text-muted-foreground shrink-0 tabular-nums">{bits}</span>}
-                </div>
-              );
-            });
-          })()}
+          {sub.events.map((ev, i) => {
+            // A frame's own text is the agent's purpose, repeated. Where the
+            // CLI wrote a progress label on it, that says what was happening.
+            const description = ev.summary ?? (ev.description || '…');
+            const bits = [
+              ev.lastToolName,
+              ev.toolUses ? `${ev.toolUses} tools` : '',
+              ev.totalTokens ? `${Math.round(ev.totalTokens / 1000)}k tok` : '',
+              formatElapsed(ev.durationMs),
+            ].filter(Boolean).join(' · ');
+            return (
+              <div key={i} data-subagent-log-entry className="flex items-start gap-2 text-[11px] font-mono leading-snug">
+                <span className={cn('mt-[5px] h-1 w-1 rounded-full shrink-0', color.dot)} />
+                <span className={cn('flex-1 min-w-0 break-words', ev.summary ? 'text-foreground' : 'text-foreground/80')}>
+                  {description}
+                </span>
+                {bits && <span className="text-muted-foreground shrink-0 tabular-nums">{bits}</span>}
+              </div>
+            );
+          })}
           {sub.status === 'completed' && sub.summary && (
             <div className="flex items-start gap-2 text-[11px] pt-1">
               <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0 text-emerald-400" />

@@ -68,7 +68,7 @@ describe('claude binary wiring in the composition root', () => {
     // start every session without step progress, or ignore the setting.
     it(`${root} hands findBestBinary, the CLI-usage recorder, the auto-recap policy, the bundled mod, then the mod-notifications gate to createSessionsService last`, () => {
       expect(callText(src, 'createSessionsService')).toMatch(
-        new RegExp(`${FIND_BEST.source},\\s*(//[^\\n]*\\s*)*createCliProcessUsageStore\\(db\\)\\.record,\\s*\\(\\) => readAutoRecapPolicy\\(\\(key\\) => db\\.getSetting\\(key\\)\\),\\s*(//[^\\n]*\\s*)*createBundledModPluginDirs\\(\\{[^}]*\\}\\),\\s*\\(\\) => modNotificationsEnabled\\(db\\.getSetting\\(MOD_NOTIFICATIONS_SETTING_KEY\\)\\),?\\s*\\)$`),
+        new RegExp(`${FIND_BEST.source},\\s*(//[^\\n]*\\s*)*createCliProcessUsageStore\\(db\\)\\.record,\\s*\\(\\) => readAutoRecapPolicy\\(\\(key\\) => db\\.getSetting\\(key\\)\\),\\s*\\(\\) => modNotificationsEnabled\\(db\\.getSetting\\(MOD_NOTIFICATIONS_SETTING_KEY\\)\\),?\\s*\\)$`),
       );
     });
   }

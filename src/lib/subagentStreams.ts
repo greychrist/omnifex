@@ -9,7 +9,6 @@
  */
 
 import type { JsonlNode } from '@/types/jsonl';
-import type { StepProgress } from './stepProgress';
 import {
   applyEvents,
   dispatchIndicesFromEvents,
@@ -40,7 +39,10 @@ export interface Subagent {
   endedAt?: string;
   latest: SubagentProgressEvent | null;
   events: SubagentProgressEvent[];
+  /** The agent's final report. See SubagentState.summary. */
   summary?: string;
+  /** What it is doing now, in the CLI's words. See SubagentState.progressSummary. */
+  progressSummary?: string;
   colorIndex: number;
   // True when dispatched with run_in_background:true. The CLI fires an
   // immediate ACK tool_result for these (a dispatch confirmation, not the
@@ -79,10 +81,6 @@ export interface Subagent {
   finalTotalTokens?: number;
   finalDurationMs?: number;
   finalToolUseCount?: number;
-  /** The agent's own latest progress report (bundled mod's `progress` tool). */
-  stepProgress?: StepProgress;
-  /** Every report it made, in order — the steps its expanded log names. */
-  stepHistory?: StepProgress[];
 }
 
 /**
@@ -406,6 +404,7 @@ export function deriveSubagents(
     latest: s.latest,
     events: s.events,
     summary: s.summary,
+    progressSummary: s.progressSummary,
     colorIndex,
     isBackground: s.isBackground,
     error: s.error,

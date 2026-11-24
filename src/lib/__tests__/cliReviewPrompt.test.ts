@@ -57,7 +57,7 @@ describe('CLI_REVIEW_PROMPT', () => {
 // stale pointer into a failing build instead.
 describe('CLI_REVIEW_PROMPT pointers', () => {
   const REPO = path.resolve(__dirname, '../../..');
-  const PATH_RE = /`((?:src|electron|docs|scripts|macos|packaging|omnifex-mod)\/[\w./-]+?)(?::\d+)?`/g;
+  const PATH_RE = /`((?:src|electron|docs|scripts|macos|packaging)\/[\w./-]+?)(?::\d+)?`/g;
 
   it('names only repo paths that exist', () => {
     const paths = [...CLI_REVIEW_PROMPT.matchAll(PATH_RE)].map((m) => m[1].replace(/\/$/, ''));

@@ -126,7 +126,6 @@ for (const rel of collectModuleTree(JS_EXTERNAL_MODULES, root)) {
   copy(path.join(root, rel), path.join(L.appRoot, rel));
 }
 copy(path.join(root, 'dist-web'), L.webRoot);
-copy(path.join(root, 'omnifex-mod'), L.mod);
 // Directories the native filter walked into but shipped nothing from.
 run('find', [L.nodeModules, '-type', 'd', '-empty', '-delete']);
 

@@ -184,12 +184,18 @@ grep, a file read or a transcript behind it.
      \`src/lib/pricing.ts\` (\`SHIPPED_PRICING\`), \`src/lib/api.ts\` (\`startSession\`).
      A new model needs a price row as well as a picker entry.
    - **Mods, plugins, MCP**: \`electron/services/sessions/mods.ts\`,
-     \`electron/services/sessions/plugins.ts\`, \`electron/services/bundled-mod.ts\`,
-     \`electron/services/mcp.ts\`, \`omnifex-mod/\`.
+     \`electron/services/sessions/plugins.ts\`, \`electron/services/mcp.ts\`.
      The CLI also ships built-in mods (\`cc-plugin-*\`, e.g. easel's chart
      tool). Each has an \`isAvailable\` gate; read it to see whether a
      stream-json session gets the mod, and if so whether its \`ui_*\` frames
      draw in OmniFex.
+   - **Subagent progress**: \`electron/services/agents/claude-cli-engine.ts\`
+     sends \`initialize {agentProgressSummaries: true}\` at start;
+     \`src/lib/subagentEvents.ts\` (\`progressSummary\`) reads each
+     \`task_progress\` frame's \`summary\` for the agent rows. Check the
+     option and the field still exist, and how often the CLI writes one.
+     Their model calls are priced only through \`result.modelUsage\`
+     (\`electron/services/cost/unlogged-spend.ts\`).
    - **The Brain's MCP server**: \`electron/brain-mcp.ts\`,
      \`electron/services/brain/instructions.ts\`,
      \`electron/services/brain/mcp-registration.ts\` (\`--mcp-config\`).

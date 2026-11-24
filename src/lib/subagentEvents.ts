@@ -50,6 +50,10 @@ interface CliTaskProgressMessage {
   description?: string;
   last_tool_name?: string;
   usage: { total_tokens?: number; tool_uses?: number; duration_ms?: number };
+  /** "A one-line status for the task's row": for an agent, the CLI's own
+   *  progress label ("Reading runAgent.ts"), on some frames only, when the
+   *  session asked for agentProgressSummaries (claude-cli-engine.ts). */
+  summary?: string;
   [k: string]: unknown;
 }
 interface CliTaskNotificationMessage {
@@ -90,6 +94,8 @@ export type SubagentStatus =
 
 export interface SubagentProgressEntry {
   description: string;
+  /** The CLI's progress label on this frame, when it wrote one. */
+  summary?: string;
   lastToolName?: string;
   totalTokens?: number;
   toolUses?: number;
@@ -109,7 +115,11 @@ export interface SubagentState {
   endedAt?: string;
   latest: SubagentProgressEntry | null;
   events: SubagentProgressEntry[];
+  /** The agent's final report, from its task_notification. */
   summary?: string;
+  /** What the agent is doing now: the latest progress label the CLI wrote
+   *  on a task_progress frame. Not the final `summary`. */
+  progressSummary?: string;
   /** Dispatched with run_in_background:true. Background dispatches receive
    *  an immediate ACK `tool_result` that is not a completion signal; the
    *  reducer suppresses it. */
@@ -155,7 +165,7 @@ export type SubagentEvent =
       /** `task_started.ambient` — see SubagentState.ambient. */
       ambient?: boolean;
     }
-  | { kind: 'Progress'; toolUseId: string; description: string; lastToolName?: string; totalTokens?: number; toolUses?: number; durationMs?: number; taskId?: string }
+  | { kind: 'Progress'; toolUseId: string; description: string; summary?: string; lastToolName?: string; totalTokens?: number; toolUses?: number; durationMs?: number; taskId?: string }
   | {
       kind: 'ToolResult';
       toolUseId: string;
@@ -692,6 +702,7 @@ export function messagesToEvents(messages: JsonlNode[]): SubagentEvent[] {
           kind: 'Progress',
           toolUseId: id,
           description: tlmProg.description ?? '',
+          ...(typeof tlmProg.summary === 'string' && tlmProg.summary.trim() ? { summary: tlmProg.summary.trim() } : {}),
           lastToolName: tlmProg.last_tool_name,
           totalTokens: tlmProg.usage.total_tokens,
           toolUses: tlmProg.usage.tool_uses,
@@ -819,6 +830,7 @@ export function applyEvents(events: SubagentEvent[]): Map<string, SubagentState>
         if (isTerminal(s.status)) break;
         const entry: SubagentProgressEntry = {
           description: ev.description,
+          ...(ev.summary ? { summary: ev.summary } : {}),
           lastToolName: ev.lastToolName,
           totalTokens: ev.totalTokens,
           toolUses: ev.toolUses,
@@ -826,6 +838,7 @@ export function applyEvents(events: SubagentEvent[]): Map<string, SubagentState>
         };
         s.events.push(entry);
         s.latest = entry;
+        if (ev.summary) s.progressSummary = ev.summary;
         if (ev.taskId && !s.taskId) s.taskId = ev.taskId;
         break;
       }

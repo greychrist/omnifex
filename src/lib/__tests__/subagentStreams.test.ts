@@ -72,13 +72,14 @@ function taskStarted(
 function taskProgress(
   toolUseId: string,
   description: string,
-  extras: Partial<{ last_tool_name: string; total_tokens: number; tool_uses: number; duration_ms: number }> = {},
+  extras: Partial<{ last_tool_name: string; total_tokens: number; tool_uses: number; duration_ms: number; summary: string }> = {},
 ): JsonlNode {
   return {
     kind: 'unknown', sessionId: '', receivedAt: '',
     raw: {
       type: 'system',
       subtype: 'task_progress',
+      ...(extras.summary !== undefined ? { summary: extras.summary } : {}),
       task_id: 'task_1',
       tool_use_id: toolUseId,
       description,
@@ -174,6 +175,26 @@ describe('deriveSubagents — dispatch brief', () => {
     ]);
     expect(sub.description).toBe('Map the repo');
     expect(sub.latest?.description).toBe('cd /tmp && ls');
+  });
+});
+
+describe('agent progress summaries (task_progress.summary)', () => {
+  // The CLI writes a summary on some task_progress frames only (about every
+  // 30 s, with agentProgressSummaries on); the frames between carry none.
+  it('keeps the latest summary on the agent, and the summary on its log entry', () => {
+    const [sub] = deriveSubagents([
+      agentToolUse(TOOL_USE_ID),
+      taskProgress(TOOL_USE_ID, 'Map the call graph', { last_tool_name: 'Read', tool_uses: 1 }),
+      taskProgress(TOOL_USE_ID, 'Map the call graph', { summary: 'Reading runtime.ts', tool_uses: 1 }),
+      taskProgress(TOOL_USE_ID, 'Map the call graph', { last_tool_name: 'Read', tool_uses: 2 }),
+    ]);
+    expect(sub.progressSummary).toBe('Reading runtime.ts');
+    expect(sub.events.map((e) => e.summary)).toEqual([undefined, 'Reading runtime.ts', undefined]);
+  });
+
+  it('has no summary when the CLI sent none', () => {
+    const [sub] = deriveSubagents([agentToolUse(TOOL_USE_ID), taskProgress(TOOL_USE_ID, 'x')]);
+    expect(sub.progressSummary).toBeUndefined();
   });
 });
 

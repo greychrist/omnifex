@@ -34,7 +34,7 @@ export interface CliControlEntry {
 
 export const CLI_CONTROL_REQUESTS: Readonly<Record<string, CliControlEntry>> = {
   // ── wired ──
-  initialize: { status: 'wired', note: 'Model and command catalogs (models.ts, commands-catalog.ts).' },
+  initialize: { status: 'wired', note: 'Model and command catalogs (models.ts, commands-catalog.ts); sent at every session start with agentProgressSummaries only, for the agent rows\' progress lines.' },
   interrupt: { status: 'wired', note: 'Stop button.' },
   set_model: { status: 'wired', note: 'Model picker. A PreModelSwitch hook can refuse it.' },
   set_permission_mode: { status: 'wired', note: 'Permission-mode picker.' },
