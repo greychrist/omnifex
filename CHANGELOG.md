@@ -5,6 +5,22 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.56] — 2026-11-24
+
+### Changed
+- Agent rows now show Claude Code's own one-line summary of what each running agent is doing ("Reading runtime.ts"), refreshed about every 30 seconds, and an agent's expanded log shows those summaries in place of its purpose repeated. Every agent gets them, including ones the old progress tool never reached. Their cost is counted in the Cost Report with the CLI's other unlogged calls.
+- Reviewed Claude Code 2.1.331 against OmniFex: no breaking changes.
+
+### Added
+- In Expanded view, every record (status lines, notices, compactions, instructions, questions, plans) now has a hover row with its time, Copy and a raw JSON viewer, so any record's JSON can be read and copied.
+- Claude Code's live status pings have their own **Status** kind in Chat settings, and the line says what happened: a model request, compacting (with characters written so far), how a compaction ended, or the new permission mode.
+
+### Fixed
+- Changing a kind's icon or color in Chat settings now updates open sessions straight away; record lines used to keep their old look until the session reloaded.
+
+### Removed
+- The bundled progress mod: its progress tool, the step bar and `4/6` line on agent rows, the main session's `turn · 2/5` readout, and the Settings → General "Agent step progress" toggle. Agents mostly skipped the tool, and in a measured run its calls were more than half of one agent's spend.
+
 ## [0.5.55] — 2026-11-23
 
 ### Added
