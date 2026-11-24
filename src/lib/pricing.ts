@@ -35,7 +35,7 @@ export interface ModelRates {
  * Four hand-maintained copies of this list existed briefly (parser, row
  * converter, service, editor) and that is exactly how a column silently stops
  * round-tripping — the value saves, reads back as null, and the cost is quietly
- * wrong. Everything derives from here now. `electron/__tests__/model-pricing`
+ * wrong. Everything derives from here now. `daemon/__tests__/model-pricing`
  * asserts the real table's columns still match.
  */
 export const PRICING_FIELDS = [

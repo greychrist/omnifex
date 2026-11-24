@@ -230,7 +230,7 @@ describe('SubagentRow purpose and brief', () => {
 
   it('wraps a long purpose instead of truncating it', () => {
     const { container } = render(
-      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', description: 'Survey every service under electron/services and count exports' })} />,
+      <SubagentRow sub={makeSub({ toolUseId: 'a', status: 'running', description: 'Survey every service under daemon/services and count exports' })} />,
     );
     const purpose = container.querySelector('[data-subagent-purpose]')!;
     expect(purpose.className).not.toContain('truncate');

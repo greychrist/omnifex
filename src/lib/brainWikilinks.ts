@@ -2,8 +2,8 @@
  * Renderer-side wikilink handling.
  *
  * NOTE: `parseWikilinks` is a deliberate twin of the one in
- * `electron/services/brain/links.ts`. The renderer cannot import from
- * `electron/`, and round-tripping a note body back to the main process just to
+ * `daemon/services/brain/links.ts`. The renderer cannot import from
+ * `daemon/`, and round-tripping a note body back to the main process just to
  * have it point at its own links would cost an IPC call per render. If the
  * link grammar changes in one file, change it in the other — both have tests
  * over the same cases, so a drift shows up as a red suite.
@@ -41,7 +41,7 @@ const stripMd = (s: string): string => (s.endsWith('.md') ? s.slice(0, -3) : s);
  */
 export function resolveWikilink(target: string, notePaths: string[]): string | null {
   // Separators (spaces, `-`, `_`) are insignificant, matching both
-  // electron/services/brain/links.ts's linkMatchesNote and resolve.ts's fold().
+  // daemon/services/brain/links.ts's linkMatchesNote and resolve.ts's fold().
   // A hyphenated reference to an underscored filename is the same note.
   const key = (s: string): string => stripMd(s).toLowerCase().replace(/[\s_-]+/g, '');
   const wanted = key(target);

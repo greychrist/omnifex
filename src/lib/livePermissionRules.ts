@@ -2,7 +2,7 @@
  * Reconciling the settings-file permissions panel with the live session.
  *
  * `SessionPermissionsEditor` builds its view by reading three settings files
- * (`electron/services/permissions-io.ts`), which is all OmniFex had before CLI
+ * (`daemon/services/permissions-io.ts`), which is all OmniFex had before CLI
  * 2.1.269. That view has two structural blind spots:
  *
  *  - It reads `permissions.allow` and `permissions.deny` only, so an `ask` rule

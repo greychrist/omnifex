@@ -32,7 +32,7 @@ import { formatCost } from "@/components/claude-code-session/CostWidget";
 
 /**
  * FNV-1a hash mirror — must produce the same output as `promptHash` in
- * `electron/services/sessions-summary.ts`. The renderer hashes the
+ * `daemon/services/sessions-summary.ts`. The renderer hashes the
  * locally-cached prompt template (read from app_settings) so it can
  * decide whether the size-change gate should treat the cached sidecar
  * as fresh, without an extra IPC round-trip per row.

@@ -15,7 +15,7 @@ import { useSaveStatus } from "./saveStatus";
 
 /**
  * Automatic `/recap` after a finished turn goes unanswered. Main owns the
- * timer (`electron/services/sessions/auto-recap.ts`) and reads these settings
+ * timer (`daemon/services/sessions/auto-recap.ts`) and reads these settings
  * fresh each time, so a change applies to sessions already open.
  */
 export function AutoRecapSettings() {

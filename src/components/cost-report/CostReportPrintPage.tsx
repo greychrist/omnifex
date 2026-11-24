@@ -7,7 +7,7 @@
 // made of eleven independent queries and an SVG chart has finished drawing, so
 // this page measures itself and says so.
 //
-// See `electron/services/cost-report-pdf.ts` for the other half.
+// See `daemon/services/cost-report-pdf.ts` for the other half.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppFontProvider } from '@/contexts/AppFontContext';

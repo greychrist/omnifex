@@ -33,7 +33,7 @@ beforeEach(() => {
 
 describe('maybeAutoGenerateSummaryOnLeave', () => {
   // The auto-on-leave gate must mirror the lifecycle hook in
-  // electron/main.ts so the back-button path doesn't bypass the user's
+  // daemon/main.ts so the back-button path doesn't bypass the user's
   // "Generate summaries automatically when leaving a session" toggle.
   //
   // Both flags must be 'true' for generation to fire. Anything else

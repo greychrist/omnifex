@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "types": ["node"],
+    /* The daemon under daemon/remote/ shares pure TS with the renderer
+       (src/protocol, src/lib/jsonlClassifier), and those files use the
+       renderer's `@/` alias internally. */
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["daemon", "packaging", "signing", "scripts/package-mac.ts", "scripts/dev.ts"]
+}

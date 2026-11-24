@@ -30,7 +30,7 @@ const SUMMARY = path.resolve('coverage/coverage-summary.json');
  * before the general `src/` bucket.
  */
 const AREAS = [
-  { name: 'electron/**  (main process)', match: (f) => f.startsWith('electron/') },
+  { name: 'daemon/**  (daemon)', match: (f) => f.startsWith('daemon/') },
   { name: 'src/components  (React UI)', match: (f) => f.startsWith('src/components/') },
   { name: 'src/**  (renderer logic)', match: (f) => f.startsWith('src/') },
   { name: 'other', match: () => true },

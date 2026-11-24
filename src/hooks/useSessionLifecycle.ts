@@ -27,7 +27,7 @@ interface UseSessionLifecycleArgs {
   /**
    * Which engine to launch. Optional for back-compat with older callers
    * that haven't been threaded yet; main process treats missing values as
-   * `'claude'` (see engine-factory dispatch in `electron/services/sessions/`).
+   * `'claude'` (see engine-factory dispatch in `daemon/services/sessions/`).
    */
   agent?: AgentKind;
   accountResolution: {

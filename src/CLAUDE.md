@@ -43,9 +43,9 @@ See the root `CLAUDE.md` for the full architecture, build commands, and account-
 
 ## Adding a New IPC Call
 
-1. Add the service method + test in `electron/services/foo.ts` and `electron/__tests__/foo.test.ts` (TDD).
-2. Wire it in `electron/remote/daemon.ts` and add the handler + interface entry in `electron/ipc/handlers.ts`.
-3. Add the channel name to `INVOKE_CHANNELS` in `electron/ipc/channels.ts`. The rpc allowlist starts from that list, so the channel is now reachable from every client — deny it in `electron/remote/rpc-allowlist.ts` if it should not be.
+1. Add the service method + test in `daemon/services/foo.ts` and `daemon/__tests__/foo.test.ts` (TDD).
+2. Wire it in `daemon/remote/daemon.ts` and add the handler + interface entry in `daemon/ipc/handlers.ts`.
+3. Add the channel name to `INVOKE_CHANNELS` in `daemon/ipc/channels.ts`. The rpc allowlist starts from that list, so the channel is now reachable from every client — deny it in `daemon/remote/rpc-allowlist.ts` if it should not be.
 4. Decide whether the channel is **native-only**: it needs the machine the window is on (a dialog, Finder, the dock, notifications, the app bundle). If so it does not go in the daemon at all — add it to `NATIVE_INVOKE_CHANNELS` in `src/lib/remote/nativeChannels.ts`, to `macos/Sources/OmniFexCore/NativeChannels.swift`, and give it a handler in `macos/Sources/OmniFex/NativeHandlers.swift`. `ipc-channel-contract.test.ts` fails until all three agree.
 5. Add the typed wrapper method in `src/lib/api.ts`.
 6. Use it from the component.

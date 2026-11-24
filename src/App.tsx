@@ -291,7 +291,7 @@ function AppContent() {
       // NO_ACCOUNT_FOR_PROJECT is a structured signal from the main process
       // that no path rule / project override binds this folder to a Claude
       // account. Surface a prominent, actionable banner — never fall back to
-      // a "default" account. See electron/services/claude.ts (NoAccountError).
+      // a "default" account. See daemon/services/claude.ts (NoAccountError).
       const code = (err as { code?: string } | null)?.code;
       const msg = err instanceof Error ? err.message : String(err);
       if (code === 'NO_ACCOUNT_FOR_PROJECT') {

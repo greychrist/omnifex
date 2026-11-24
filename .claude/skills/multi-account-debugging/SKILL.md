@@ -33,15 +33,15 @@ on-disk session state.
 
 ## Files To Check
 
-- `electron/services/accounts.ts` — `resolve()`, `resolveOnDisk()`,
+- `daemon/services/accounts.ts` — `resolve()`, `resolveOnDisk()`,
   `explainResolution()`, path rules, overrides, discovery
-- `electron/services/claude.ts` — `listProjects()`, `getProjectSessions()`,
+- `daemon/services/claude.ts` — `listProjects()`, `getProjectSessions()`,
   `createProject()`, `NoAccountError`
-- `electron/services/project-paths.ts` — `encodeProjectId` / `decodeProjectId`
+- `daemon/services/project-paths.ts` — `encodeProjectId` / `decodeProjectId`
   / `recoverProjectPath` (encoding is lossy; recovery reads dir contents)
-- `electron/services/sessions/lifecycle.ts` + `electron/services/agents/` —
+- `daemon/services/sessions/lifecycle.ts` + `daemon/services/agents/` —
   where `CLAUDE_CONFIG_DIR` reaches a spawned process
-- `electron/services/util/claude-env.ts` — `buildClaudeEnv`
+- `daemon/services/util/claude-env.ts` — `buildClaudeEnv`
 - `src/App.tsx` — project open flow, `NO_ACCOUNT_FOR_PROJECT` banner
 - `src/components/AccountPickerDialog.tsx` — persists a project override
 - `src/components/AccountSettings.tsx` — path-rule UI and the resolution tester

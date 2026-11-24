@@ -21,7 +21,7 @@ import { api, type BrainQueueCounts, type BrainQueueEntry } from '@/lib/api';
  */
 const EMPTY: BrainQueueCounts = { pending: 0, running: 0, done: 0, failed: 0 };
 
-/** Mirrors the backend keys in electron/services/brain/queue.ts. */
+/** Mirrors the backend keys in daemon/services/brain/queue.ts. */
 const AUTO_INDEX_KEY = 'brain.autoIndex';
 const PAUSED_KEY = 'brain.queuePaused';
 const CURATE_KEY = 'brain.curate';
@@ -29,10 +29,10 @@ const IDLE_MINUTES_KEY = 'brain.idleMinutes';
 const SWEEP_HOURS_KEY = 'brain.sweepHours';
 
 /**
- * Mirrors the defaults and ranges in electron/services/brain/queue.ts.
+ * Mirrors the defaults and ranges in daemon/services/brain/queue.ts.
  *
  * Duplicated rather than imported because the renderer cannot import from
- * `electron/`. The backend clamps whatever arrives regardless, so a drift here
+ * `daemon/`. The backend clamps whatever arrives regardless, so a drift here
  * costs a misleading input hint and never a bad stored value.
  */
 const IDLE_MINUTES = { def: 15, min: 1, max: 1440 };

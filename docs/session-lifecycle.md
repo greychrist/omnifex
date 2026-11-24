@@ -1,6 +1,6 @@
 # Session Lifecycle
 
-This is the **authoritative model** for session and conversation state in OmniFex. Before refactoring anything in `electron/services/sessions/**` or `src/hooks/useSessionLifecycle.ts`, read this first.
+This is the **authoritative model** for session and conversation state in OmniFex. Before refactoring anything in `daemon/services/sessions/**` or `src/hooks/useSessionLifecycle.ts`, read this first.
 
 ## The three orthogonal axes
 
@@ -30,7 +30,7 @@ There is no `idle` or `running` here. Those belong to `turn`. The connection bei
 
 ### 2. `turn` — is the session working on a prompt? (owned by the session)
 
-`{ status: 'idle' | 'running', since: ISO | null }`. **Owned by the main-process session handle** (`electron/services/sessions/`), like `sessionStatus`, and mirrored by the renderer — never derived from the transcript.
+`{ status: 'idle' | 'running', since: ISO | null }`. **Owned by the main-process session handle** (`daemon/services/sessions/`), like `sessionStatus`, and mirrored by the renderer — never derived from the transcript.
 
 | Transition | Where |
 | --- | --- |
@@ -43,7 +43,7 @@ Every transition is announced on `session-turn:<tabId>` with the full `TurnState
 
 `conversationStatus` (`'idle' | 'running'`) is the renderer's **rollup** — `turn.status === 'running' || hasOpenTasks || hasOpenSubagents` — computed in `useSessionLifecycle` via `sessionDerivedState.conversationStatus(turnRunning, tasks, subagents)`. `'waiting_permission'` from the old FSM is gone: a pending permission card keeps the relevant task/subagent entry open, which keeps the rollup at `'running'`.
 
-> **Type locations:** `TurnState` lives in `electron/services/sessions/types.ts` and is mirrored in `src/lib/api.ts` (type only — the renderer has no reason to import a value from `api.ts`, and tests mock that module). `ConversationStatus` is defined in `src/lib/sessionDerivedState.ts`.
+> **Type locations:** `TurnState` lives in `daemon/services/sessions/types.ts` and is mirrored in `src/lib/api.ts` (type only — the renderer has no reason to import a value from `api.ts`, and tests mock that module). `ConversationStatus` is defined in `src/lib/sessionDerivedState.ts`.
 
 ### 3. Tasks and subagents — per-item
 
@@ -132,7 +132,7 @@ Notes:
 OmniFex Remote does not add a fourth axis, and adding one is the mistake to avoid.
 
 - `session.state` on the wire (`src/protocol/messages.ts`) carries **`sessionStatus` and `turn`** — the two axes main owns — alongside `agent`. `turn` is required: a client must never infer it. There is deliberately no `conversationStatus` field: it is a rollup the renderer computes, and the renderer is the same code whether it is running in Electron or in Safari.
-- `electron/remote/bridge.ts` translates the daemon's `sendToRenderer` calls into protocol pushes and keeps a per-session cache of both axes (fed by `session-status:` and `session-turn:`) so a reconnecting client can be told where it stands. That cache mirrors the axes; it does not become a second source of truth for them. In particular it does not close a turn on a `result` row — that row is transcript, and the session announces its own idle.
+- `daemon/remote/bridge.ts` translates the daemon's `sendToRenderer` calls into protocol pushes and keeps a per-session cache of both axes (fed by `session-status:` and `session-turn:`) so a reconnecting client can be told where it stands. That cache mirrors the axes; it does not become a second source of truth for them. In particular it does not close a turn on a `result` row — that row is transcript, and the session announces its own idle.
 - `SESSION_SCOPED_PUSHES` is `['session.state', 'event', 'permission.request']`. A reconnecting client replays all three, because replaying transcript events alone would leave it at a stale status with an invisible permission prompt blocking the turn.
 - The daemon's `/healthz` reports `sessions.inFlight`. That is a **turn** count from `SessionSummary.inFlight`, and it is what the updater and the daemon-replacement logic gate on. It is not `sessionStatus`.
 
@@ -170,5 +170,5 @@ The only evidence is the session's own transcript. `sessionAuthFailure(messages)
 
 ## Where the canonical types live
 
-- `electron/services/sessions/types.ts` — `SessionStatus` enum, `TurnState`, the `SessionHandle` shape, and `AccountMismatch` (the `session-account-mismatch` payload). Mirrored as types in `src/lib/api.ts` for the renderer.
+- `daemon/services/sessions/types.ts` — `SessionStatus` enum, `TurnState`, the `SessionHandle` shape, and `AccountMismatch` (the `session-account-mismatch` payload). Mirrored as types in `src/lib/api.ts` for the renderer.
 - `src/lib/sessionDerivedState.ts` — `ConversationStatus` type, the rollup, and the transcript-derived helpers (tasks, subagents, turn duration, usage-limit wait). Also re-exported (as `@deprecated`) via `src/lib/api.ts` for backward compatibility — prefer the direct import.

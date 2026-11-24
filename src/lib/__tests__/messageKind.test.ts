@@ -475,7 +475,7 @@ describe('classifyStandaloneKind', () => {
     });
 
     it('classifies the OmniFex hook synthetic shape as system.permission_denied', () => {
-      // `electron/services/sessions/hooks.ts:355` emits its own
+      // `daemon/services/sessions/hooks.ts:355` emits its own
       // `system + permission_denied` row when the OmniFex PermissionDenied
       // hook fires. Different field shape (`reason` instead of `message`)
       // but the same kind classification — both are auto-deny events.

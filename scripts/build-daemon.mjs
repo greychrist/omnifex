@@ -38,7 +38,7 @@ for (const entry of ['omnifex-server', 'brain-mcp']) {
       minify: false,
       sourcemap: true,
       lib: {
-        entry: path.join(root, `electron/${entry}.ts`),
+        entry: path.join(root, `daemon/${entry}.ts`),
         fileName: () => `${entry}.js`,
         formats: ['cjs'],
       },

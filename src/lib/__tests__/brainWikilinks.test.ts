@@ -8,7 +8,7 @@ import {
 } from '@/lib/brainWikilinks';
 
 // These nine cases are deliberately identical to
-// electron/__tests__/brain-links.test.ts. The two implementations are twins
+// daemon/__tests__/brain-links.test.ts. The two implementations are twins
 // across the process boundary; if one grammar drifts, one of these suites
 // should go red.
 describe('parseWikilinks', () => {

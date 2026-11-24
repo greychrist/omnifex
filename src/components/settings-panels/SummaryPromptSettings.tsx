@@ -16,7 +16,7 @@ import { useSaveStatus } from './saveStatus';
  * The default prompt the backend ships with. Mirrored here so the
  * "Reset to default" button can populate the textarea without an extra
  * IPC round-trip. Keep in sync with `DEFAULT_SUMMARY_PROMPT` in
- * `electron/services/sessions-summary.ts`.
+ * `daemon/services/sessions-summary.ts`.
  */
 const DEFAULT_SUMMARY_PROMPT = `You are summarizing a coding-assistant session for a developer's records.
 Produce a one-line headline (8–14 words) and a 2–3 bullet points (< 50 words) that capture the THEMES of the session — what general area or capability was worked on, what the broader goals were, what kind of problem the user was trying to solve.

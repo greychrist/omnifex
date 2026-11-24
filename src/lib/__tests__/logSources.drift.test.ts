@@ -12,7 +12,7 @@ import {
 import {
   LOG_SOURCES as MAIN_SOURCES,
   LOG_LEVELS as MAIN_LEVELS,
-} from '../../../electron/services/log-sources';
+} from '../../../daemon/services/log-sources';
 
 describe('log taxonomy drift', () => {
   it('LOG_SOURCES is identical in main and renderer', () => {

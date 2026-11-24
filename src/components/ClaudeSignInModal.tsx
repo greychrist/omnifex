@@ -30,7 +30,7 @@ type Phase =
 /**
  * Sign one account in to Claude, through the CLI's own OAuth
  * (`claude_authenticate`, run by the daemon in a CLI started for this
- * account — see `electron/services/auth/claude-auth.ts`).
+ * account — see `daemon/services/auth/claude-auth.ts`).
  *
  * On the Mac the sign-in page opens at once, in the browser chosen for this
  * account (`signInBrowser.ts`), and finishes by itself: its redirect lands on

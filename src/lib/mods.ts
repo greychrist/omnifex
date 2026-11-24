@@ -1,6 +1,6 @@
 /**
  * Mods (Claude Code >= 2.1.287): plugins carrying TypeScript hooks the CLI
- * runs in its own process. Shared by main (electron/services/sessions/mods.ts
+ * runs in its own process. Shared by main (daemon/services/sessions/mods.ts
  * reads them) and the Session context panel (shows them), so the capability
  * set and its wording are defined once.
  */

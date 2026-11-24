@@ -25,7 +25,7 @@ fails.
   container with no signature of its own.
 - **Gate:** `OMNIFEX_NOTARIZE=1` is the only switch. Without it `npm run make`
   exits 0 and produces signed-but-never-notarized artifacts. Unit tests:
-  `electron/__tests__/signing-config.test.ts`, `electron/__tests__/signing-dmg.test.ts`.
+  `daemon/__tests__/signing-config.test.ts`, `daemon/__tests__/signing-dmg.test.ts`.
 
 ## Reading the gate
 

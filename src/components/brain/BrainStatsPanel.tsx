@@ -4,7 +4,7 @@ import { api, type BrainVaultStats } from '@/lib/api';
 /**
  * What the Brain costs, and whether curation is firing at the right time.
  *
- * The threshold in electron/services/brain/curate.ts was inherited from
+ * The threshold in daemon/services/brain/curate.ts was inherited from
  * Rowboat and never measured. `qualifyingCount` and the Timeline histogram are
  * what turn it into an observation: 0 means the threshold is theatre, 40 means
  * it is too loose.

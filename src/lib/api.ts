@@ -13,8 +13,8 @@ function stripUndefined(obj: object): Record<string, unknown> {
 
 /**
  * Which agent engine drives a session. Mirrors the backend `AgentKind` in
- * `electron/services/agents/types.ts`. The renderer can't import from
- * `electron/` directly, so this is a parallel literal-union type kept in
+ * `daemon/services/agents/types.ts`. The renderer can't import from
+ * `daemon/` directly, so this is a parallel literal-union type kept in
  * sync by hand. `'claude'` is the default everywhere (back-compat with
  * pre-Codex callers and persisted tab records that pre-date the field).
  */
@@ -22,7 +22,7 @@ export type AgentKind = 'claude' | 'codex';
 
 /**
  * Per-agent message envelope sent from main to renderer. Mirrors the
- * backend `AgentMessage` in `electron/services/agents/types.ts`. Only the
+ * backend `AgentMessage` in `daemon/services/agents/types.ts`. Only the
  * Codex side currently consumes this type renderer-side — Claude tabs
  * still flow through `ClaudeStreamMessage` because `payload.method`
  * dispatching doesn't apply there.
@@ -41,7 +41,7 @@ export interface AgentMessage {
 
 /**
  * Status of Codex authentication. Mirrors the backend `CodexAuthStatus` in
- * `electron/services/auth/codex-auth.ts`.
+ * `daemon/services/auth/codex-auth.ts`.
  *
  * - `mode: 'oauth'` — `~/.codex/auth.json` is present; `email` may be set
  *   when the file carries an account email (some Codex versions omit it).
@@ -99,7 +99,7 @@ export interface Account {
   name: string;
   config_dir: string;
   // No is_default field — there is no default account. See migration v8 in
-  // electron/services/database.ts. Resolution is path rule / project override
+  // daemon/services/database.ts. Resolution is path rule / project override
   // only; failure raises NoAccountError.
   /** Which CLI engine this account drives. Immutable post-create. */
   engine: AccountEngine;
@@ -133,7 +133,7 @@ export interface Account {
 
 /**
  * Structured form of the rich `/usage` output captured by spawning claude in
- * a PTY (see `electron/services/usage-runner.ts`). Mirrors the parser shape.
+ * a PTY (see `daemon/services/usage-runner.ts`). Mirrors the parser shape.
  */
 export interface UsageRunData {
   /**
@@ -260,7 +260,7 @@ export interface ResolveSlot {
   /**
    * `on_disk` means the project's session directory was found under exactly
    * one account's config dir — evidence, not a default. Mirrors
-   * `ResolveMatchType` in `electron/services/accounts.ts`.
+   * `ResolveMatchType` in `daemon/services/accounts.ts`.
    */
   matchType: 'override' | 'path_rule' | 'on_disk';
   matchDetail: string;
@@ -425,7 +425,7 @@ export interface LimaDockerContainer {
 /**
  * Whether the installed Claude CLI has moved past the changelog watermark
  * OmniFex was last reviewed against. Mirrors `CliReviewStatus` in
- * `electron/services/claude-cli-review.ts`.
+ * `daemon/services/claude-cli-review.ts`.
  */
 export interface CliReviewStatus {
   /** Installed CLI version, or null when the binary can't be found/probed. */
@@ -474,17 +474,17 @@ export interface CliUpdateResult {
 
 /** app_settings key for the auto-run-on-launch toggle. Mirrors
  *  `CLI_AUTO_UPDATE_SETTING_KEY` in
- *  `electron/services/claude-cli-review.ts`. */
+ *  `daemon/services/claude-cli-review.ts`. */
 export const CLI_AUTO_UPDATE_SETTING_KEY = 'claude_cli_auto_update_on_launch';
 
 /** app_settings key for the OmniFex-checkout override the review launches in.
  *  Mirrors `CLI_REVIEW_REPO_DIR_SETTING_KEY` in
- *  `electron/services/claude-cli-review.ts`. */
+ *  `daemon/services/claude-cli-review.ts`. */
 export const CLI_REVIEW_REPO_DIR_SETTING_KEY = 'cli_review_repo_dir';
 
 /** app_settings key for the newest CLI release marked as checked. Mirrors
  *  `CLI_CHECKED_VERSION_SETTING_KEY` in
- *  `electron/services/claude-cli-review.ts`. */
+ *  `daemon/services/claude-cli-review.ts`. */
 /** Notification id prefix for a new Claude Code release; the click handler matches on it. */
 export const CLI_RELEASE_NOTICE_ID_PREFIX = 'claude-cli-update:';
 export const CLI_CHECKED_VERSION_SETTING_KEY = 'claude_cli_checked_version';
@@ -588,7 +588,7 @@ export interface AccountUsageStats {
 
 /** Live per-session cost snapshot, computed from the on-disk JSONL transcript
  *  (main session + subagent transcripts). Mirrors the backend
- *  `SessionCostSnapshot` in `electron/services/cost/session-cost-core.ts`. */
+ *  `SessionCostSnapshot` in `daemon/services/cost/session-cost-core.ts`. */
 export interface SessionCostSnapshot {
   totalUsd: number;
   estimated: boolean;
@@ -610,7 +610,7 @@ export interface SubagentCost {
 }
 
 /** One aggregated period row from the durable cost-history table. Mirrors
- *  the backend `CostHistoryPeriod` in `electron/services/cost/cost-history.ts`. */
+ *  the backend `CostHistoryPeriod` in `daemon/services/cost/cost-history.ts`. */
 export interface CostHistoryPeriod {
   period: string;
   cost_usd: number;
@@ -729,7 +729,7 @@ export interface CostFacets {
 }
 
 /** One session's aggregated cost row from the durable cost-history table.
- *  Mirrors the backend `CostSessionRow` in `electron/services/cost/cost-history.ts`. */
+ *  Mirrors the backend `CostSessionRow` in `daemon/services/cost/cost-history.ts`. */
 export interface CostSessionRow {
   session_id: string;
   account_name: string;
@@ -849,7 +849,7 @@ export interface ClaudeSignedInAccount {
   subscriptionType?: string;
 }
 
-/** What `mcp_authenticate` answers; mirrors McpAuthResult in electron/services/sessions/types.ts. */
+/** What `mcp_authenticate` answers; mirrors McpAuthResult in daemon/services/sessions/types.ts. */
 export interface McpAuthResult {
   authUrl: string | null;
   requiresUserAction: boolean;
@@ -983,13 +983,13 @@ export interface LogEntry {
   metadata?: string;
 }
 
-/** Columns the Log tab can sort on. Mirrors LogOrderBy in electron/services/logging.ts. */
+/** Columns the Log tab can sort on. Mirrors LogOrderBy in daemon/services/logging.ts. */
 export type LogOrderBy = 'timestamp' | 'level' | 'source' | 'category' | 'message';
 export type LogOrderDir = 'asc' | 'desc';
 
 /**
  * Connection axis of the session. See `docs/session-lifecycle.md`.
- * Mirrors `SessionStatus` in `electron/services/sessions/types.ts` —
+ * Mirrors `SessionStatus` in `daemon/services/sessions/types.ts` —
  * keep both unions in sync.
  */
 export type SessionStatus =
@@ -1001,7 +1001,7 @@ export type SessionStatus =
 /**
  * The session's turn axis, mirrored from main (`session-turn:<tabId>`).
  * `running` from prompt hand-off to the CLI's result row or process exit.
- * Mirrors `TurnState` in `electron/services/sessions/types.ts`. See
+ * Mirrors `TurnState` in `daemon/services/sessions/types.ts`. See
  * docs/session-lifecycle.md.
  */
 export interface TurnState { status: 'idle' | 'running'; since: string | null }
@@ -1139,8 +1139,8 @@ export interface AccountMismatch {
  * Where a permission rule comes from, per the CLI's own taxonomy.
  *
  * Renderer mirror of `CliPermissionRuleSource` in
- * `electron/services/sessions/types.ts` — the renderer can't import from
- * `electron/`, so the two must be kept in step by hand.
+ * `daemon/services/sessions/types.ts` — the renderer can't import from
+ * `daemon/`, so the two must be kept in step by hand.
  *
  * OmniFex's own settings-file reader models only the first three. `flagSettings`
  * is where OmniFex's own rule push lands, as a source of its own.
@@ -1291,7 +1291,7 @@ export interface SessionSlashCommand {
   argumentHint: string;
 }
 
-// Sidecar mirror — keep in sync with electron/services/sessions-summary.ts.
+// Sidecar mirror — keep in sync with daemon/services/sessions-summary.ts.
 export interface SessionSummary {
   version: number;
   headline: string;
@@ -1330,7 +1330,7 @@ export const AUTO_ON_CLOSE_SETTING_KEY = 'sessionsSummary.autoOnClose';
 
 /**
  * Discriminated result of `summaryGenerate`. Mirrors
- * `SummaryGenerateResult` in electron/services/sessions-summary.ts.
+ * `SummaryGenerateResult` in daemon/services/sessions-summary.ts.
  *
  * The renderer uses the tag to differentiate "succeeded but no change",
  * "skipped because the account isn't configured", "model returned
@@ -1346,7 +1346,7 @@ export type SummaryGenerateResult =
     }
   | { status: 'malformed-response' };
 
-/** Mirrors `CliStatusReport` in electron/services/sessions/types.ts. Values
+/** Mirrors `CliStatusReport` in daemon/services/sessions/types.ts. Values
  *  are the CLI's own rendered text — display them, don't parse them. */
 export interface SessionStatusReport {
   sections: { title: string; rows: { label?: string; value: string }[] }[];
@@ -1362,7 +1362,7 @@ export interface SessionModelInfo {
   supportedEffortLevels?: ('low' | 'medium' | 'high' | 'xhigh' | 'max')[];
 }
 
-/** Mirrors the backend `SearchHit` in electron/services/brain/search.ts. */
+/** Mirrors the backend `SearchHit` in daemon/services/brain/search.ts. */
 export interface BrainSearchHit {
   notePath: string;
   type: string;
@@ -1372,10 +1372,10 @@ export interface BrainSearchHit {
   score: number;
 }
 
-/** Mirrors NOTE_TYPES in electron/services/brain/types.ts. */
+/** Mirrors NOTE_TYPES in daemon/services/brain/types.ts. */
 export type BrainNoteType = 'Project' | 'Subsystem' | 'Topic' | 'Session' | 'Note';
 
-/** Mirrors the backend `VaultStatus` in electron/services/brain/registry.ts. */
+/** Mirrors the backend `VaultStatus` in daemon/services/brain/registry.ts. */
 export interface BrainVaultStatus {
   accountId: number;
   configured: boolean;
@@ -1394,12 +1394,12 @@ export interface BrainVaultStatus {
   /**
    * Files a macOS file provider has evicted to contentless stubs, or null when
    * that could not be determined. Null is not zero — see
-   * electron/services/brain/offloaded.ts.
+   * daemon/services/brain/offloaded.ts.
    */
   offloadedCount: number | null;
 }
 
-/** Mirrors the backend `SourceSummary` in electron/services/brain/registry.ts. */
+/** Mirrors the backend `SourceSummary` in daemon/services/brain/registry.ts. */
 export interface BrainSourceSummary {
   accountId: number;
   sourceId: string;
@@ -1428,12 +1428,12 @@ export interface BrainSourceSummary {
   reason: string;
   /** True when this item's project is excluded from the Brain. */
   excluded: boolean;
-  /** Mirrors `SourceStatus` in electron/services/brain/sources/state.ts. */
+  /** Mirrors `SourceStatus` in daemon/services/brain/sources/state.ts. */
   status: 'pending' | 'indexed' | 'skipped' | 'failed' | 'blocked' | null;
   changed: boolean;
 }
 
-/** Mirrors the backend `SessionMetadata` in electron/services/brain/sources/types.ts. */
+/** Mirrors the backend `SessionMetadata` in daemon/services/brain/sources/types.ts. */
 export interface BrainSessionMetadata {
   sessionId: string;
   projectPath: string | null;
@@ -1459,21 +1459,21 @@ export interface BrainMcpStatus {
   available: boolean;
 }
 
-/** Mirrors `CaptureMetadata` in electron/services/brain/sources/types.ts. */
+/** Mirrors `CaptureMetadata` in daemon/services/brain/sources/types.ts. */
 export interface BrainCaptureMetadata {
   capturedAt: string;
   project: string | null;
   cwd: string | null;
 }
 
-/** Mirrors `ArtifactMetadata` in electron/services/brain/sources/types.ts. */
+/** Mirrors `ArtifactMetadata` in daemon/services/brain/sources/types.ts. */
 export interface BrainArtifactMetadata {
   repoPath: string;
   file: string;
 }
 
 /**
- * Mirrors `ItemMetadata` in electron/services/brain/sources/types.ts. The
+ * Mirrors `ItemMetadata` in daemon/services/brain/sources/types.ts. The
  * discriminant is what lets a Sources pane render a capture without inventing
  * session fields it does not have.
  */
@@ -1482,7 +1482,7 @@ export type BrainItemMetadata =
   | ({ kind: 'capture' } & BrainCaptureMetadata)
   | ({ kind: 'artifact' } & BrainArtifactMetadata);
 
-/** Mirrors the backend `SourcePreview` in electron/services/brain/registry.ts. */
+/** Mirrors the backend `SourcePreview` in daemon/services/brain/registry.ts. */
 export interface BrainSourcePreview {
   itemKey: string;
   prose: string;
@@ -1495,7 +1495,7 @@ export interface BrainSourcePreview {
   reason: string;
 }
 
-/** Mirrors `QueueCounts` in electron/services/brain/queue.ts. */
+/** Mirrors `QueueCounts` in daemon/services/brain/queue.ts. */
 export interface BrainQueueCounts {
   pending: number;
   running: number;
@@ -1503,7 +1503,7 @@ export interface BrainQueueCounts {
   failed: number;
 }
 
-/** Mirrors `QueueEntry` in electron/services/brain/queue.ts. */
+/** Mirrors `QueueEntry` in daemon/services/brain/queue.ts. */
 export interface BrainQueueEntry {
   id: number;
   accountId: number;
@@ -1516,7 +1516,7 @@ export interface BrainQueueEntry {
   finishedAt: string | null;
 }
 
-/** Mirrors the backend `IndexResult` in electron/services/brain/registry.ts. */
+/** Mirrors the backend `IndexResult` in daemon/services/brain/registry.ts. */
 export interface BrainIndexResult {
   itemKey: string;
   /** Vault-relative paths written, in the order they were written. */
@@ -1526,7 +1526,7 @@ export interface BrainIndexResult {
   reason: string;
 }
 
-/** Mirrors the backend `BrainRunPhase` in electron/services/brain/registry.ts. */
+/** Mirrors the backend `BrainRunPhase` in daemon/services/brain/registry.ts. */
 export type BrainRunPhase =
   | 'preparing'
   | 'distilling'
@@ -1534,7 +1534,7 @@ export type BrainRunPhase =
   | 'writing'
   | 'curating';
 
-/** Mirrors the backend `BrainRun` in electron/services/brain/registry.ts. */
+/** Mirrors the backend `BrainRun` in daemon/services/brain/registry.ts. */
 export interface BrainRun {
   accountId: number;
   total: number;
@@ -1552,7 +1552,7 @@ export interface BrainRun {
   skipped: number;
 }
 
-/** Mirrors the backend `RunResult` in electron/services/brain/registry.ts. */
+/** Mirrors the backend `RunResult` in daemon/services/brain/registry.ts. */
 export interface BrainRunResult {
   written: number;
   skipped: number;
@@ -1560,7 +1560,7 @@ export interface BrainRunResult {
   results: BrainIndexResult[];
 }
 
-/** Mirrors the backend `CurateResult` in electron/services/brain/registry.ts. */
+/** Mirrors the backend `CurateResult` in daemon/services/brain/registry.ts. */
 export interface BrainCurateResult {
   notePath: string;
   /** True when nothing was spent: the note vanished, or stopped qualifying. */
@@ -1568,7 +1568,7 @@ export interface BrainCurateResult {
   reason: string;
 }
 
-/** Mirrors the backend `VaultStats` in electron/services/brain/stats.ts. */
+/** Mirrors the backend `VaultStats` in daemon/services/brain/stats.ts. */
 export interface BrainVaultStats {
   noteCount: number;
   totalBytes: number;
@@ -1584,7 +1584,7 @@ export interface BrainVaultStats {
   qualifyingCount: number;
 }
 
-/** Mirrors the backend `NoteMeta` in electron/services/brain/note-meta.ts. */
+/** Mirrors the backend `NoteMeta` in daemon/services/brain/note-meta.ts. */
 export interface BrainNoteMeta {
   relPath: string;
   /** Basename without `.md`. */
@@ -1598,7 +1598,7 @@ export interface BrainNoteMeta {
   curatedAt: string | null;
 }
 
-/** Mirrors the backend `ParsedNote` in electron/services/brain/types.ts. */
+/** Mirrors the backend `ParsedNote` in daemon/services/brain/types.ts. */
 export interface BrainNote {
   frontmatter: {
     type: BrainNoteType;
@@ -3453,7 +3453,7 @@ export const api = {
   }): Promise<Account> {
     // No isDefault parameter — there is no notion of a default account.
     // Account binding is via path rules / project overrides; failure to
-    // resolve surfaces as a NoAccountError. See electron/services/accounts.ts.
+    // resolve surfaces as a NoAccountError. See daemon/services/accounts.ts.
     const params: Record<string, unknown> = { name: opts.name, configDir: opts.configDir, engine: opts.engine };
     if (opts.subscriptionLabel !== undefined) params.subscriptionLabel = opts.subscriptionLabel;
     if (opts.hasCost !== undefined) params.hasCost = opts.hasCost;
@@ -4088,7 +4088,7 @@ export const api = {
 
 /**
  * Renderer-side mirror of the backend `CodexSessionEntry`. Keep the field
- * names in sync with `electron/services/codex-session-walker.ts` — both
+ * names in sync with `daemon/services/codex-session-walker.ts` — both
  * sides ship the same shape over IPC, no adapter in between.
  */
 export interface CodexSessionEntry {

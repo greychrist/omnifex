@@ -191,7 +191,7 @@ npm run test:coverage
 ```
 omnifex/
 ├── macos/                 # The Mac app (Swift): window, menus, native channels
-├── electron/              # The daemon (the directory kept its Electron-era name)
+├── daemon/              # The daemon (the directory kept its Electron-era name)
 │   ├── ipc/               # The channel → handler map + the channel list
 │   ├── remote/            # Composition root, protocol server, launcher, push
 │   ├── omnifex-server.ts  # Daemon entry point (the `omnifexd` process)

@@ -23,8 +23,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn as ptySpawn } from 'node-pty';
-import { createUsageRunnerService, type FakePty, type PtySpawner, type UsageRunnerDeps } from '../electron/services/usage-runner';
-import { collectUsageDriftWarnings } from '../electron/services/usage-runner/parser';
+import { createUsageRunnerService, type FakePty, type PtySpawner, type UsageRunnerDeps } from '../daemon/services/usage-runner';
+import { collectUsageDriftWarnings } from '../daemon/services/usage-runner/parser';
 
 const configDirArg = process.argv[2];
 if (!configDirArg) {

@@ -12,7 +12,7 @@ import type { JSX } from 'react';
 /**
  * Extracts the `content` string from an `agent_message` notification.
  *
- * Wire shape (from `electron/services/codex/notifications.ts`, Task 7):
+ * Wire shape (from `daemon/services/codex/notifications.ts`, Task 7):
  *   { method: "agent_message", params: { content: string } }
  *
  * Defensive — `payload` is typed `unknown` on AgentMessage, and live Codex

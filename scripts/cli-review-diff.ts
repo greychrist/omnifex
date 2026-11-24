@@ -313,9 +313,9 @@ export async function loadInventory(repoRoot: string): Promise<Inventory> {
   const { classifyJsonlLine } = await load('src/lib/jsonlClassifier.ts');
   const { CLI_SIDECHANNEL_RECORD_TYPES } = await load('src/lib/cliSidechannelRecords.ts');
   const { HOOK_EVENTS } = await load('src/types/hooks.ts');
-  const { CLI_CONTROL_REQUESTS } = await load('electron/services/sessions/cli-control-catalog.ts');
+  const { CLI_CONTROL_REQUESTS } = await load('daemon/services/sessions/cli-control-catalog.ts');
 
-  const sources = walk(path.join(repoRoot, 'electron/services')).map((f) => fs.readFileSync(f, 'utf8'));
+  const sources = walk(path.join(repoRoot, 'daemon/services')).map((f) => fs.readFileSync(f, 'utf8'));
   // `mcpControl` is queries.ts's wrapper for the mcp_* family; the test pins
   // it, so renaming the wrapper fails there rather than here.
   const sent = sources.flatMap((s) =>
@@ -400,7 +400,7 @@ export function coverage(text: string, inv: Inventory): CoverageFinding[] {
     },
     {
       check: 'SDK control requests not in the catalog',
-      meaning: 'new capability: classify it wired / planned / declined in electron/services/sessions/cli-control-catalog.ts',
+      meaning: 'new capability: classify it wired / planned / declined in daemon/services/sessions/cli-control-catalog.ts',
       items: sdkRequests.filter((s) => !inv.catalogued.has(s)),
     },
     {

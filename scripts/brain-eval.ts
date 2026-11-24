@@ -36,10 +36,10 @@ import {
   type SessionSummary,
   type SpendRow,
   type TranscriptSummary,
-} from '../electron/services/brain/value-eval.ts';
-import { chainsToCases, groupChains, rankOf, score } from '../electron/services/brain/retrieval-eval.ts';
+} from '../daemon/services/brain/value-eval.ts';
+import { chainsToCases, groupChains, rankOf, score } from '../daemon/services/brain/retrieval-eval.ts';
 // The shipped search path, so the bm25 weights cannot drift from what is measured.
-import { openVaultIndexReadOnly } from '../electron/services/brain/search.ts';
+import { openVaultIndexReadOnly } from '../daemon/services/brain/search.ts';
 
 const USER_DATA =
   process.env.OMNIFEX_USER_DATA_DIR ?? join(homedir(), 'Library/Application Support/OmniFex');

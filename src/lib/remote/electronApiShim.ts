@@ -275,7 +275,7 @@ export function createElectronApiShim(opts: ShimOptions): ShimHandle {
         } else {
           // `notification` is two things on the wire: the OS-notification
           // channel above, and the bridge's catch-all for any tab-scoped
-          // channel it has no case for (electron/remote/bridge.ts).
+          // channel it has no case for (daemon/remote/bridge.ts).
           // Routing the catch-all by kind once rang the notification sound
           // on every cost tick, with an empty body and no banner when the
           // window was focused. Branch on the channel, which every push

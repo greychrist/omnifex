@@ -75,7 +75,7 @@ api.logCount().then((count) => {
 // The PDF export boots a hidden second window into this same bundle, marked by
 // a `#print=cost-report&…` hash. That window renders the report alone — no
 // titlebar, no tabs, no scroll box — because the app shell is what makes the
-// live document exactly one window tall. See electron/services/cost-report-pdf.ts.
+// live document exactly one window tall. See daemon/services/cost-report-pdf.ts.
 const printFilters = parsePrintHash(window.location.hash);
 
 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- document.getElementById("root") asserted at app entry.

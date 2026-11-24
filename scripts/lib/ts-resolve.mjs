@@ -1,5 +1,5 @@
 // Resolver hook: lets plain Node load this repo's TypeScript the way Vite and
-// Vitest do. The electron/ sources use extensionless relative imports under
+// Vitest do. The daemon/ sources use extensionless relative imports under
 // `moduleResolution: bundler`, which raw Node ESM rejects. Rather than have
 // scripts/ reimplement anything they need (search.ts:70 warns specifically
 // that a second copy of the FTS weights would drift unnoticed), we teach the

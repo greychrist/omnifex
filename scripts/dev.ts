@@ -13,7 +13,7 @@
  *
  * The app runs `ensure --dev`, so the daemon is the dev instance:
  * `~/.omnifex-dev`, port 47701, never the installed app's daemon (see
- * electron/remote/dev-instance.ts). Quitting the app stops
+ * daemon/remote/dev-instance.ts). Quitting the app stops
  * it; Ctrl-C here reaches the whole process group.
  *
  * `--bundle-only` builds the dev app and exits without launching anything.

@@ -14,7 +14,7 @@ import {
 
 /**
  * An MCP server's question, as main pushes it on `elicitation-request:<tabId>`
- * (see electron/services/sessions/elicitations.ts). Form mode asks for a
+ * (see daemon/services/sessions/elicitations.ts). Form mode asks for a
  * schema-shaped answer; URL mode asks the user to open a page — a sign-in,
  * typically — whose completion the server confirms on its own.
  */

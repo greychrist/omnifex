@@ -383,7 +383,7 @@ export const LogTab: React.FC = () => {
 
   // Compute the ISO cutoff for a relative "olderThan" string so we can ask the
   // backend for a count of entries that will *actually* be deleted. Keep this
-  // in sync with parseOlderThan() in electron/services/logging.ts — at some
+  // in sync with parseOlderThan() in daemon/services/logging.ts — at some
   // point this should live in a shared module.
   const olderThanCutoff = (olderThan: string | undefined): string | undefined => {
     if (!olderThan) return undefined;

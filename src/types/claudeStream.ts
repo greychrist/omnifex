@@ -297,9 +297,9 @@ export interface PermissionRequestMessage extends OmnifexEnvelope {
 
 /**
  * OmniFex's toast-style status row. Emitted by:
- *   - `electron/services/sessions/hooks.ts` (hook-driven notifications, session setup)
- *   - `electron/services/sessions/runtime.ts` (session lifecycle errors)
- *   - `electron/services/sessions/queries.ts` (interrupt failures, permission-rule warnings)
+ *   - `daemon/services/sessions/hooks.ts` (hook-driven notifications, session setup)
+ *   - `daemon/services/sessions/runtime.ts` (session lifecycle errors)
+ *   - `daemon/services/sessions/queries.ts` (interrupt failures, permission-rule warnings)
  *   - `src/hooks/useSessionLifecycle.ts` (session-start failures)
  *
  * The `body` field carries the rendered text. Historical wire emitted

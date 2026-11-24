@@ -53,7 +53,7 @@ ALTER TABLE session_cost_daily ADD COLUMN subagent_usd       REAL    NOT NULL DE
 ALTER TABLE session_cost_daily ADD COLUMN subagent_requests  INTEGER NOT NULL DEFAULT 0;
 ```
 
-Follow the existing migration pattern in `electron/services/database.ts` (the
+Follow the existing migration pattern in `daemon/services/database.ts` (the
 `session_cost_daily` migration at ~line 592 is the model to copy).
 
 **Persist the component costs; do not recompute them at query time.** This is the one design
@@ -91,7 +91,7 @@ so the two can be read side by side. Do not recolor by rank.
 
 ## 4. Service layer
 
-Extend `electron/services/cost/cost-history.ts` — it already owns `aggregate()`, `sessions()`,
+Extend `daemon/services/cost/cost-history.ts` — it already owns `aggregate()`, `sessions()`,
 `backfill()` and the `whereClause()` filter builder. Add sibling query functions rather than a
 new service:
 
@@ -102,7 +102,7 @@ new service:
 - `cachingRoi(filters)` — read:write ratio, saved-vs-uncached, 1h premium
 - `subagentSplit(filters)` — main vs subagent
 
-Expose through the existing IPC surface at `electron/main.ts:1402-1404`, which already routes
+Expose through the existing IPC surface at `daemon/main.ts:1402-1404`, which already routes
 `aggregate` / `sessions` / `rescan`. Add the new names to the same object; mirror the types into
 `src/lib/api.ts` next to `CostHistoryPeriod` (line ~518).
 
@@ -144,12 +144,12 @@ or before the row's date. Cache multipliers need the same treatment.
 > `SHIPPED_PRICING` in `src/lib/pricing.ts` as the base layer beneath it.
 
 Note omnifex *already* has the no-recompile half of this: `pricing_overrides` in `app_settings`,
-edited via `src/components/PricingOverridesEditor.tsx`, read at `electron/main.ts:914`. It has
+edited via `src/components/PricingOverridesEditor.tsx`, read at `daemon/main.ts:914`. It has
 **never been set** (no row in `app_settings`). The override shape needs extending with `from`
 dates, and then it becomes the single rate source for both omnifex and the Python scripts —
 at which point `scripts/pricing.json` can be deleted and the Python reads the DB.
 
-**(c) Reconcile the dedup.** `electron/services/cost/usage-extract.ts:43` keys rows by
+**(c) Reconcile the dedup.** `daemon/services/cost/usage-extract.ts:43` keys rows by
 `requestId || message.id || lineIndex`. The Python script collapses on **`message.id` alone**,
 and `management/CLAUDE.md` records that as a hard invariant — adding fields to the key made it
 weaker, not stronger, and silently overstated June/July by 8–12%. These two schemes can disagree.

@@ -1,6 +1,6 @@
 // Canonical taxonomy for the app log stream (renderer mirror).
 //
-// Mirrors `electron/services/log-sources.ts`. Both files exist because
+// Mirrors `daemon/services/log-sources.ts`. Both files exist because
 // the renderer Vite bundle can't import from the electron tree at
 // runtime, but type-safety / single-source-of-truth is preserved by the
 // drift-detector test in `__tests__/logSources.drift.test.ts`.

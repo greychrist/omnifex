@@ -14,7 +14,7 @@
 // `projectService: true` is the modern way to give typed-linting rules
 // access to type info; it auto-finds the nearest `tsconfig.json` per
 // file and naturally covers both the renderer (tsconfig.json) and main
-// process (tsconfig.electron.json) projects.
+// process (tsconfig.daemon.json) projects.
 //
 // Rule policy (see "Why these are off" comments below for each):
 // strict-type-checked + stylistic-type-checked are the BASE. We then
@@ -76,7 +76,7 @@ export default defineConfig(
   // We use the explicit `project` array rather than `projectService: true`
   // because projectService's nearest-tsconfig.json discovery picks up
   // the root tsconfig.json (renderer-only) and rejects every electron
-  // file, since there's no `electron/tsconfig.json`. Listing both
+  // file, since there's no `daemon/tsconfig.json`. Listing both
   // projects keeps electron files covered without needing to introduce
   // a redundant tsconfig file just to satisfy discovery.
   {
@@ -85,7 +85,7 @@ export default defineConfig(
       parserOptions: {
         project: [
           './tsconfig.json',
-          './tsconfig.electron.json',
+          './tsconfig.daemon.json',
           './tsconfig.node.json',
         ],
         tsconfigRootDir: import.meta.dirname,
@@ -134,7 +134,7 @@ export default defineConfig(
 
   // Node globals for main process + tests.
   {
-    files: ['electron/**/*.{ts,js}', '**/*.test.{ts,tsx}', '**/*.config.{ts,js,mjs}'],
+    files: ['daemon/**/*.{ts,js}', '**/*.test.{ts,tsx}', '**/*.config.{ts,js,mjs}'],
     languageOptions: {
       globals: {
         ...globals.node,
@@ -241,11 +241,11 @@ export default defineConfig(
   },
 
   // Main + daemon processes: never spawn a bare command name. See
-  // eslint/no-bare-spawn.mjs and electron/services/util/spawn.ts. Tests are
+  // eslint/no-bare-spawn.mjs and daemon/services/util/spawn.ts. Tests are
   // exempt — their spawns never run inside the app.
   {
-    files: ['electron/**/*.ts'],
-    ignores: ['electron/**/__tests__/**'],
+    files: ['daemon/**/*.ts'],
+    ignores: ['daemon/**/__tests__/**'],
     rules: {
       'no-restricted-syntax': ['error', ...noBareSpawn],
     },

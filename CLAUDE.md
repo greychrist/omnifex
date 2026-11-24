@@ -10,7 +10,7 @@ OmniFex (by GreyChrist) is a **native macOS** app for Claude Code: a Swift (AppK
 
 The shipping app is OmniFex. Internal identifiers like `greychrist.db`, the `greychrist-file://` protocol, and localStorage keys retain the legacy name to avoid migration churn — only the user-facing brand and the repo/folder name changed.
 
-The repo migrated from Tauri 2 (Rust) to Electron in April 2026, and from Electron to the Swift shell on 2026-10-23 (`docs/superpowers/specs/2026-10-23-swift-shell-design.md`): Electron had become only a window around a renderer that already talked to the daemon, and its release cadence decided when OmniFex could ship a Node security fix. The daemon drives the Claude CLI binary directly via `child_process` (stream-json), plus `node-pty` for the `/usage` scraper and Codex sign-in, which is why the app bundles Node (26, `Contents/MacOS/omnifexd`). The `electron/` directory kept its name — it is the daemon's TypeScript now, and no Electron is left in the repo. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, or an Axum web server in source code is legacy noise. (The `@anthropic-ai/claude-agent-sdk-*` package names that remain in `electron/services/claude-binary.ts` are intentional — they name the npm packages the binary resolver searches for, not a live dependency.)
+The repo migrated from Tauri 2 (Rust) to Electron in April 2026, and from Electron to the Swift shell on 2026-10-23 (`docs/superpowers/specs/2026-10-23-swift-shell-design.md`): Electron had become only a window around a renderer that already talked to the daemon, and its release cadence decided when OmniFex could ship a Node security fix. The daemon drives the Claude CLI binary directly via `child_process` (stream-json), plus `node-pty` for the `/usage` scraper and Codex sign-in, which is why the app bundles Node (26, `Contents/MacOS/omnifexd`). The daemon's TypeScript lives in `daemon/` (named `electron/` until 2026-11-24); no Electron is left in the repo. Any reference to `src-tauri/`, `cargo`, `just`, `nix-shell`, or an Axum web server in source code is legacy noise. (The `@anthropic-ai/claude-agent-sdk-*` package names that remain in `daemon/services/claude-binary.ts` are intentional — they name the npm packages the binary resolver searches for, not a live dependency.)
 
 ## No worktrees
 
@@ -24,7 +24,7 @@ Do not create git worktrees for this repo. Work directly on branches inside the 
 - TDD is required for code changes. Write the failing test first, then implement.
 - No comments unless absolutely necessary. A comment earns its place only by stating a constraint the code cannot show and that a future change would otherwise break. Never narrate what the code does, its history, or what it replaced, and never point at a doc. Stale comments steer Claude into wrong choices.
 - Refactors must clean up after themselves before being called done. When a change makes a defensive branch, helper, or shape-check unreachable — delete it in the same change, not as a follow-up. "Dead code I'll remove later" is how 71-occurrence branching taxes accumulate. Leaving compatibility code in place is justified only when an external boundary is still emitting the old shape; "we _used to_ accept both shapes" is not.
-- For backend or IPC work, add or update tests in `electron/__tests__/`.
+- For backend or IPC work, add or update tests in `daemon/__tests__/`.
 - Report the exact commands you ran and whether they passed or failed.
 - When using `TodoWrite`, mark the closing item (`Report`, `Summarize`, `Verify`, etc.) **`completed` before** writing the user-visible summary, not after. The session ends with that summary, so a "completed" status flipped after it never gets persisted — OmniFex's "Last activity" / unfinished-todos UI then shows a phantom in-flight item forever.
 - Use `/commit` only when the user explicitly asks for a commit.
@@ -38,11 +38,11 @@ Any change that touches Claude Code permission rules, path-rule formatting, or t
 
 ## Session Lifecycle
 
-Any change that touches session status, conversation status, the spinner / in-flight predicate, the status popover, `useSessionLifecycle`, or anything under `electron/services/sessions/`: read `docs/session-lifecycle.md` first. It defines the three orthogonal state axes (`sessionStatus`, `turn` — both owned by the session in main — and per-item task/subagent status), the `conversationStatus` rollup, the invariants between them, and the anti-patterns that have repeatedly caused session-stuck bugs. The turn is never inferred from the transcript.
+Any change that touches session status, conversation status, the spinner / in-flight predicate, the status popover, `useSessionLifecycle`, or anything under `daemon/services/sessions/`: read `docs/session-lifecycle.md` first. It defines the three orthogonal state axes (`sessionStatus`, `turn` — both owned by the session in main — and per-item task/subagent status), the `conversationStatus` rollup, the invariants between them, and the anti-patterns that have repeatedly caused session-stuck bugs. The turn is never inferred from the transcript.
 
 ## The Brain
 
-A per-account memory vault: Markdown notes distilled from past sessions, repo artifacts, and explicit captures, searched over SQLite FTS5. Any change under `electron/services/brain/`, `electron/brain-mcp.ts`, `electron/ipc/brain-handlers.ts`, or `src/components/brain/` should start from `docs/superpowers/specs/2026-08-11-brain-memory-vault-design.md` — the parent spec — plus whichever of the six `*-brain-*` specs covers the area. The most recent is `2026-08-14-brain-concurrent-indexing-design.md` (Plan 8).
+A per-account memory vault: Markdown notes distilled from past sessions, repo artifacts, and explicit captures, searched over SQLite FTS5. Any change under `daemon/services/brain/`, `daemon/brain-mcp.ts`, `daemon/ipc/brain-handlers.ts`, or `src/components/brain/` should start from `docs/superpowers/specs/2026-08-11-brain-memory-vault-design.md` — the parent spec — plus whichever of the six `*-brain-*` specs covers the area. The most recent is `2026-08-14-brain-concurrent-indexing-design.md` (Plan 8).
 
 ### Shape
 
@@ -60,7 +60,7 @@ A per-account memory vault: Markdown notes distilled from past sessions, repo ar
 - **`merge.ts` must stay pure and idempotent** — indexing the same session twice produces a byte-identical note. It is the property tested hardest.
 - **Money is recorded in `brain_spend`, never inferred.** `brain_sources.cost_usd` is a per-item snapshot that re-indexing overwrites; the ledger is append-only and is what `stats.spentUsd` and the Brain tab read. It is an *audit* record, not a reporting one — the Cost Report reads `session_cost_daily` only, so nothing is counted twice.
 - **A vault must never live under a file provider.** `~/Documents` and `~/Desktop` are claimed by iCloud Drive whenever "Desktop & Documents Folders" is on; Dropbox/OneDrive/Drive claim their own folders. With storage optimisation, contents are evicted to `SF_DATALESS` stubs costing ~0.6s per read, which turns one `git add -A` into minutes of silent hang — this was the original default and it shipped the bug. `offloaded.ts` probes the flag; `status().offloadedCount` surfaces it. Null there means "not determined", never "none".
-- **OmniFex's own CLI transcripts are never kept — only their spend.** Summaries, Brain indexing and Brain curation run `claude -p` in a scratch cwd (`<tmpdir>/omnifex-summary-scratch`). As each call returns, the runner prices its transcript into `session_cost_daily` (`costHistory.recordInternal`, labelled `OmniFex/Brain index` etc. with `internal_kind`) and deletes it; `settleStrandedScratch` in the hourly sweep does the same for strays older than ten minutes. A transcript whose spend fails to record is left in place, never deleted. The scratch dir is skipped by the Projects list, the cost walk and the Brain. The runner must encode the scratch cwd's **realpath** — macOS's tmpdir is a `/var` symlink, and encoding the unresolved path stranded every transcript from June to October 2026. See `electron/services/sessions/internal-spend.ts`; the archive design it replaced (`2026-08-26-internal-session-archive-design.md`) is superseded.
+- **OmniFex's own CLI transcripts are never kept — only their spend.** Summaries, Brain indexing and Brain curation run `claude -p` in a scratch cwd (`<tmpdir>/omnifex-summary-scratch`). As each call returns, the runner prices its transcript into `session_cost_daily` (`costHistory.recordInternal`, labelled `OmniFex/Brain index` etc. with `internal_kind`) and deletes it; `settleStrandedScratch` in the hourly sweep does the same for strays older than ten minutes. A transcript whose spend fails to record is left in place, never deleted. The scratch dir is skipped by the Projects list, the cost walk and the Brain. The runner must encode the scratch cwd's **realpath** — macOS's tmpdir is a `/var` symlink, and encoding the unresolved path stranded every transcript from June to October 2026. See `daemon/services/sessions/internal-spend.ts`; the archive design it replaced (`2026-08-26-internal-session-archive-design.md`) is superseded.
 
 ## The Shape of the App
 
@@ -73,7 +73,7 @@ before changing any of it.
 
 ### Shape
 
-- **Daemon** — `electron/omnifex-server.ts` → `electron/remote/daemon.ts`, built
+- **Daemon** — `daemon/omnifex-server.ts` → `daemon/remote/daemon.ts`, built
   by `scripts/build-daemon.mjs` to `.vite/build/omnifex-server.js` (plus
   `brain-mcp.js`). The only composition root: every service is built there.
 - **Node** — 26.x, one major everywhere: the bundled `omnifexd`, the system
@@ -88,12 +88,12 @@ before changing any of it.
 - **Mac app** — `macos/`: `OmniFexCore` (pure, tested rules) and `OmniFex`
   (AppKit wiring). It runs `omnifexd omnifex-server.js ensure` to start or
   adopt the daemon (the replace-outdated rules stay in
-  `electron/remote/launcher.ts` and `daemon-control.ts`), then loads the page
+  `daemon/remote/launcher.ts` and `daemon-control.ts`), then loads the page
   the daemon serves and injects `window.__omnifexNative`.
 - **Lifetime** — the daemon is the app's (2026-11-18,
   `docs/superpowers/specs/2026-11-18-daemon-dies-with-app-design.md`):
   spawned non-detached into the app's process group, stopped on quit
-  (`DaemonCLI` in `OmniFexCore`), and `electron/remote/idle-watch.ts` as the
+  (`DaemonCLI` in `OmniFexCore`), and `daemon/remote/idle-watch.ts` as the
   backstop when the app dies without quitting. There is no LaunchAgent. A
   daemon that outlived the app kept the permissions macOS granted before it
   started, so a new grant never reached the sessions. Quitting ends every
@@ -108,8 +108,8 @@ before changing any of it.
   transitions are not logged (they were, to `app_logs`, until 2026-11-17:
   two rows per turn drowned every other log line); a live session's state
   comes from `/api/sessions`.
-- **Protocol** — `src/protocol/` (types), `electron/remote/server.ts` (transport),
-  `electron/remote/handlers.ts` (methods). The protocol's `sessionId` IS the
+- **Protocol** — `src/protocol/` (types), `daemon/remote/server.ts` (transport),
+  `daemon/remote/handlers.ts` (methods). The protocol's `sessionId` IS the
   sessions service's `tabId`; that equivalence is the whole trick.
 - **Client side** — `src/lib/remote/bootstrap.ts` installs the shim,
   `electronApiShim.ts` maps `invoke()` onto typed methods, `rpc.invoke` or the
@@ -132,7 +132,7 @@ before changing any of it.
   (`NavigationPolicy.allowsBridge`). The page shows link previews of arbitrary
   sites in iframes, and the bridge reaches `updater:download` /
   `updater:install`.
-- **The rpc allow-list is subtractive** (`electron/remote/rpc-allowlist.ts`): it
+- **The rpc allow-list is subtractive** (`daemon/remote/rpc-allowlist.ts`): it
   starts from every renderer channel and removes native-only, typed-session and
   raw-SQL groups. A new channel is therefore network-reachable by default. If it
   should not be, deny it explicitly.
@@ -148,7 +148,7 @@ before changing any of it.
   map needs and the daemon forgot is a compile error, not a silent `null`.
 - **A dev build is a guest: `npm start` runs its own instance, and a
   temporary one.** `ensure --dev` puts it on `~/.omnifex-dev`, port 47701,
-  `OMNIFEX_DEV_DAEMON=1` (see `electron/remote/dev-instance.ts`). Dev and the
+  `OMNIFEX_DEV_DAEMON=1` (see `daemon/remote/dev-instance.ts`). Dev and the
   installed app used to share one daemon on one port — the daemon holding every
   live CLI process the user actually works in — so `npm start` SIGTERM'd it and
   killed those sessions. A dev build also retires only a daemon that reports
@@ -161,7 +161,7 @@ before changing any of it.
   smoke-tested with `OMNIFEX_STATE_DIR` /
   `OMNIFEX_USER_DATA_DIR` / `OMNIFEX_PORT` pointed somewhere throwaway, and
   `OMNIFEX_SMOKE_DIR` makes the app write a PNG of each window it loads.
-- **Periodic work lives in `electron/periodic-work.ts`.** Add new periodic work
+- **Periodic work lives in `daemon/periodic-work.ts`.** Add new periodic work
   there, not to the composition root. Its `enabled` gate is read per tick.
 
 ## Research And Code Intelligence
@@ -215,7 +215,7 @@ before changing any of it.
 
 ### Process Model
 
-- **Daemon**: `electron/**`
+- **Daemon**: `daemon/**`
   Owns SQLite, filesystem access, Claude CLI spawning (interactive sessions, agents, usage), account resolution, and all privileged work. Runs on the bundled node.
 - **Mac app**: `macos/**`
   Windows, menus, dialogs, Finder, notifications and the dock badge, PDF export, the updater, tab-status aggregation — the channels in `nativeChannels.ts`. Injects `window.__omnifexNative` (`invoke` / `onEvent`) at document start.
@@ -224,47 +224,47 @@ before changing any of it.
 
 ### Service Pattern
 
-- Daemon services live in `electron/services/`.
+- Daemon services live in `daemon/services/`.
 - Services are factory functions: `createFooService(deps) -> FooService`.
 - Dependencies are injected so services can be tested with `createDatabase(':memory:')`.
-- Services are constructed in `electron/remote/daemon.ts` and handed to `getHandlerMap(...)` in `electron/ipc/handlers.ts`.
+- Services are constructed in `daemon/remote/daemon.ts` and handed to `getHandlerMap(...)` in `daemon/ipc/handlers.ts`.
 - Keep business logic in services, not renderer components or thin IPC adapters.
 
 ### Core Services
 
-- `electron/services/accounts.ts`
+- `daemon/services/accounts.ts`
   Multi-account CRUD, path rules, project overrides, resolution, discovery.
-- `electron/services/claude.ts`
+- `daemon/services/claude.ts`
   Project listing, Claude settings, CLAUDE.md file ops, hooks config, version checks.
-- `electron/services/sessions/` (split across `lifecycle.ts`, `runtime.ts`, `permissions.ts`, `queries.ts`, etc.)
-  Interactive sessions, spawned via `child_process` (stream-json). There is no terminal/TUI session mode — it was removed 2026-09-20; the only ptys left are the `/usage` scraper and Codex sign-in. Engine selection (Claude vs Codex) lives here; the binary is located at runtime via `electron/services/claude-binary.ts`.
-- `electron/services/agents/`
-  Multi-engine agent runtime behind a shared `AgentEngine` interface: `claude-cli-engine.ts`, `codex-cli-engine.ts`, `json-rpc-client.ts`, `codex-binary.ts`. (There is no `electron/services/agents.ts` — agent/session execution moved into `sessions/lifecycle.ts` + this engine layer.)
-- `electron/services/usage.ts` / `usage-runner.ts`
+- `daemon/services/sessions/` (split across `lifecycle.ts`, `runtime.ts`, `permissions.ts`, `queries.ts`, etc.)
+  Interactive sessions, spawned via `child_process` (stream-json). There is no terminal/TUI session mode — it was removed 2026-09-20; the only ptys left are the `/usage` scraper and Codex sign-in. Engine selection (Claude vs Codex) lives here; the binary is located at runtime via `daemon/services/claude-binary.ts`.
+- `daemon/services/agents/`
+  Multi-engine agent runtime behind a shared `AgentEngine` interface: `claude-cli-engine.ts`, `codex-cli-engine.ts`, `json-rpc-client.ts`, `codex-binary.ts`. (There is no `daemon/services/agents.ts` — agent/session execution moved into `sessions/lifecycle.ts` + this engine layer.)
+- `daemon/services/usage.ts` / `usage-runner.ts`
   Usage aggregation across config dirs; the runner scrapes the CLI `/usage` TUI for rate-limit/utilization data.
-- `electron/services/rate-limits.ts`
+- `daemon/services/rate-limits.ts`
   Rate-limit snapshot storage + threshold notifications.
-- `electron/services/mcp.ts`
+- `daemon/services/mcp.ts`
   MCP server management.
-- `electron/services/slash-commands.ts`
+- `daemon/services/slash-commands.ts`
   Slash-command storage and resolution.
-- `electron/services/auth/codex-auth.ts` + `one-shot-terminal.ts`
+- `daemon/services/auth/codex-auth.ts` + `one-shot-terminal.ts`
   Codex authentication (`codex login` driven through a shared pty terminal) and the one-shot pty/xterm modal it uses.
-- `electron/services/brain/`
+- `daemon/services/brain/`
   The Brain: a per-account Markdown memory vault, its FTS5 index, the source adapters that feed it, and the throttled indexing queue. See the Brain section below before changing any of it.
-- `electron/services/lima.ts` / `git-worktrees.ts`
+- `daemon/services/lima.ts` / `git-worktrees.ts`
   Lima VM viewer and git-worktree listing.
-- `electron/services/cost/`
+- `daemon/services/cost/`
   Durable cost history, per-session cost, and the internal-transcript archive's pricing.
-- `electron/services/model-pricing.ts` / `models.ts`
+- `daemon/services/model-pricing.ts` / `models.ts`
   Effective-dated pricing rows layered over `SHIPPED_PRICING`, and the dynamic model catalog.
-- `electron/services/proxy.ts`, `permissions-io.ts`, `filesystem.ts`, `project-pins.ts`, `git-branches.ts`, `git-watcher.ts`, `branch-colors.ts`
+- `daemon/services/proxy.ts`, `permissions-io.ts`, `filesystem.ts`, `project-pins.ts`, `git-branches.ts`, `git-watcher.ts`, `branch-colors.ts`
   Supporting services.
-- `electron/remote/account-watchers.ts`
+- `daemon/remote/account-watchers.ts`
   Identity / Codex-auth file watchers, broadcast to every client.
 - `macos/Sources/OmniFexCore/` — `Updater.swift` + `Installer.swift` (GitHub-release updates, the idle gate, the bundle swap), `TabStatusStore.swift`, `NotificationSound.swift`, `NavigationPolicy.swift`, `ProtocolFilePolicy.swift`, `OpenPathPlanner.swift`
   The native side's rules, each ported from the Electron-era TypeScript with its tests.
-- `electron/services/database.ts`
+- `daemon/services/database.ts`
   `better-sqlite3` factory, schema init, migrations. WAL + `busy_timeout=5000`, because two daemons (the real one and the dev one) can hold the file open at the same time.
 
 This is a multi-engine app (Claude + Codex). Codex is reachable but partial — `codex-cli-engine.ts` has explicit `not yet wired` stubs for some control paths, and Codex deliberately reads a single `~/.codex` (it does not consume the per-account CODEX_HOME that `resolve()` can compute).
@@ -311,7 +311,7 @@ Other account rules:
 
 - New renderer IPC work should go through `src/lib/api.ts` when possible. Some older components still call `window.electronAPI` directly.
 - Strip `undefined` optional params before crossing IPC.
-- Every new invoke channel must be added to `INVOKE_CHANNELS` in `electron/ipc/channels.ts`, and has exactly one owner: the daemon's handler map, a typed session method, or the Mac app. `ipc-channel-contract.test.ts` checks all three, and that the Swift router names every native channel.
+- Every new invoke channel must be added to `INVOKE_CHANNELS` in `daemon/ipc/channels.ts`, and has exactly one owner: the daemon's handler map, a typed session method, or the Mac app. `ipc-channel-contract.test.ts` checks all three, and that the Swift router names every native channel.
 - Decide, for every new channel, whether it is **native-only** (needs a window, a display, Finder, the dock, the bundle). Native channels go in `NATIVE_INVOKE_CHANNELS` *and* get a Swift handler (`macos/Sources/OmniFex/NativeHandlers.swift`); native events go in `NATIVE_EVENT_PREFIXES`. Everything else is the daemon's.
 - Handler adapters should accept both camelCase and snake_case params, for example `data.configDir ?? data.config_dir`.
 - Preserve the end-to-end account-aware path whenever a change touches projects, sessions, agents, usage, hooks, MCP, or Claude settings.
@@ -320,9 +320,9 @@ Other account rules:
 
 ## High-Value Paths
 
-- `electron/remote/daemon.ts`
+- `daemon/remote/daemon.ts`
   The composition root: service construction, adapter wiring.
-- `electron/ipc/handlers.ts`
+- `daemon/ipc/handlers.ts`
   The channel → handler map the daemon serves over `rpc.invoke`.
 - `macos/Sources/OmniFex/` — `AppServices.swift`, `BrowserWindowController.swift`, `Bridge.swift`, `NativeHandlers.swift`
   The Mac app.
@@ -345,7 +345,7 @@ Other account rules:
 
 ## Testing And Verification
 
-- Tests live in `electron/__tests__/*.test.ts` (daemon, packaging), beside the renderer code in `src/**/__tests__/`, and in `macos/Tests/` (Swift Testing, `npm run test:swift`).
+- Tests live in `daemon/__tests__/*.test.ts` (daemon, packaging), beside the renderer code in `src/**/__tests__/`, and in `macos/Tests/` (Swift Testing, `npm run test:swift`).
 - **Coverage target is 80% lines, repo-wide** — not backend-only. The target
   used to read "for backend work", which quietly excused the renderer and made
   the headline number unanswerable: a blended 79% could mean anything.
@@ -364,7 +364,7 @@ Other account rules:
 - Use `createDatabase(':memory:')` for DB-backed service tests.
 - Verification gate:
   - Frontend-only change: `npm run check`, `npm run lint` and `npm run build`
-  - Main-process change: `npm run check`, `npm run lint` and `npm test`
+  - Daemon change: `npm run check`, `npm run lint` and `npm test`
   - Cross-cutting or risky change: `npm run check`, `npm run lint`, `npm run build`, and `npm run test:coverage`
 - Lint gates on errors, not warnings. It was outside the gate until
   2026-11-24 and had silently stopped running at all (typed rules crashed on

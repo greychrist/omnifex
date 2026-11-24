@@ -28,7 +28,7 @@ function getContent(m: JsonlNode): unknown[] | null {
  * `sourceToolUseID` is only present on the CLI's persisted JSONL; stream-json
  * strips it along with `isMeta` and `turnCompanion`. That is safe to depend
  * on because committed transcript rows now come from the JSONL exclusively
- * (see electron/services/sessions/stream-forward.ts).
+ * (see daemon/services/sessions/stream-forward.ts).
  */
 export function detectSkillInjection(
   message: JsonlNode,

@@ -1,6 +1,6 @@
 /**
  * Auto-recap settings, shared by the renderer's Settings panel and main's
- * scheduler (`electron/services/sessions/auto-recap.ts`) so the keys and
+ * scheduler (`daemon/services/sessions/auto-recap.ts`) so the keys and
  * defaults are stated once.
  */
 export const AUTO_RECAP_ENABLED_KEY = 'sessions.autoRecap.enabled';

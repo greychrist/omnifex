@@ -10,7 +10,7 @@ import {
 import { classifyStandaloneKind } from '../messageKind';
 import { withoutHiddenInStandard } from '../recordVisibility';
 import { filterDisplayableMessages } from '../messageFilters';
-import { JSONL_CARRIED_SYSTEM_SUBTYPES } from '../../../electron/services/sessions/stream-forward';
+import { JSONL_CARRIED_SYSTEM_SUBTYPES } from '../../../daemon/services/sessions/stream-forward';
 
 // The Live-only section groups the kinds a reload loses: records the CLI sends
 // on stream-json stdout and never writes to the session file. Which subtypes

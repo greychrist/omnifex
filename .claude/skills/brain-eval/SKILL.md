@@ -9,7 +9,7 @@ allowed-tools: Bash(bash ${CLAUDE_SKILL_DIR}/scripts/*)
 
 One repeatable run answers "is the Brain worth what it costs?" and is stored
 so the next run can be compared with it. Definitions live in
-`electron/services/brain/value-eval.ts` (tested); I/O in `scripts/brain-eval.ts`.
+`daemon/services/brain/value-eval.ts` (tested); I/O in `scripts/brain-eval.ts`.
 
 ## Where runs live
 

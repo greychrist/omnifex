@@ -36,7 +36,7 @@ including \`{installedVersion}\`** against this codebase, report what OmniFex
 needs to do about it, and record the result.
 
 \`{reviewedVersion}\` is the last release marked as checked (normally
-\`REVIEWED_CLI_VERSION\` in \`electron/services/claude-cli-review.ts\`, unless a
+\`REVIEWED_CLI_VERSION\` in \`daemon/services/claude-cli-review.ts\`, unless a
 later one was marked in the app without a build). \`{installedVersion}\` is the
 CLI the user is running.
 
@@ -65,7 +65,7 @@ grep, a file read or a transcript behind it.
 ## Steps
 
 1. **Start from the history.** Read the header of
-   \`electron/services/claude-cli-review.ts\` (\`REVIEWED_CLI_VERSION\`): the
+   \`daemon/services/claude-cli-review.ts\` (\`REVIEWED_CLI_VERSION\`): the
    standing list of undocumented surface we drive, and the latest
    "Last review:" blocks. Note every item still marked open (gap, parked,
    not taken). Re-check those; don't re-derive them.
@@ -145,13 +145,13 @@ grep, a file read or a transcript behind it.
      learns and \`src/lib/modernGrouping.ts\` (\`buildModernItems\`) doesn't
      model becomes an \`other\` item, which Modern draws as a Compact card.
      Decide whether it needs a Modern form (\`RecapLine\`, \`NoticeLine\`).
-   - **New CLI → host control requests.** \`electron/services/agents/claude-cli-engine.ts\`
+   - **New CLI → host control requests.** \`daemon/services/agents/claude-cli-engine.ts\`
      answers unknown ones with an error, so they don't stall a session.
      But a new one may be a capability the CLI now expects a host to serve.
      New host → CLI ones (\`control request schemas\`, minus the SDK's set)
      are offers: a hint the CLI can act on if a host sends it.
    - **Stdout-only fields with host obligations.** Main-session turns render
-     from the JSONL tail, not stdout (\`electron/services/sessions/stream-forward.ts\`,
+     from the JSONL tail, not stdout (\`daemon/services/sessions/stream-forward.ts\`,
      \`JSONL_CARRIED_TYPES\`), so a wrapper field the CLI adds only to the
      stream-json frame (the assistant frame's \`supersedes\`: "remove the named
      messages") never reaches the renderer. When a describe string asks the
@@ -166,49 +166,49 @@ grep, a file read or a transcript behind it.
      \`src/lib/cliSidechannelRecords.ts\` (\`CLI_SIDECHANNEL_RECORD_TYPES\`),
      \`src/types/jsonl.ts\`, \`src/lib/modernLines.ts\` (\`modernLineOf\`), \`src/lib/modernGrouping.ts\`
    - **Stream-json I/O and the control protocol**:
-     \`electron/services/agents/claude-cli-engine.ts\` (\`writeUserMessage\`, \`--permission-prompt-tool\`, \`control_request\`),
-     \`electron/services/sessions/queries.ts\` (\`sendControlRequest\`, \`apply_flag_settings\`),
-     \`electron/services/sessions/permissions.ts\`
+     \`daemon/services/agents/claude-cli-engine.ts\` (\`writeUserMessage\`, \`--permission-prompt-tool\`, \`control_request\`),
+     \`daemon/services/sessions/queries.ts\` (\`sendControlRequest\`, \`apply_flag_settings\`),
+     \`daemon/services/sessions/permissions.ts\`
    - **Session lifecycle and turn state**: \`docs/session-lifecycle.md\`,
-     \`electron/services/sessions/stream-forward.ts\`
+     \`daemon/services/sessions/stream-forward.ts\`
    - **Permission rules**: \`docs/permission-syntax.md\`, plus the official
-     permissions docs. \`electron/services/sessions/permissions.ts\`
+     permissions docs. \`daemon/services/sessions/permissions.ts\`
      (\`buildDefaultRule\`, \`withDefaultRuleSuggestion\`) invents a rule
      whenever the CLI's \`permission_suggestions\` carry none, so a change in
      what the CLI chooses to suggest moves the card's "Always allow" with no
      diff signal. Changelog only.
    - **Hooks**: \`src/types/hooks.ts\` (\`HOOK_EVENTS\`), \`src/components/HooksEditor.tsx\`
-   - **\`/usage\` scraping**: \`electron/services/usage-runner.ts\`,
-     \`electron/services/usage-runner/parser.ts\`
-   - **Models, effort, thinking, fast mode**: \`electron/services/models.ts\` (\`initialize\`),
+   - **\`/usage\` scraping**: \`daemon/services/usage-runner.ts\`,
+     \`daemon/services/usage-runner/parser.ts\`
+   - **Models, effort, thinking, fast mode**: \`daemon/services/models.ts\` (\`initialize\`),
      \`src/lib/pricing.ts\` (\`SHIPPED_PRICING\`), \`src/lib/api.ts\` (\`startSession\`).
      A new model needs a price row as well as a picker entry.
-   - **Mods, plugins, MCP**: \`electron/services/sessions/mods.ts\`,
-     \`electron/services/sessions/plugins.ts\`, \`electron/services/mcp.ts\`.
+   - **Mods, plugins, MCP**: \`daemon/services/sessions/mods.ts\`,
+     \`daemon/services/sessions/plugins.ts\`, \`daemon/services/mcp.ts\`.
      The CLI also ships built-in mods (\`cc-plugin-*\`, e.g. easel's chart
      tool). Each has an \`isAvailable\` gate; read it to see whether a
      stream-json session gets the mod, and if so whether its \`ui_*\` frames
      draw in OmniFex.
-   - **Subagent progress**: \`electron/services/agents/claude-cli-engine.ts\`
+   - **Subagent progress**: \`daemon/services/agents/claude-cli-engine.ts\`
      sends \`initialize {agentProgressSummaries: true}\` at start;
      \`src/lib/subagentEvents.ts\` (\`progressSummary\`) reads each
      \`task_progress\` frame's \`summary\` for the agent rows. Check the
      option and the field still exist, and how often the CLI writes one.
      Their model calls are priced only through \`result.modelUsage\`
-     (\`electron/services/cost/unlogged-spend.ts\`).
-   - **The Brain's MCP server**: \`electron/brain-mcp.ts\`,
-     \`electron/services/brain/instructions.ts\`,
-     \`electron/services/brain/mcp-registration.ts\` (\`--mcp-config\`).
+     (\`daemon/services/cost/unlogged-spend.ts\`).
+   - **The Brain's MCP server**: \`daemon/brain-mcp.ts\`,
+     \`daemon/services/brain/instructions.ts\`,
+     \`daemon/services/brain/mcp-registration.ts\` (\`--mcp-config\`).
      How the CLI treats server \`instructions\` decides whether the Brain is
      used at all.
-   - **OmniFex's own \`claude -p\` runs**: \`electron/services/sessions/summary-query.ts\`,
-     \`electron/services/sessions/internal-spend.ts\`
-   - **Where transcripts live**: \`electron/services/project-paths.ts\` (\`encodeProjectId\`).
+   - **OmniFex's own \`claude -p\` runs**: \`daemon/services/sessions/summary-query.ts\`,
+     \`daemon/services/sessions/internal-spend.ts\`
+   - **Where transcripts live**: \`daemon/services/project-paths.ts\` (\`encodeProjectId\`).
      Encoding or relocation changes strand history and spend.
-   - **Locating and updating the CLI**: \`electron/services/claude-binary.ts\`,
-     \`electron/services/claude-cli-review.ts\`
-   - **Slash commands and settings keys**: \`electron/services/slash-commands.ts\`,
-     \`electron/services/commands-catalog.ts\`, \`electron/services/claude.ts\`
+   - **Locating and updating the CLI**: \`daemon/services/claude-binary.ts\`,
+     \`daemon/services/claude-cli-review.ts\`
+   - **Slash commands and settings keys**: \`daemon/services/slash-commands.ts\`,
+     \`daemon/services/commands-catalog.ts\`, \`daemon/services/claude.ts\`
 
 6. **Report.** Lead with one line: is the current build broken? Then, for
    each entry or diff line that matters: what changed, the OmniFex files it

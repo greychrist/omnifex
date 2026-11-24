@@ -101,7 +101,7 @@ function matchesStatus(r: BrainSourceSummary, f: StatusFilter): boolean {
  * Not every row is a session — auto-memory notes and repo instruction files
  * are `.md` on disk and were indistinguishable from one, which made a Markdown
  * file masquerading as a conversation. Mirrors the `*_SOURCE_ID` constants in
- * electron/services/brain/sources/.
+ * daemon/services/brain/sources/.
  */
 export function sourceTypeLabel(sourceId: string): string {
   switch (sourceId) {

@@ -1,0 +1,774 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createSideChatStore } from '../services/sessions/side-chat';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { listenToMessages } from '../services/sessions/runtime';
+import { encodeProjectId } from '../services/project-paths';
+import type {
+  SessionHandle,
+  SendToRenderer,
+} from '../services/sessions/types';
+import type {
+  AgentEngine,
+  AgentEngineExit,
+  AgentMessage,
+  AgentPermissionRequest,
+} from '../services/agents/types';
+import type { LoggingService, LogEntry } from '../services/logging';
+
+interface FakeEngine extends AgentEngine {
+  _emitError: (err: Error) => void;
+  _emitExit: (info?: AgentEngineExit) => void;
+  _emitMessage: (payload: unknown) => void;
+}
+
+function makeFakeEngine(): FakeEngine {
+  const messageCbs: ((m: AgentMessage) => void)[] = [];
+  const errorCbs: ((err: Error) => void)[] = [];
+  const exitCbs: ((info: AgentEngineExit) => void)[] = [];
+
+  const engine: AgentEngine = {
+    kind: 'claude',
+    start: vi.fn(async () => {}),
+    applyExtendedPermissionMode: vi.fn(async () => {}),
+    send: vi.fn(async () => {}),
+    sendStructured: vi.fn(async () => {}),
+    sendControlRequest: vi.fn(async () => undefined) as AgentEngine['sendControlRequest'],
+    respondPermission: vi.fn(async () => {}),
+    interrupt: vi.fn(async () => {}),
+    close: vi.fn(async () => {}),
+    kill: vi.fn(),
+    getResumeId: vi.fn(() => null),
+    getInitData: vi.fn(() => null),
+    onMessage: vi.fn((cb: (m: AgentMessage) => void) => {
+      messageCbs.push(cb);
+      return { dispose() { const i = messageCbs.indexOf(cb); if (i !== -1) messageCbs.splice(i, 1); } };
+    }),
+    onPermissionRequest: vi.fn((_cb: (r: AgentPermissionRequest) => void) => ({ dispose() {} })),
+    onError: vi.fn((cb: (err: Error) => void) => {
+      errorCbs.push(cb);
+      return { dispose() { const i = errorCbs.indexOf(cb); if (i !== -1) errorCbs.splice(i, 1); } };
+    }),
+    onExit: vi.fn((cb: (info: AgentEngineExit) => void) => {
+      exitCbs.push(cb);
+      return { dispose() { const i = exitCbs.indexOf(cb); if (i !== -1) exitCbs.splice(i, 1); } };
+    }),
+  };
+  const fake = engine as FakeEngine;
+  fake._emitError = (err) => { for (const cb of errorCbs) cb(err); };
+  fake._emitExit = (info = { code: 0 }) => { for (const cb of exitCbs) cb(info); };
+  fake._emitMessage = (payload) => {
+    const msg: AgentMessage = {
+      agent: 'claude',
+      tabId: 'tab-1',
+      receivedAt: new Date().toISOString(),
+      sessionId: 'sess-1',
+      payload,
+    };
+    for (const cb of messageCbs) cb(msg);
+  };
+  return fake;
+}
+
+function makeHandle(engine: AgentEngine): SessionHandle {
+  return {
+    agent: 'claude',
+    engine,
+    initData: null,
+    permissionMode: 'default',
+    startParams: {
+      projectPath: '/p',
+      configDir: '/c',
+      model: 'claude-opus-4-7',
+      permissionMode: 'default',
+    },
+    sessionId: 'sess-1',
+    sessionStatus: 'started',
+    turn: { status: 'idle', since: null },
+    permissionResolver: null,
+    permissionQueue: [],
+    elicitationQueue: [],
+    sideChat: createSideChatStore(),
+    projectPath: '/p',
+    configDir: '/c',
+    autoTitleAttempted: true,
+  };
+}
+
+// The tail polls with statSync on a 100ms interval, so assertions have to
+// wait for at least one cycle. Poll rather than sleep a fixed span — under
+// parallel suite load fs polling granularity degrades and a fixed sleep
+// starts missing events.
+function waitUntil(predicate: () => boolean, timeoutMs = 3000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const tick = (): void => {
+      if (predicate()) return resolve(true);
+      if (Date.now() - start >= timeoutMs) return resolve(predicate());
+      setTimeout(tick, 30);
+    };
+    tick();
+  });
+}
+
+function makeLoggingStub(): { service: LoggingService; entries: LogEntry[] } {
+  const entries: LogEntry[] = [];
+  const service: LoggingService = {
+    writeBatch(batch) { entries.push(...batch); },
+    query: vi.fn(() => ({ entries: [], total: 0 })),
+    count: vi.fn(() => 0),
+    prune: vi.fn(() => 0),
+  };
+  return { service, entries };
+}
+
+describe('runtime.listenToMessages — model catalog write-through', () => {
+  const INIT_MODELS = [
+    { value: 'claude-fable-5[1m]', displayName: 'Fable 5' },
+    { value: 'sonnet', displayName: 'Sonnet' },
+  ];
+
+  function setup(initModels: unknown) {
+    const engine = makeFakeEngine();
+    vi.mocked(engine.getInitData).mockReturnValue(
+      initModels === undefined ? {} : { models: initModels as never },
+    );
+    const handle = makeHandle(engine);
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+    const modelCatalogSink = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer: vi.fn(),
+      rateLimitHook: null,
+      sessions,
+      modelCatalogSink,
+    });
+    return { engine, modelCatalogSink };
+  }
+
+  it('persists the init-time model catalog for the session configDir', () => {
+    const { engine, modelCatalogSink } = setup(INIT_MODELS);
+
+    engine._emitMessage({ type: 'system', subtype: 'init', models: INIT_MODELS });
+
+    expect(modelCatalogSink).toHaveBeenCalledWith('/c', INIT_MODELS);
+  });
+
+  it('does not call the sink when init data has no models', () => {
+    const { engine, modelCatalogSink } = setup(undefined);
+
+    engine._emitMessage({ type: 'system', subtype: 'init' });
+
+    expect(modelCatalogSink).not.toHaveBeenCalled();
+  });
+
+  it('a throwing sink does not break message handling', () => {
+    const { engine, modelCatalogSink } = setup(INIT_MODELS);
+    modelCatalogSink.mockImplementation(() => { throw new Error('db locked'); });
+
+    expect(() => {
+      engine._emitMessage({ type: 'system', subtype: 'init', models: INIT_MODELS });
+    }).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Post-init identity confirmation. The `system:init` account payload is the
+// identity of the process actually running the session — stronger evidence
+// than the pre-flight file read, which can be stale.
+// ---------------------------------------------------------------------------
+
+describe('runtime.listenToMessages — account identity re-check', () => {
+  function setup(account: unknown) {
+    const engine = makeFakeEngine();
+    vi.mocked(engine.getInitData).mockReturnValue(
+      (account === undefined ? {} : { account }),
+    );
+    const handle = makeHandle(engine);
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+    const sent: [string, unknown][] = [];
+    const accountMismatchSink = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer: ((ch: string, ...args: unknown[]) => {
+        sent.push([ch, args[0]]);
+      }),
+      rateLimitHook: null,
+      sessions,
+      accountMismatchSink,
+    });
+    return { engine, accountMismatchSink, sent };
+  }
+
+  it('re-checks against the system:init payload and emits with source=session-init', () => {
+    const { engine, accountMismatchSink, sent } = setup({ email: 'personal@example.com' });
+    accountMismatchSink.mockReturnValue({
+      expected: 'work@example.com',
+      detected: 'personal@example.com',
+      configDir: '/c',
+      source: 'session-init',
+    });
+
+    engine._emitMessage({ type: 'system', subtype: 'init' });
+
+    expect(accountMismatchSink).toHaveBeenCalledWith('/c', 'personal@example.com');
+    expect(sent.find(([ch]) => ch === 'session-account-mismatch:tab-1')?.[1]).toMatchObject({
+      source: 'session-init',
+      detected: 'personal@example.com',
+    });
+  });
+
+  it('emits nothing when the sink reports a match', () => {
+    const { engine, accountMismatchSink, sent } = setup({ email: 'work@example.com' });
+    accountMismatchSink.mockReturnValue(null);
+
+    engine._emitMessage({ type: 'system', subtype: 'init' });
+
+    expect(sent.some(([ch]) => ch.startsWith('session-account-mismatch:'))).toBe(false);
+  });
+
+  it('passes null when the init payload carries no account block', () => {
+    const { engine, accountMismatchSink } = setup(undefined);
+    accountMismatchSink.mockReturnValue(null);
+
+    engine._emitMessage({ type: 'system', subtype: 'init' });
+
+    expect(accountMismatchSink).toHaveBeenCalledWith('/c', null);
+  });
+
+  it('passes null when account.email is not a string', () => {
+    const { engine, accountMismatchSink } = setup({ email: 42 });
+    accountMismatchSink.mockReturnValue(null);
+
+    engine._emitMessage({ type: 'system', subtype: 'init' });
+
+    expect(accountMismatchSink).toHaveBeenCalledWith('/c', null);
+  });
+
+  it('a throwing sink does not break message handling', () => {
+    const { engine, accountMismatchSink } = setup({ email: 'personal@example.com' });
+    accountMismatchSink.mockImplementation(() => { throw new Error('db locked'); });
+
+    expect(() => {
+      engine._emitMessage({ type: 'system', subtype: 'init' });
+    }).not.toThrow();
+  });
+});
+
+describe('runtime.listenToMessages — engine.onError', () => {
+  it('does NOT emit agent-complete on stderr-driven error', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions,
+    });
+
+    engine._emitError(new Error('benign stderr noise: 1 MCP server needs auth'));
+
+    const sendMock = vi.mocked(sendToRenderer);
+    const channels = sendMock.mock.calls.map((c) => c[0]);
+    expect(channels).not.toContain('agent-complete:tab-1');
+  });
+
+  it('does NOT transition sessionStatus to error', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions,
+    });
+
+    engine._emitError(new Error('any error'));
+
+    expect(handle.sessionStatus).toBe('started');
+
+    const sendMock = vi.mocked(sendToRenderer);
+    const statusCalls = sendMock.mock.calls.filter(
+      (c) => c[0] === 'session-status:tab-1',
+    );
+    // No status flip was emitted.
+    for (const call of statusCalls) {
+      const payload = call[1] as { sessionStatus?: string };
+      expect(payload.sessionStatus).not.toBe('error');
+    }
+  });
+
+  it('logs the error to the logging service at level=error', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+    const { service, entries } = makeLoggingStub();
+
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions,
+      logging: service,
+    });
+
+    engine._emitError(new Error('MCP auth required'));
+
+    const errorEntries = entries.filter((e) => e.level === 'error');
+    expect(errorEntries.length).toBe(1);
+    expect(errorEntries[0].source).toBe('backend');
+    expect(errorEntries[0].category).toBe('session:tab-1');
+    expect(errorEntries[0].message).toContain('MCP auth required');
+  });
+
+  it('still emits agent-error to the renderer so the LogService toast/log path runs', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions,
+    });
+
+    engine._emitError(new Error('something happened'));
+
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      'agent-error:tab-1',
+      expect.stringContaining('something happened'),
+    );
+  });
+});
+
+describe('runtime.listenToMessages — hook lifecycle messages', () => {
+  // SessionStart hooks emit system:hook_started / hook_progress / hook_response
+  // BEFORE the user sends any prompt. The main process must not emit any
+  // session-status events on these — conversationStatus is now derived by
+  // the renderer from JSONL content, not by main from FSM transitions.
+  it('does NOT emit session-status events on hook events', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions,
+    });
+
+    engine._emitMessage({ type: 'system', subtype: 'hook_started', hook_event_name: 'SessionStart' });
+    engine._emitMessage({ type: 'system', subtype: 'hook_progress', hook_event_name: 'SessionStart' });
+    engine._emitMessage({ type: 'system', subtype: 'hook_response', hook_event_name: 'SessionStart' });
+
+    const statusCalls = vi.mocked(sendToRenderer).mock.calls.filter(
+      (c) => c[0] === 'session-status:tab-1',
+    );
+    // No status flips emitted for hook plumbing.
+    expect(statusCalls.length).toBe(0);
+  });
+
+  it('still forwards hook events to the renderer via agent-output', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions,
+    });
+
+    const hookMsg = { type: 'system', subtype: 'hook_started', hook_event_name: 'SessionStart' };
+    engine._emitMessage(hookMsg);
+
+    expect(sendToRenderer).toHaveBeenCalledWith(
+      'agent-output:tab-1',
+      expect.objectContaining({ type: 'system', subtype: 'hook_started' }),
+    );
+  });
+});
+
+describe('runtime.listenToMessages — engine.onExit', () => {
+  it('clears the side chat on exit', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+    void listenToMessages('tab-1', handle, { sendToRenderer, rateLimitHook: null, sessions });
+    engine._emitExit({ code: 0 });
+    expect(sendToRenderer).toHaveBeenCalledWith('session-side-chat:tab-1', { exchanges: [] });
+  });
+
+  it('tracks the model of the latest real assistant message on the handle', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+    void listenToMessages('tab-1', handle, { sendToRenderer: vi.fn(), rateLimitHook: null, sessions });
+    engine._emitMessage({ type: 'assistant', message: { model: 'claude-opus-5-5', content: [] } });
+    engine._emitMessage({ type: 'assistant', message: { model: '<synthetic>', content: [] } });
+    expect(handle.lastModel).toBe('claude-opus-5-5');
+    engine._emitMessage({ type: 'assistant', message: { model: 'claude-fable-5-1', content: [] } });
+    expect(handle.lastModel).toBe('claude-fable-5-1');
+  });
+
+  it('emits agent-complete on clean exit (preserved)', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions,
+    });
+
+    engine._emitExit({ code: 0 });
+
+    expect(sendToRenderer).toHaveBeenCalledWith('agent-complete:tab-1');
+    expect(handle.sessionStatus).toBe('stopped');
+  });
+
+  it('does NOT emit agent-complete when the handle has been replaced (StrictMode / restart)', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    // Simulate a fresh handle replacing the old one for the same tab.
+    const newHandle = makeHandle(makeFakeEngine());
+    const sessions = new Map<string, SessionHandle>([['tab-1', newHandle]]);
+
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions,
+    });
+
+    engine._emitExit({ code: 0 });
+
+    const sendMock = vi.mocked(sendToRenderer);
+    const channels = sendMock.mock.calls.map((c) => c[0]);
+    expect(channels).not.toContain('agent-complete:tab-1');
+  });
+});
+
+/**
+ * Transcript inversion: the CLI's own JSONL is the sole source of committed
+ * transcript rows, delivered by the tail. stream-json keeps only the shapes
+ * the CLI never writes to disk. Forwarding a committed row from BOTH sources
+ * renders it twice; forwarding neither loses it entirely.
+ *
+ * See daemon/services/sessions/stream-forward.ts for how the deny-list was
+ * derived, and why an unrecognised shape forwards rather than drops.
+ */
+describe('runtime.listenToMessages — stream forwarding after the inversion', () => {
+  function setup() {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sessions = new Map<string, SessionHandle>([['tab-1', handle]]);
+    const sendToRenderer: SendToRenderer = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions,
+    });
+    const outputPayloads = (): unknown[] =>
+      vi.mocked(sendToRenderer).mock.calls
+        .filter((c) => c[0] === 'agent-output:tab-1')
+        .map((c) => c[1]);
+    return { engine, outputPayloads };
+  }
+
+  it('does not forward a committed assistant row', () => {
+    const { engine, outputPayloads } = setup();
+
+    engine._emitMessage({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+    });
+
+    expect(outputPayloads()).toHaveLength(0);
+  });
+
+  it('does not forward a committed user row', () => {
+    const { engine, outputPayloads } = setup();
+
+    engine._emitMessage({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+    });
+
+    expect(outputPayloads()).toHaveLength(0);
+  });
+
+  it('forwards partial token deltas, which never reach the JSONL', () => {
+    const { engine, outputPayloads } = setup();
+
+    engine._emitMessage({ type: 'stream_event', event: { type: 'content_block_delta' } });
+
+    expect(outputPayloads()).toHaveLength(1);
+  });
+
+  it('forwards the turn result, which the CLI never persists', () => {
+    const { engine, outputPayloads } = setup();
+
+    engine._emitMessage({ type: 'result', subtype: 'success', result: 'done' });
+
+    expect(outputPayloads()).toHaveLength(1);
+  });
+
+  it('forwards hook lifecycle events, which never reach the JSONL', () => {
+    const { engine, outputPayloads } = setup();
+
+    engine._emitMessage({ type: 'system', subtype: 'hook_started', hook_name: 'PreToolUse' });
+
+    expect(outputPayloads()).toHaveLength(1);
+  });
+
+  it('does not forward compact_boundary — main acts on it, the tail renders it', () => {
+    const { engine, outputPayloads } = setup();
+
+    engine._emitMessage({
+      type: 'system',
+      subtype: 'compact_boundary',
+      compact_metadata: { trigger: 'auto', pre_tokens: 1000 },
+    });
+
+    expect(outputPayloads()).toHaveLength(0);
+  });
+
+  it('still dispatches the result notification for a row it forwards', () => {
+    // The forwarding gate must not short-circuit main's own handling of an
+    // event. Acting on a message and relaying it are separate decisions.
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
+    });
+
+    engine._emitMessage({ type: 'result', subtype: 'success', result: 'done' });
+
+    expect(sendToRenderer).toHaveBeenCalledWith('claude-notification', expect.objectContaining({ tab_id: 'tab-1' }));
+  });
+
+  it('still captures the init model catalog for a row it does not forward', () => {
+    const engine = makeFakeEngine();
+    vi.mocked(engine.getInitData).mockReturnValue({ models: [{ value: 'x' }] as never });
+    const handle = makeHandle(engine);
+    const modelCatalogSink = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer: vi.fn(),
+      rateLimitHook: null,
+      sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
+      modelCatalogSink,
+    });
+
+    engine._emitMessage({ type: 'system', subtype: 'init', models: [{ value: 'x' }] });
+
+    expect(modelCatalogSink).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Transcript inversion, renderer side: the tail is now the transcript source
+ * in rich mode, not just a carrier for the few closure envelopes stream-json
+ * omitted. It must split lines — closure carriers to `claude-output-extra:`,
+ * everything else to `agent-output:` — so the renderer sees one pipeline
+ * with one normalization.
+ */
+describe('runtime.listenToMessages — JSONL tail as transcript source', () => {
+  let tmpDir: string;
+  let jsonlPath: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omnifex-rt-tail-'));
+    const projectDir = path.join(tmpDir, 'projects', encodeProjectId('/p'));
+    fs.mkdirSync(projectDir, { recursive: true });
+    jsonlPath = path.join(projectDir, 'sess-1.jsonl');
+    fs.writeFileSync(jsonlPath, '');
+  });
+
+  afterEach(() => {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  function setup() {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    handle.configDir = tmpDir;
+    handle.startParams.configDir = tmpDir;
+    const sendToRenderer: SendToRenderer = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
+    });
+    const sent = (channel: string): unknown[] =>
+      vi.mocked(sendToRenderer).mock.calls
+        .filter((c) => c[0] === channel)
+        .map((c) => c[1]);
+    return { engine, sent };
+  }
+
+  it('delivers a committed assistant row from the file on agent-output', async () => {
+    const { sent } = setup();
+
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'u-1',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+      }) + '\n',
+    );
+
+    await waitUntil(() => sent('agent-output:tab-1').length > 0);
+    expect(sent('agent-output:tab-1')).toEqual([
+      expect.objectContaining({ type: 'assistant', uuid: 'u-1' }),
+    ]);
+  });
+
+  it('delivers the skill companion fields stream-json strips', async () => {
+    // The whole point of the inversion: sourceToolUseID reaches the renderer,
+    // so skill detection never has to infer a record's role from position.
+    const { sent } = setup();
+
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({
+        type: 'user',
+        uuid: 'u-2',
+        isMeta: true,
+        turnCompanion: true,
+        sourceToolUseID: 'toolu_011V4gwJ',
+        message: { role: 'user', content: [{ type: 'text', text: '# Commit' }] },
+      }) + '\n',
+    );
+
+    await waitUntil(() => sent('agent-output:tab-1').length > 0);
+    expect(sent('agent-output:tab-1')[0]).toMatchObject({
+      sourceToolUseID: 'toolu_011V4gwJ',
+      isMeta: true,
+      turnCompanion: true,
+    });
+  });
+
+  it('still routes closure carriers to claude-output-extra', async () => {
+    const { sent } = setup();
+
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({
+        type: 'queue-operation',
+        operation: 'enqueue',
+        content: '<task-notification>done</task-notification>',
+      }) + '\n',
+    );
+
+    await waitUntil(() => sent('claude-output-extra:tab-1').length > 0);
+    expect(sent('claude-output-extra:tab-1')).toHaveLength(1);
+    expect(sent('agent-output:tab-1')).toHaveLength(0);
+  });
+});
+
+/**
+ * A mod's `$.ui.notify` reaches the host as `system/ui_notify` (CLI 2.1.321,
+ * CLAUDE_CODE_NOTIFICATIONS_HOST). The daemon turns it into the same
+ * `claude-notification` every client already raises, carrying an id the
+ * notification centre replaces by and the time to raise it at; a cancel
+ * becomes `claude-notification-remove`.
+ */
+describe('runtime.listenToMessages — mod notifications', () => {
+  function start() {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
+    });
+    return { engine, handle, sendToRenderer };
+  }
+  const notify = {
+    type: 'system', subtype: 'ui_notify', plugin: 'reminder', source: 'reminder@inline',
+    title: 'Stand up', text: 'Stretch', key: 'k', rewritten: false, uuid: 'u1', session_id: 'sess-1',
+  };
+
+  it('raises ui_notify as a claude-notification for its tab, marked as a mod’s', () => {
+    const { engine, sendToRenderer } = start();
+    engine._emitMessage(notify);
+    expect(sendToRenderer).toHaveBeenCalledWith('claude-notification', {
+      tab_id: 'tab-1',
+      title: 'Stand up',
+      subtitle: 'From mod “reminder”',
+      body: 'Stretch',
+      is_error: false,
+      id: 'mod:sess-1:reminder@inline:k',
+      origin: 'mod',
+    });
+  });
+
+  it('carries deliver_at for a delayed one', () => {
+    const { engine, sendToRenderer } = start();
+    engine._emitMessage({ ...notify, delay_ms: 60_000 });
+    const payload = sendToRenderer.mock.calls.find((c) => c[0] === 'claude-notification')?.[1];
+    expect(payload.deliver_at).toBeGreaterThan(Date.now() + 50_000);
+  });
+
+  it('turns ui_notify_cancel into claude-notification-remove', () => {
+    const { engine, sendToRenderer } = start();
+    engine._emitMessage({ type: 'system', subtype: 'ui_notify_cancel', plugin: 'reminder', source: 'reminder@inline', key: 'k', uuid: 'u2', session_id: 'sess-1' });
+    expect(sendToRenderer).toHaveBeenCalledWith('claude-notification-remove', { ids: ['mod:sess-1:reminder@inline:k'] });
+  });
+
+  // Settings › Notifications › "Notifications from mods". Read per frame, so
+  // turning it off quiets sessions already running.
+  it('raises nothing while mod notifications are turned off, and resumes when back on', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer = vi.fn();
+    let enabled = false;
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
+      modNotificationsEnabled: () => enabled,
+    });
+    const shown = () => sendToRenderer.mock.calls.filter((c) => c[0] === 'claude-notification').length;
+    engine._emitMessage(notify);
+    expect(shown()).toBe(0);
+    enabled = true;
+    engine._emitMessage(notify);
+    expect(shown()).toBe(1);
+  });
+
+  it('still takes a notification back while turned off', () => {
+    const engine = makeFakeEngine();
+    const handle = makeHandle(engine);
+    const sendToRenderer = vi.fn();
+    void listenToMessages('tab-1', handle, {
+      sendToRenderer,
+      rateLimitHook: null,
+      sessions: new Map<string, SessionHandle>([['tab-1', handle]]),
+      modNotificationsEnabled: () => false,
+    });
+    engine._emitMessage({ type: 'system', subtype: 'ui_notify_cancel', plugin: 'reminder', source: 'reminder@inline', key: 'k', uuid: 'u2', session_id: 'sess-1' });
+    expect(sendToRenderer).toHaveBeenCalledWith('claude-notification-remove', { ids: ['mod:sess-1:reminder@inline:k'] });
+  });
+
+  it('keeps the tracker on the handle, where a user send can withdraw until_back notices', () => {
+    const { engine, handle } = start();
+    engine._emitMessage({ ...notify, delay_ms: 60_000, until_back: true });
+    expect(handle.modNotices?.back()).toEqual(['mod:sess-1:reminder@inline:k']);
+  });
+});

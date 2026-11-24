@@ -5,7 +5,7 @@
  * speak in projects, sessions, turns and permissions, and never in CLI flags,
  * control-request subtypes or `--output-format` shapes. The daemon owns the
  * CLI; that is the whole point of the split, and it is why CLI churn should
- * only ever reach `electron/services/`.
+ * only ever reach `daemon/services/`.
  *
  * ONE DELIBERATE EXCEPTION, and it is load-bearing: `event.payload` for a
  * `transcript` event is the renderer's own `JsonlNode`, `raw` included. The

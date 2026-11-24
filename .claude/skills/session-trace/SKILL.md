@@ -26,7 +26,7 @@ A prefix of the UUID is enough. It reads, in order:
 ## Reading it
 
 - **`turn.status: running` with a `result` as the last CLI record** → the
-  daemon missed the result row. Look at `electron/services/sessions/runtime.ts`.
+  daemon missed the result row. Look at `daemon/services/sessions/runtime.ts`.
 - **`turn.status: idle` but the UI spins** → renderer rollup: open tasks or
   subagents in the transcript (`sessionDerivedState.ts`), or a stale mirror in
   `useSessionLifecycle`. The turn is never inferred from the transcript — see

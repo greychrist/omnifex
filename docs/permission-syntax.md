@@ -225,7 +225,7 @@ used by memory extraction.
 **OmniFex does not model this setting at all**, and the consequence is specific:
 a fenced read is refused *inside* the CLI and never becomes a `can_use_tool`, so
 it never reaches the `--permission-prompt-tool stdio` decider in
-`electron/services/sessions/permissions.ts`. The session shows a failing Read
+`daemon/services/sessions/permissions.ts`. The session shows a failing Read
 with no permission card and no rule to click — the permissions UI cannot
 display, explain or clear it, because there is no rule involved. If a session
 reports reads failing outside the project with no prompt, check this key in the
@@ -286,7 +286,7 @@ channel, in `acceptEdits` mode:
 chosen settings file) and applies to the running session at any destination,
 so it needs no `session` twin — unlike `addRules`.
 
-OmniFex's decider (`electron/services/sessions/permissions.ts`) therefore:
+OmniFex's decider (`daemon/services/sessions/permissions.ts`) therefore:
 
 - auto-allows a file edit in `acceptEdits` only when the CLI did not escalate
   it (`isEscalatedEdit`). An unescalated edit is one the CLI would have

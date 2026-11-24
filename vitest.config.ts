@@ -16,7 +16,7 @@ export default defineConfig({
   },
   test: {
     include: [
-      'electron/__tests__/**/*.test.ts',
+      'daemon/__tests__/**/*.test.ts',
       'src/**/*.test.ts',
       'src/**/*.test.tsx',
     ],
@@ -43,13 +43,11 @@ export default defineConfig({
       // App bootstrap and preload run in the Electron runtime and are not
       // meaningful to unit-test in isolation; exclude from coverage.
       exclude: [
-        'electron/__tests__/**',
-        'electron/main.ts',
-        'electron/preload.ts',
+        'daemon/__tests__/**',
         // Thin process entry over mcp-tools.ts, which is fully tested.
         // Exercising it means spawning a stdio server; the smoke test in the
         // Plan 5 doc covers that end to end.
-        'electron/brain-mcp.ts',
+        'daemon/brain-mcp.ts',
         // vitest defaults still apply (node_modules, dist, .vite, etc.)
       ],
       // Coverage is reported (via `npm run test:coverage`) but not gated.

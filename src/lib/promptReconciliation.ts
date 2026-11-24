@@ -24,7 +24,7 @@
  *
  * When matching fails the caller appends, so an unrecognised shape shows up
  * twice rather than vanishing. Same direction as the deny-list in
- * electron/services/sessions/stream-forward.ts: fail toward the visible bug.
+ * daemon/services/sessions/stream-forward.ts: fail toward the visible bug.
  */
 
 import type { JsonlNode } from '@/types/jsonl';

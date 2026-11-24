@@ -2,7 +2,7 @@
  * IPC channels the native macOS app serves, never the daemon.
  *
  * One list, three readers: the daemon's `rpc.invoke` allowlist removes these
- * (`electron/remote/rpc-allowlist.ts`), the renderer-side shim routes them to
+ * (`daemon/remote/rpc-allowlist.ts`), the renderer-side shim routes them to
  * the native bridge instead of the daemon (`src/lib/remote/electronApiShim.ts`),
  * and the Swift app routes exactly these (`macos/Sources/OmniFexCore/
  * NativeChannels.swift`, held to this list by `native-channels-swift.test.ts`).
