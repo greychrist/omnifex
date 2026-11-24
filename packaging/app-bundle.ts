@@ -98,9 +98,8 @@ export function shipsNativeFile(moduleName: string, rel: string): boolean {
     return (
       rel === 'package.json' ||
       rel.startsWith('lib/') ||
-      rel === 'build/Release/pty.node' ||
-      // posix_spawn'd by pty.node for every terminal; missing, every spawn fails with ENOENT.
-      rel === 'build/Release/spawn-helper'
+      // spawn-helper is posix_spawn'd from pty.node's own directory; missing, every spawn fails with ENOENT.
+      ['build/Release/', 'prebuilds/darwin-arm64/'].some((dir) => rel === `${dir}pty.node` || rel === `${dir}spawn-helper`)
     );
   }
   return true;

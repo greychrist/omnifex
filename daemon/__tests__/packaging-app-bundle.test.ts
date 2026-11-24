@@ -81,6 +81,12 @@ describe('shipsNativeFile', () => {
     expect(shipsNativeFile('node-pty', 'build/Release/spawn-helper')).toBe(true);
     expect(shipsNativeFile('node-pty', 'lib/index.js')).toBe(true);
     expect(shipsNativeFile('node-pty', 'prebuilds/win32-x64/conpty.node')).toBe(false);
+    expect(shipsNativeFile('node-pty', 'prebuilds/darwin-x64/pty.node')).toBe(false);
+  });
+
+  it('ships node-pty from its darwin-arm64 prebuilds when npm never compiled build/Release', () => {
+    expect(shipsNativeFile('node-pty', 'prebuilds/darwin-arm64/pty.node')).toBe(true);
+    expect(shipsNativeFile('node-pty', 'prebuilds/darwin-arm64/spawn-helper')).toBe(true);
     expect(shipsNativeFile('node-pty', 'third_party/conpty/x.dll')).toBe(false);
   });
 
