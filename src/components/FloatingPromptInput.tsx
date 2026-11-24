@@ -10,6 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { listPasteToMarkdown } from "@/lib/pasteHtml";
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { FilePicker } from "./FilePicker";
 import { SlashCommandPicker } from "./SlashCommandPicker";
@@ -410,6 +411,24 @@ const FloatingPromptInputInner = (
     handleImagePaste(e, (dataUrl) => {
       setPastedImages(prev => [...prev, dataUrl]);
     });
+    if (e.isDefaultPrevented()) return;
+
+    const list = listPasteToMarkdown(e.clipboardData?.getData('text/html') ?? '');
+    if (list === null) return;
+    e.preventDefault();
+    const textarea = e.currentTarget as HTMLTextAreaElement;
+    const start = textarea.selectionStart ?? prompt.length;
+    const end = textarea.selectionEnd ?? start;
+    // A list pasted before existing text would swallow it into its last item.
+    const after = prompt.slice(end);
+    const markdown = after && !after.startsWith('\n') ? `${list}\n` : list;
+    // insertText keeps the paste on the undo stack and goes through onChange.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- no standard API puts a programmatic insert on a textarea's native undo stack; execCommand('insertText') is the only one, and setPrompt below is the fallback.
+    if (typeof document.execCommand === 'function' && document.execCommand('insertText', false, markdown)) return;
+    const caret = start + markdown.length;
+    setPrompt(prompt.slice(0, start) + markdown + after);
+    setCursorPosition(caret);
+    setTimeout(() => textarea.setSelectionRange(caret, caret), 0);
   };
 
   // Browser drag-and-drop passthrough (visual only; real handling in useFileDropZone)

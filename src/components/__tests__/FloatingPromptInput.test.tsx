@@ -112,7 +112,7 @@ describe('FloatingPromptInput — chat bar layout', () => {
     Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get: () => 130 });
     try {
       render(<FloatingPromptInput onSend={vi.fn()} />);
-      const textarea = screen.getByPlaceholderText(/Message Claude/) as HTMLTextAreaElement;
+      const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>(/Message Claude/);
       expect(textarea.style.minHeight).toBe('72px');
 
       fireEvent.change(textarea, { target: { value: 'hello' } });
@@ -135,7 +135,7 @@ function stubLayout(props: Record<string, number>): () => void {
   return () => {
     for (const [k, d] of originals) {
       if (d) Object.defineProperty(HTMLElement.prototype, k, d);
-      else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k];
+      else Reflect.deleteProperty(HTMLElement.prototype, k);
     }
   };
 }
@@ -147,7 +147,7 @@ describe('FloatingPromptInput — auto-grow', () => {
     const restore = stubLayout({ scrollHeight: 130, offsetHeight: 102, clientHeight: 100 });
     try {
       render(<FloatingPromptInput onSend={vi.fn()} />);
-      const textarea = screen.getByPlaceholderText(/Message Claude/) as HTMLTextAreaElement;
+      const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>(/Message Claude/);
       fireEvent.change(textarea, { target: { value: 'hello' } });
       expect(textarea.style.minHeight).toBe('132px');
     } finally {
@@ -167,7 +167,7 @@ describe('FloatingPromptInput — auto-grow', () => {
     const restore = stubLayout({ scrollHeight: 130 });
     try {
       render(<FloatingPromptInput onSend={vi.fn()} />);
-      const textarea = screen.getByPlaceholderText(/Message Claude/) as HTMLTextAreaElement;
+      const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>(/Message Claude/);
       fireEvent.change(textarea, { target: { value: 'hello' } });
       fireEvent.keyDown(textarea, { key: 'Enter' });
       expect(textarea.value).toBe('');
@@ -201,7 +201,7 @@ describe('FloatingPromptInput — dropping a file', () => {
   it('adds an @-mention of the real path to the prompt', async () => {
     render(<FloatingPromptInput onSend={vi.fn()} />);
     dropOnDocument();
-    const textarea = screen.getByPlaceholderText(/Message Claude/) as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>(/Message Claude/);
     await waitFor(() => expect(textarea.value).toBe('@"/Users/g/My Docs/spec.pdf" '));
   });
 
@@ -209,6 +209,40 @@ describe('FloatingPromptInput — dropping a file', () => {
     render(<FloatingPromptInput onSend={vi.fn()} isActive={false} />);
     dropOnDocument();
     await new Promise((r) => setTimeout(r, 20));
-    expect((screen.getByPlaceholderText(/Message Claude/) as HTMLTextAreaElement).value).toBe('');
+    expect(screen.getByPlaceholderText<HTMLTextAreaElement>(/Message Claude/).value).toBe('');
+  });
+});
+
+// Teams/Outlook put a nested list on the clipboard as flat text/plain lines;
+// the text/html still has the structure, so the composer pastes Markdown.
+describe('FloatingPromptInput — rich-text list paste', () => {
+  const clipboard = (types: Record<string, string>) => ({
+    items: [],
+    getData: (t: string) => types[t] ?? '',
+  });
+
+  it('pastes a copied list as indented Markdown bullets at the caret', () => {
+    render(<FloatingPromptInput onSend={vi.fn()} />);
+    const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>(/Message Claude/);
+    fireEvent.change(textarea, { target: { value: 'Rules:\n\nthanks' } });
+    textarea.setSelectionRange(8, 8);
+    const notPrevented = fireEvent.paste(textarea, {
+      clipboardData: clipboard({
+        'text/plain': 'Parent\nEpics',
+        'text/html': '<ul><li>Parent<ul><li>Epics</li></ul></li></ul>',
+      }),
+    });
+    expect(notPrevented).toBe(false);
+    expect(textarea.value).toBe('Rules:\n\n- Parent\n  - Epics\nthanks');
+  });
+
+  it('leaves a paste with no list to the browser', () => {
+    render(<FloatingPromptInput onSend={vi.fn()} />);
+    const textarea = screen.getByPlaceholderText<HTMLTextAreaElement>(/Message Claude/);
+    const notPrevented = fireEvent.paste(textarea, {
+      clipboardData: clipboard({ 'text/plain': 'const x = 1;', 'text/html': '<span>const x = 1;</span>' }),
+    });
+    expect(notPrevented).toBe(true);
+    expect(textarea.value).toBe('');
   });
 });
