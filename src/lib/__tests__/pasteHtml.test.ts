@@ -40,6 +40,25 @@ describe('listPasteToMarkdown', () => {
     );
   });
 
+  it('renders blocks inside an inline wrapper (Teams wraps the message in a span)', () => {
+    const html =
+      "<meta charset='utf-8'><span data-teams=\"true\"><p>in a gist:</p><p>&nbsp;</p><ul><li>Every ticket MUST have a parent\n" +
+      '<ul><li>All parents are Epics</li><li>Exception 1</li></ul></li><li>Every ticket must have a release assigned&nbsp;\n' +
+      '<ul><li>a CMB per release&nbsp;\n<ul><li>Note: an audit trail</li></ul></li></ul></li></ul></span>';
+    expect(listPasteToMarkdown(html)).toBe(
+      [
+        'in a gist:',
+        '',
+        '- Every ticket MUST have a parent',
+        '  - All parents are Epics',
+        '  - Exception 1',
+        '- Every ticket must have a release assigned',
+        '  - a CMB per release',
+        '    - Note: an audit trail',
+      ].join('\n'),
+    );
+  });
+
   it('numbers ordered lists from their start attribute and indents under the marker', () => {
     const html = '<ol start="3"><li>three<ul><li>sub</li></ul></li><li>four</li></ol>';
     expect(listPasteToMarkdown(html)).toBe('3. three\n   - sub\n4. four');

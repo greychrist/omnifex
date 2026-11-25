@@ -6,6 +6,7 @@ const BLOCKS = new Set([
   'P', 'DIV', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER', 'MAIN', 'BLOCKQUOTE', 'PRE',
   'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TABLE', 'TBODY', 'THEAD', 'TR', 'LI', 'HR', 'FIGURE',
 ]);
+const BLOCK_SELECTOR = [...BLOCKS, ...LISTS].join(',');
 
 export function listPasteToMarkdown(html: string): string | null {
   if (!/<(ul|ol)\b/i.test(html)) return null;
@@ -44,7 +45,7 @@ function renderBlock(el: Element, inList: boolean): string[] {
     if (child.nodeType !== Node.ELEMENT_NODE) continue;
     const c = child as Element;
     if (SKIP.has(c.tagName)) continue;
-    if (!BLOCKS.has(c.tagName) && !LISTS.has(c.tagName)) {
+    if (!BLOCKS.has(c.tagName) && !LISTS.has(c.tagName) && !c.querySelector(BLOCK_SELECTOR)) {
       buf += inline(c);
       continue;
     }
