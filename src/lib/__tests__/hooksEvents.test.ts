@@ -8,7 +8,7 @@ import {
   type HookEvent,
 } from '@/types/hooks';
 
-// From https://code.claude.com/docs/en/hooks, checked against CLI 2.1.310.
+// From https://code.claude.com/docs/en/hooks, checked against CLI 2.1.310, plus PreSkillShellCommand (CLI 2.1.332 changelog; not yet in the docs).
 const DOCUMENTED_EVENTS = [
   'SessionStart', 'Setup', 'UserPromptSubmit', 'UserPromptExpansion',
   'PreToolUse', 'PermissionRequest', 'PermissionDenied', 'PostToolUse',
@@ -18,6 +18,7 @@ const DOCUMENTED_EVENTS = [
   'CwdChanged', 'DirectoryAdded', 'FileChanged', 'WorktreeCreate',
   'WorktreeRemove', 'PreCompact', 'PostCompact', 'Elicitation',
   'ElicitationResult', 'SessionEnd', 'PreModelSwitch', 'PostModelSwitch',
+  'PreSkillShellCommand',
 ];
 
 // Per the docs, these fire on every occurrence and ignore `matcher`.
@@ -67,6 +68,14 @@ describe('model-switch events', () => {
       expect(m, e).not.toBe(false);
       if (m) expect(m.examples).toContain('claude-opus-5');
     }
+  });
+});
+
+describe('PreSkillShellCommand', () => {
+  it('matches on the shell tool that runs the command', () => {
+    expect(HOOK_EVENT_INFO.PreSkillShellCommand.matcher).toMatchObject({
+      examples: expect.arrayContaining(['Bash', 'PowerShell']),
+    });
   });
 });
 

@@ -51,6 +51,16 @@ export function extractSessionRecordTypes(text: string): string[] {
   return all(/\{type:"([a-z][a-z0-9_-]*)",[^{}]{0,300}?\bsessionId:/g, text);
 }
 
+/** The CLI's own table of frame types it forwards to an SDK host (`!0`) or keeps back (`!1`). */
+export function extractStreamFrameTypes(text: string): string[] {
+  for (const m of text.matchAll(/\{assistant:!0,[^{}]{0,2000}\}/g)) {
+    const body = m[0];
+    if (!/[{,]result:!0/.test(body)) continue;
+    return uniqueSorted([...body.matchAll(/[{,]([a-z][a-z0-9_]*):!0/g)].map((k) => k[1]));
+  }
+  return [];
+}
+
 /** Only what can reach `classifySystem`: zod schemas (factory name minified) and inline frames. */
 export function extractSystemSubtypes(text: string): string[] {
   return uniqueSorted([
@@ -123,6 +133,7 @@ export const EXTRACTORS: Extractor[] = [
   { name: 'type literals', extract: (t) => all(/\btype:"([a-z][a-z0-9_-]{2,40})"/g, t) },
   { name: 'subtype literals', extract: (t) => all(/\bsubtype:"([a-z][a-z0-9_]*)"/g, t) },
   { name: 'system subtypes', extract: extractSystemSubtypes },
+  { name: 'stream-json frame types', extract: extractStreamFrameTypes },
   { name: 'hook_event_name', extract: (t) => all(/hook_event_name:"([A-Za-z]+)"/g, t) },
   { name: 'control envelopes', extract: (t) => all(/type:"(control_[a-z_]+)"/g, t) },
   { name: 'SDK control requests', extract: (t) => all(/this\.request\(\{subtype:"([a-z_]+)"/g, t) },
@@ -208,13 +219,21 @@ export const UNDRAWN_SYSTEM_SUBTYPES: Readonly<Record<string, string>> = {
   shell_cwd: 'host opt-in',
 };
 
+/** Forwarded to stream-json hosts, but judged never to reach the transcript as a row. */
+export const UNDRAWN_STREAM_TYPES: Readonly<Record<string, string>> = {
+  // AgentSession reads it for the live reply and returns before the transcript.
+  stream_event: 'consumed live',
+  // Only when initialize asks for promptSuggestions, which OmniFex never does.
+  prompt_suggestion: 'sdk opt-in',
+};
+
 /** Flags only the Claude CLI takes — a file holding one of these spawns `claude`. */
 const CLAUDE_SPAWN_MARKERS = ["'--output-format'", "'--mcp-config'", "'--setting-sources'", "'--permission-prompt-tool'"];
 
 export async function loadInventory(repoRoot: string): Promise<Inventory> {
   const load = (rel: string) => import(pathToFileURL(path.join(repoRoot, rel)).href);
   const { classifyJsonlLine } = await load('src/lib/jsonlClassifier.ts');
-  const { CLI_SIDECHANNEL_RECORD_TYPES } = await load('src/lib/cliSidechannelRecords.ts');
+  const { classifyStandaloneKind } = await load('src/lib/messageKind.ts');
   const { HOOK_EVENTS } = await load('src/types/hooks.ts');
   const { CLI_CONTROL_REQUESTS } = await load('daemon/services/sessions/cli-control-catalog.ts');
 
@@ -231,10 +250,12 @@ export async function loadInventory(repoRoot: string): Promise<Inventory> {
     catalogued: new Set(Object.keys(CLI_CONTROL_REQUESTS)),
     controlSubtypesSent: uniqueSorted(sent),
     cliFlagsPassed: uniqueSorted(flags),
-    isUnrecognizedRecord: (type) =>
-      !CLI_SIDECHANNEL_RECORD_TYPES.has(type) &&
-      !RENDERED_FROM_UNKNOWN.includes(type) &&
-      classifyJsonlLine({ type, timestamp: '2026-01-01T00:00:00.000Z', sessionId: 'probe' })?.kind === 'unknown',
+    // Mirrors modernLineOf: an `unknown` node with no standalone kind is the "Unrecognized record" line.
+    isUnrecognizedRecord: (type) => {
+      if (RENDERED_FROM_UNKNOWN.includes(type)) return false;
+      const node = classifyJsonlLine({ type, timestamp: '2026-01-01T00:00:00.000Z', sessionId: 'probe' });
+      return node?.kind === 'unknown' && classifyStandaloneKind(node, [node]) === null;
+    },
     isUnrecognizedSystemSubtype: (subtype) =>
       classifyJsonlLine({ type: 'system', subtype, timestamp: '2026-01-01T00:00:00.000Z', session_id: 'probe', uuid: 'probe' })?.kind === 'unknown',
   };
@@ -264,6 +285,13 @@ export function coverage(text: string, inv: Inventory): CoverageFinding[] {
           .map(([type]) => type),
         ...extractSessionRecordTypes(text),
       ]).filter((t) => inv.isUnrecognizedRecord(t)),
+    },
+    {
+      check: 'stream-json frame types OmniFex would draw as Unrecognized',
+      meaning: 'stdout-only, so no transcript shows them: read the emitter; if it reaches a stream-json host, give it a kind (src/lib/messageKind.ts) or consume it; if not, baseline it in UNDRAWN_STREAM_TYPES with why',
+      // `system` is decided per subtype above; a field-less probe misreads it.
+      items: extractStreamFrameTypes(text)
+        .filter((t) => t !== 'system' && !(t in UNDRAWN_STREAM_TYPES) && inv.isUnrecognizedRecord(t)),
     },
     {
       check: 'system subtypes OmniFex would draw as Unrecognized',

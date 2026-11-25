@@ -23,7 +23,7 @@ export interface HookMatcher {
 export const HOOK_EVENTS = [
   'SessionStart', 'Setup', 'SessionEnd', 'Stop', 'StopFailure',
   'PreModelSwitch', 'PostModelSwitch',
-  'UserPromptSubmit', 'UserPromptExpansion', 'MessageDisplay',
+  'UserPromptSubmit', 'UserPromptExpansion', 'PreSkillShellCommand', 'MessageDisplay',
   'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'PostToolBatch',
   'PermissionRequest', 'PermissionDenied',
   'SubagentStart', 'SubagentStop', 'TaskCreated', 'TaskCompleted', 'TeammateIdle',
@@ -150,6 +150,12 @@ export const HOOK_EVENT_INFO: Record<HookEvent, HookEventInfo> = {
     description: 'A typed command expands into a prompt, before it reaches Claude',
     group: 'Prompt',
     matcher: { hint: 'Command name', examples: ['commit', 'verify'] },
+  },
+  PreSkillShellCommand: {
+    label: 'Pre Skill Shell Command',
+    description: "Before a skill or command's inline shell command runs — can deny it or ask first",
+    group: 'Prompt',
+    matcher: { hint: 'Shell tool', examples: ['Bash', 'PowerShell'] },
   },
   MessageDisplay: {
     label: 'Message Display',

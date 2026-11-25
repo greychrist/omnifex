@@ -64,11 +64,12 @@ grep, a file read or a transcript behind it.
      SDK's control requests, every control-request schema (both
      directions, \`@internal\` ones too), CLI flags, \`origin.kind\` values, the
      \`can_use_tool\` payload keys, every object key, the stream-json schemas'
-     \`.describe()\` strings, the \`system\` subtypes, and the \`/usage\`
-     anchors;
+     \`.describe()\` strings, the \`system\` subtypes, the stream-json frame
+     types, and the \`/usage\` anchors;
    - **installed vs OmniFex**: record types (the merge map's, plus every
-     \`{type, …, sessionId}\` record the CLI appends outside it) and
-     \`system\` subtypes we
+     \`{type, …, sessionId}\` record the CLI appends outside it), stream-json
+     frame types (stdout-only, so no transcript shows them; judged ones sit
+     in \`UNDRAWN_STREAM_TYPES\`) and \`system\` subtypes we
      would draw as "Unrecognized record" (subtypes already judged not to
      reach us sit in \`UNDRAWN_SYSTEM_SUBTYPES\` in the script), hook events missing from \`HOOK_EVENTS\`, control
      subtypes we send and flags we pass that the binary no longer has, and
@@ -116,6 +117,14 @@ grep, a file read or a transcript behind it.
      (\`src/lib/subagentEvents.ts\`, \`isTaskLifecycleMarker\`, drops it), so
      it is \`filtered\`. Check whether it carries state a panel should read.
      Being dropped silently is the failure mode there, not a card.
+   - **New stream-json frame types.** \`command_lifecycle\` drew an
+     orange card the first time a peer message arrived, while every check
+     read clean: it is stdout-only, and the record checks read only what the
+     CLI writes to disk. The coverage half
+     now lists each forwarded frame type with no kind. Read its emitter,
+     probe a scratch \`-p --input-format stream-json\` session if it is
+     cheap, then give it a kind in \`src/lib/messageKind.ts\`
+     (\`classifyStandaloneKind\`), consume it, or baseline it with why.
    - **New drawn records in the Modern format.** Anything the classifier
      learns and \`src/lib/modernGrouping.ts\` (\`buildModernItems\`) doesn't
      model becomes an \`other\` item, which Modern draws as a Compact card.

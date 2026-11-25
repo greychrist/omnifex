@@ -66,6 +66,108 @@ import { probeBinaryVersion } from './util/exec-text';
  *    and no `Artifact` is working, not broken. Neither present = re-read
  *    the gate.
  *
+ * Last review: 2.1.331 -> 2.1.332 on 2026-11-24. Findings: none broken;
+ * one gap fixed (PreSkillShellCommand added to HOOK_EVENTS).
+ *
+ *  Changelog coverage: 2.1.332 (~150 entries; mostly Bedrock/Vertex/
+ *  Foundry model step-downs, Code Mode, VS Code, terminal UI, voice).
+ *  Both ends installed. Script exit 0. Merge map (47), subtypes (170),
+ *  system subtypes (84), control envelopes (5), SDK requests (56), CLI
+ *  flags (117), origin kinds (14), can_use_tool keys (30) identical.
+ *  /usage anchors unchanged (`Estimated cost:` 2 -> 2). Coverage half:
+ *  only the hook gap below.
+ *  - hook_event_name +PreSkillShellCommand: gates a skill or command's
+ *    inline `!` shell commands as they load. Input adds tool_name (Bash /
+ *    PowerShell), tool_input.command, command_name, command_source,
+ *    invoked_by; matchQuery is tool_name; output is PreToolUse's
+ *    permissionDecision shape; "prompt and agent hooks don't run on
+ *    PreSkillShellCommand" (HooksEditor writes command hooks only). Not in
+ *    the official hooks docs yet. Added to src/types/hooks.ts under
+ *    Prompt (b -> fixed). A 2.1.331-or-older CLI opens a dialog at start
+ *    for a settings file naming it.
+ *  - Control schemas +decide_held_peer_message {hold_id, decision:
+ *    deliver|drop, always?} and +set_peer_delivery: host -> CLI, "Accepted
+ *    on stdin from the host that started this process", i.e. us. They pair
+ *    with the stream-only `peer_message_hold` frame (still 'remote' in the
+ *    script baseline, still 0 in both accounts' transcripts, stream-only
+ *    per the 2.1.271 note). Changelog "Always deliver" for held messages.
+ *    (c), not taken: a held-message card + deliver/drop buttons. Without
+ *    it a headless hold still ends `dropped`/`expired`.
+ *  - Type literal +clients-started-by: background-session attacher socket
+ *    message (sibling of attacher-caps / program-status-viewers). Inert.
+ *  - Describe, read: set_permission_mode success payload now "the mode now
+ *    in effect, which can differ from the one asked for" (`-p` names it).
+ *    We ignore the reply (queries.ts); (c) small: the picker could adopt
+ *    it instead of only rolling back on errors. Handback mark now also on
+ *    "the text that a skill left after it was moved to the background"
+ *    (we don't key on handback). peer hold describe rewording; mcp_task
+ *    end times on task_notification (filtered); upload refused-for-size
+ *    key; voice dictation seconds; security-guidance hook now also on
+ *    PostToolUse; "routine" -> "scheduled task" wording. None ask anything
+ *    of us.
+ *  - Object keys +590 -65: env names (CLAUDE_CODE_SPEND_PROJECT,
+ *    _HOST_SHORT_SCRATCHPAD, _RELAUNCH_SEAT_LAUNCH...), AST node names,
+ *    peer-delivery state. Nothing new on user/assistant records or the
+ *    initialize reply.
+ *  - Changelog, checked: SDK / `-p` mid-turn messages now count as the
+ *    user's where flags aren't fetched; relayed text must be
+ *    `isSynthetic: true`. Every stdin write is a person's prompt stamped
+ *    origin human (claude-cli-engine.ts writeUserMessage) (a). Skills from
+ *    MCP servers (`server:skill`): typed ones pass through; the `/` menu's
+ *    catalog is probed in a tmpdir (commands-catalog.ts), so project MCP
+ *    servers' skills won't be listed there. Minor, not taken.
+ *    `--model default` now steps down instead of erroring: we omit
+ *    --model for default (in our favor). `/permissions` refuses rules
+ *    skipped at start: CLI-side, no rule-syntax change. Task id reuse fix,
+ *    hook output truncation at ~50k chars, permission-rule wildcard
+ *    freeze, CLAUDE.md re-sent after EnterWorktree: all in our favor.
+ *  - Changelog, inert: Bedrock/Vertex/Foundry/Mantle alias and step-down
+ *    changes, gateway list, OTel, Cyber Verification tier header, auth
+ *    login exit code, Code Mode, computer use, voice, self-hosted runner,
+ *    Remote Control, Windows/Linux, VS Code and terminal-UI fixes.
+ *
+ *  Script + prompt: no change needed; the hook gap and the two control
+ *  schemas were all visible.
+ *
+ *  OPEN ITEMS (carry forward; re-check each review):
+ *   - easel: never offered to OmniFex sessions (no UI surface, see the
+ *     2.1.331 block). Re-check only if OmniFex sends `ui_attach`, or if
+ *     easel's session.start drops the surfaces gate.
+ *   - Held peer messages: decide_held_peer_message offered (c); first real
+ *     `peer_message_hold` decides whether to build the card. Delivered ones
+ *     now draw (2026-11-24): a peer message is a `user` record, isMeta,
+ *     `origin {kind:"peer", name, from, fromMode, body}`, turnOrigin "peer";
+ *     userKind `peer-message`, kind `user.peerMessage`, and it anchors a turn
+ *     for turnDelta / lastTurnThinkingTokens. An idle session starts a turn
+ *     on receipt.
+ *   - `command_lifecycle` (stdout-only, only for commands that carry a uuid:
+ *     peer messages, never OmniFex's own prompts) drew "Unrecognized record";
+ *     now kind `queue-lifecycle`, Expanded only. The script missed it because
+ *     its record checks read only what the CLI writes to disk; it now reads
+ *     the CLI's forwarded-frame table (`extractStreamFrameTypes`).
+ *   - `conversation_reset` (b, not fixed): probed 2.1.332, a typed `/clear`
+ *     in a stream-json session emits it with a NEW session_id. OmniFex does
+ *     not intercept typed `/clear` (its Clear button restarts instead), so
+ *     the frame draws Unrecognized and the tab keeps tailing the old
+ *     transcript. Intercept `/clear` or follow the new id.
+ *   - `tool_use_summary`: forwarded, no kind; emitter gate not read yet.
+ *   - Task ticker reload: first `appKeepsStatuses` / `task_list_statuses`
+ *     in one of our sessions, check its JSONL for a persisted form.
+ *   - Fullscreen /usage order: capture a subscriber render with windows
+ *     before `Session`; bound windowBlock at the Session header if so.
+ *   - plugin_note: check the first real one against contextLedger.
+ *   - agent_note (2.1.331): first real one, decide on a dedicated line.
+ *   - Idle compaction: verify the first real occurrence (2.1.314 block);
+ *     2.1.332 fixed it being skipped for subscribers under their limit.
+ *   - ui_notify: unverified against a real mod.
+ *   - `supersedes`: first `"supersedesUuids":[` in a transcript decides
+ *     whether the renderer must drop the named rows.
+ *   - Auto-mode classifier fallback removal: not in 2.1.332.
+ *   - Keychain expiry stop (2.1.329): first real occurrence confirms the
+ *     auth-expiry banner fires.
+ *   - Skill-tool `model:` ignored (2.1.326, upstream): not fixed in
+ *     2.1.332.
+ * *
  * Last review: 2.1.330 -> 2.1.331 on 2026-11-23. Findings: none broken,
  * nothing to fix.
  *
@@ -6133,7 +6235,7 @@ import { probeBinaryVersion } from './util/exec-text';
  * `~/.claude.json` fix (we read-modify-write that file, never replace it), and
  * the VSCode screen-reader work.
  */
-export const REVIEWED_CLI_VERSION = '2.1.331';
+export const REVIEWED_CLI_VERSION = '2.1.332';
 
 // Mirrored in src/lib/api.ts; the renderer can't import from daemon/.
 export const CLI_REVIEW_REPO_DIR_SETTING_KEY = 'cli_review_repo_dir';

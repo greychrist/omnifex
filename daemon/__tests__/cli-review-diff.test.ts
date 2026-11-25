@@ -6,7 +6,9 @@ import {
   EXTRACTORS,
   RENDERED_FROM_UNKNOWN,
   UNDRAWN_SYSTEM_SUBTYPES,
+  UNDRAWN_STREAM_TYPES,
   extractSessionRecordTypes,
+  extractStreamFrameTypes,
   extractSystemSubtypes,
   USAGE_ANCHORS,
   coverage,
@@ -41,6 +43,7 @@ function fakeBundle(extra = ''): string {
     'w={type:"system",subtype:"compact_boundary"};',
     'u={origin:{kind:"human"}};u={origin:{kind:"sdk"}};',
     'c={type:"control_request",request:{subtype:"can_use_tool",tool_name:t,input:i,...s&&{permission_suggestions:s}}};',
+    'h={assistant:!0,user:!0,result:!0,system:!0,keep_alive:!1};',
     extra,
   ].join('\n');
 }
@@ -156,6 +159,25 @@ describe('extractSystemSubtypes', () => {
   });
 });
 
+describe('extractStreamFrameTypes', () => {
+  it('reads the frame types the CLI forwards to an SDK host, not the ones it keeps back', () => {
+    const t = 'var h={assistant:!0,user:!0,result:!0,system:!0,command_lifecycle:!0,keep_alive:!1,control_request:!1};'
+      + 'var g={assistant:!0,user:!0,attachment:!0,grouped_tool_use:!0};';
+    expect(extractStreamFrameTypes(t)).toEqual(['assistant', 'command_lifecycle', 'result', 'system', 'user']);
+  });
+
+  it('returns [] when the map has moved', () => {
+    expect(extractStreamFrameTypes('var h={assistant:!0};')).toEqual([]);
+  });
+});
+
+describe('UNDRAWN_STREAM_TYPES', () => {
+  it('holds only frame types OmniFex would otherwise draw as Unrecognized', async () => {
+    const inv = await loadInventory(REPO);
+    for (const t of Object.keys(UNDRAWN_STREAM_TYPES)) expect([t, inv.isUnrecognizedRecord(t)]).toEqual([t, true]);
+  });
+});
+
 describe('UNDRAWN_SYSTEM_SUBTYPES', () => {
   it('holds only subtypes OmniFex does not classify (a classified one belongs in SYSTEM_SUBTYPES alone)', async () => {
     const inv = await loadInventory(REPO);
@@ -178,6 +200,8 @@ describe('loadInventory (bound to the real code)', () => {
     expect(inv.isUnrecognizedRecord('user')).toBe(false);
     expect(inv.isUnrecognizedRecord('summary')).toBe(false);
     expect(inv.isUnrecognizedRecord('brand-new-record')).toBe(true);
+    // Unknown to the classifier, but drawn under its own kind: not an Unrecognized card.
+    expect(inv.isUnrecognizedRecord('command_lifecycle')).toBe(false);
     expect(inv.isUnrecognizedSystemSubtype('compact_boundary')).toBe(false);
     expect(inv.isUnrecognizedSystemSubtype('init')).toBe(false);
     expect(inv.isUnrecognizedSystemSubtype('brand_new_subtype')).toBe(true);
@@ -206,6 +230,9 @@ describe('coverage', () => {
     expect(meta.find((f) => f.check === 'record types OmniFex would draw as Unrecognized')?.items)
       .toEqual(['brand-new-record', 'metadata-only']);
     expect(findings['catalog entries the SDK no longer offers']).not.toContain('prompt_draft_activity');
+    const frames = coverage(text.replace('result:!0,', 'result:!0,stream_event:!0,command_lifecycle:!0,brand_new_frame:!0,'), inv);
+    expect(frames.find((f) => f.check === 'stream-json frame types OmniFex would draw as Unrecognized')?.items)
+      .toEqual(['brand_new_frame']);
     const withNew = coverage(`${text}\nthis.request({subtype:"brand_new_request"});`, inv);
     expect(withNew.find((f) => f.check === 'SDK control requests not in the catalog')?.items)
       .toEqual(['brand_new_request']);
