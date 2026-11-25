@@ -19,9 +19,9 @@ export function Shimmer({ children }: { children: string }) {
   );
 }
 
-export function Message({ from, children }: { from: 'user' | 'assistant'; children: React.ReactNode }) {
+export function Message({ from, children, ...props }: Omit<React.ComponentProps<'div'>, 'className'> & { from: 'user' | 'assistant' }) {
   return (
-    <div className={cn('group flex w-full flex-col gap-1.5', from === 'user' ? 'items-end' : 'items-start')}>
+    <div className={cn('modern-hover-row group flex w-full flex-col gap-1.5', from === 'user' ? 'items-end' : 'items-start')} {...props}>
       {children}
     </div>
   );

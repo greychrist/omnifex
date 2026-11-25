@@ -43,7 +43,7 @@ export function HoverActionsRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="group/row flex w-full min-w-0 items-start gap-2" {...props}>
+    <div className="modern-hover-row group/row flex w-full min-w-0 items-start gap-2" {...props}>
       <div className="min-w-0 flex-1">{children}</div>
       <div
         data-record-actions

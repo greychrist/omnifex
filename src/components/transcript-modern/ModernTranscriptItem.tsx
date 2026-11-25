@@ -3,7 +3,7 @@ import type { JsonlNode } from '@/types/jsonl';
 import type { ModernItem } from '@/lib/modernGrouping';
 import type { ModernLine } from '@/lib/modernLines';
 import { CopyButton } from '@/components/ui/copy-button';
-import { HoverActionsRow, Stamp, rawOfNodes } from './HoverActionsRow';
+import { Stamp, rawOfNodes } from './HoverActionsRow';
 import { CheckCircle2, RotateCcw } from 'lucide-react';
 import { extractResendPayload } from '@/lib/extractResendPayload';
 import { NoticeLine } from './NoticeLine';
@@ -242,9 +242,14 @@ function RecordActions({ item, nodes, copy, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <HoverActionsRow data-record-row={item.kind} raw={rawOfNodes(nodes)} copy={copy} stampNode={item.node}>
-      {children}
-    </HoverActionsRow>
+    <Message from="assistant" data-record-row={item.kind}>
+      <div className="w-full min-w-0">{children}</div>
+      <MessageActions from="assistant">
+        <Stamp node={item.node} />
+        <CopyButton getText={copy} className="h-6 w-6" />
+        <RawJsonPopover text={rawOfNodes(nodes)} />
+      </MessageActions>
+    </Message>
   );
 }
 

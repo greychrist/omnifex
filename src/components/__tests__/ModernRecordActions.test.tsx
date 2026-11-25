@@ -39,7 +39,7 @@ describe('Modern record items: hover Copy and Raw JSON', () => {
   for (const [name, item] of items) {
     it(`gives a ${name} a Copy button and a Raw JSON viewer`, () => {
       const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
-      const row = container.querySelector('[data-record-actions]') as HTMLElement;
+      const row = container.querySelector('[data-message-actions]') as HTMLElement;
       expect(row).not.toBeNull();
       expect(row.querySelector('button[aria-label="Copy"]')).not.toBeNull();
       expect(row.querySelector('button[aria-label="View raw JSON"]')).not.toBeNull();
@@ -48,7 +48,7 @@ describe('Modern record items: hover Copy and Raw JSON', () => {
 
   it("opens the record's own JSON, even for a line that has no body", () => {
     const { container } = render(<ModernTranscriptItem item={items[0][1]} live={false} ctx={ctx} />);
-    const view = container.querySelector('[data-record-actions] button[aria-label="View raw JSON"]') as HTMLElement;
+    const view = container.querySelector('[data-message-actions] button[aria-label="View raw JSON"]') as HTMLElement;
     fireEvent.click(view);
     const body = screen.getByTestId('raw-json-body');
     expect(body.textContent).toContain('"subtype": "status"');
@@ -57,6 +57,34 @@ describe('Modern record items: hover Copy and Raw JSON', () => {
 
   it('leads the row with the time, as an answer does', () => {
     const { container } = render(<ModernTranscriptItem item={items[0][1]} live={false} ctx={ctx} />);
-    expect(container.querySelector('[data-record-actions] [data-message-stamp]')).not.toBeNull();
+    expect(container.querySelector('[data-message-actions] [data-message-stamp]')).not.toBeNull();
   });
+
+  it('puts the actions under the record, as an answer does, not beside it', () => {
+    for (const [name, item] of items) {
+      const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
+      const row = container.querySelector('[data-record-row]') as HTMLElement;
+      expect(row, name).toHaveClass('flex-col');
+      expect(row.lastElementChild, name).toHaveAttribute('data-message-actions');
+      cleanup();
+    }
+  });
+});
+
+describe('Modern rows: hover highlight', () => {
+  const textNode = { kind: 'assistant', receivedAt: '2026-11-23T15:00:00.000Z', raw: { type: 'assistant' } } as unknown as JsonlNode;
+  const promptNode = { kind: 'user', receivedAt: '2026-11-23T15:00:00.000Z', raw: { type: 'user' } } as unknown as JsonlNode;
+  const rows: [string, ModernItem][] = [
+    ['prompt', { kind: 'prompt', key: 'p', node: promptNode, text: 'Hi' }],
+    ['answer', { kind: 'text', key: 'a', node: textNode, text: 'Hello' }],
+    ['recap', { kind: 'recap', key: 'r', node: textNode, text: 'Recap' }],
+    ...items,
+  ];
+  for (const [name, item] of rows) {
+    it(`marks the ${name} row so hovering it highlights the whole message`, () => {
+      const { container } = render(<ModernTranscriptItem item={item} live={false} ctx={ctx} />);
+      const actions = container.querySelector('[data-message-actions]') as HTMLElement;
+      expect(actions.closest('.modern-hover-row'), name).not.toBeNull();
+    });
+  }
 });
