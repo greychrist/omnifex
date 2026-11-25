@@ -1,14 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { changeSessionPermissionMode } from '../sessionPermissionModeChange';
 
-function makeDeps(overrides?: { hasLiveSession?: boolean; error?: Error }) {
+function makeDeps(overrides?: { hasLiveSession?: boolean; error?: Error; applied?: string | null }) {
   return {
     tabId: 'tab-1',
     hasLiveSession: overrides?.hasLiveSession ?? true,
     previous: 'acceptEdits',
     api: {
-      sessionSetPermissionMode: vi.fn(async () => {
+      sessionSetPermissionMode: vi.fn(async (): Promise<string | null> => {
         if (overrides?.error) throw overrides.error;
+        return overrides?.applied ?? null;
       }),
     },
     setPermissionMode: vi.fn(),
@@ -43,5 +44,20 @@ describe('changeSessionPermissionMode', () => {
     expect(deps.setPermissionMode.mock.calls).toEqual([['bypassPermissions'], ['acceptEdits']]);
     expect(deps.appendMessage).not.toHaveBeenCalled();
     expect(deps.onError).toHaveBeenCalledWith(error);
+  });
+
+  it('moves the picker to the mode the CLI says is in effect, and marks that one', async () => {
+    const deps = makeDeps({ applied: 'plan' });
+    await changeSessionPermissionMode('acceptEdits', deps);
+    expect(deps.setPermissionMode.mock.calls).toEqual([['acceptEdits'], ['plan']]);
+    expect(deps.appendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'control-change', control: 'permission', value: 'plan' }),
+    );
+  });
+
+  it('leaves the picker alone when the CLI confirms the requested mode', async () => {
+    const deps = makeDeps({ applied: 'plan' });
+    await changeSessionPermissionMode('plan', deps);
+    expect(deps.setPermissionMode.mock.calls).toEqual([['plan']]);
   });
 });

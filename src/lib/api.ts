@@ -1416,7 +1416,7 @@ export const api = {
     return apiCall("session_suggest_title", { tabId, description });
   },
 
-  async sessionSetPermissionMode(tabId: string, mode: string): Promise<void> {
+  async sessionSetPermissionMode(tabId: string, mode: string): Promise<string | null> {
     return apiCall("session_set_permission_mode", { tabId, mode });
   },
 

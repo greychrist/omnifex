@@ -749,8 +749,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<RunningDaemon> {
       suggestTitle: (id, description) => sessionsService.suggestTitle(id, description),
       // Persisted so a resume respawns in the mode the session was left in.
       setPermissionMode: async (id, mode) => {
-        await sessionsService.setPermissionMode(id, mode as Parameters<typeof sessionsService.setPermissionMode>[1]);
-        sessionLog.updateOptions(id, { permissionMode: mode });
+        const applied = await sessionsService.setPermissionMode(id, mode as Parameters<typeof sessionsService.setPermissionMode>[1]);
+        sessionLog.updateOptions(id, { permissionMode: applied ?? mode });
+        return applied;
       },
       setEffort: (id, level) => sessionsService.setEffort(id, level as Parameters<typeof sessionsService.setEffort>[1]),
       applyPermissions: (id, permissions) =>

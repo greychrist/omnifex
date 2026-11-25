@@ -204,7 +204,7 @@ export interface SessionsService {
   closeSideChat(tabId: string): void;
   getSideChat(tabId: string): SideChat;
   suggestTitle(tabId: string, description: string): Promise<string | null>;
-  setPermissionMode(tabId: string, mode: PermissionMode): Promise<void>;
+  setPermissionMode(tabId: string, mode: PermissionMode): Promise<string | null>;
   setEffort(tabId: string, level: 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): Promise<void>;
   applyPermissions(
     tabId: string,

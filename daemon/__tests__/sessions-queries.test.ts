@@ -224,6 +224,22 @@ describe('setPermissionMode', () => {
     expect(sessions.get('tab1')!.permissionMode).toBe('acceptEdits');
   });
 
+  // A `-p` CLI names the mode in effect (2.1.332); in Plan it may keep Plan and queue the pick.
+  it('adopts and returns the mode the CLI reports', async () => {
+    const { engine } = createEngine({ control: () => ({ mode: 'plan' }) });
+    const { q, sessions } = setup({ engine });
+    sessions.get('tab1')!.permissionMode = 'plan';
+    await expect(q.setPermissionMode('tab1', 'acceptEdits')).resolves.toBe('plan');
+    expect(sessions.get('tab1')!.permissionMode).toBe('plan');
+  });
+
+  it('returns null and keeps the requested mode when the CLI only acknowledges', async () => {
+    const { engine } = createEngine();
+    const { q, sessions } = setup({ engine });
+    await expect(q.setPermissionMode('tab1', 'acceptEdits')).resolves.toBeNull();
+    expect(sessions.get('tab1')!.permissionMode).toBe('acceptEdits');
+  });
+
   it('rolls the remembered mode back and rejects when the request fails', async () => {
     const { engine } = createEngine({
       control: () => {

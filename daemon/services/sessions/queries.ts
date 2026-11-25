@@ -225,11 +225,11 @@ export function createQueryPassthroughs(
     }
   }
 
-  async function setPermissionMode(tabId: string, mode: PermissionMode): Promise<void> {
+  async function setPermissionMode(tabId: string, mode: PermissionMode): Promise<string | null> {
     const handle = liveEngine(tabId);
     if (!handle) {
       logControl('set_permission_mode', tabId, { ok: false, reason: 'no-live-engine', mode });
-      return;
+      return null;
     }
     // The CLI allows Bypass mid-session only when it was spawned in Bypass.
     if (mode === 'bypassPermissions' && handle.startParams.permissionMode !== 'bypassPermissions') {
@@ -240,8 +240,12 @@ export function createQueryPassthroughs(
     const previous = handle.permissionMode;
     handle.permissionMode = mode;
     try {
-      const res = await handle.engine.sendControlRequest('set_permission_mode', { mode });
+      const res = await handle.engine.sendControlRequest<{ mode?: unknown } | undefined>('set_permission_mode', { mode });
       logControl('set_permission_mode', tabId, { ok: true, mode, response: res ?? null });
+      // In Plan the CLI may keep Plan and apply the pick when Plan ends.
+      const applied = typeof res?.mode === 'string' ? res.mode : null;
+      if (applied) handle.permissionMode = applied;
+      return applied;
     } catch (err) {
       handle.permissionMode = previous;
       const msg = err instanceof Error ? err.message : String(err);

@@ -7,7 +7,7 @@ export interface ChangeSessionPermissionModeDeps {
   hasLiveSession: boolean;
   previous: string;
   api: {
-    sessionSetPermissionMode(tabId: string, mode: string): Promise<void>;
+    sessionSetPermissionMode(tabId: string, mode: string): Promise<string | null>;
   };
   setPermissionMode(mode: string): void;
   appendMessage(node: JsonlNode): void;
@@ -21,18 +21,21 @@ export async function changeSessionPermissionMode(
   deps.setPermissionMode(mode);
   // No session yet: the picker's mode is what the next launch spawns with.
   if (!deps.hasLiveSession) return;
+  let applied: string | null;
   try {
-    await deps.api.sessionSetPermissionMode(deps.tabId, mode);
+    applied = await deps.api.sessionSetPermissionMode(deps.tabId, mode);
   } catch (err) {
     deps.setPermissionMode(deps.previous);
     deps.onError(err);
     return;
   }
+  const effective = applied ?? mode;
+  if (effective !== mode) deps.setPermissionMode(effective);
   // jsonl-tail never forwards the persisted permission-mode line live, so this marker is the live feedback; the two never coexist.
   deps.appendMessage({
     kind: 'control-change',
     control: 'permission',
-    value: String(mode),
+    value: effective,
     sessionId: deps.tabId,
     receivedAt: new Date().toISOString(),
   });
