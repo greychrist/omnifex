@@ -117,6 +117,10 @@ const entries: [string, JsonlNode][] = [
   rec('task-lifecycle', { type: 'system', subtype: 'task_progress', task_id: 'tk', description: 'Check the appended CSS' }),
   // Appended, not inserted: fixture uuids number by position, and the golden snapshot names them.
   rec('system.status', system('status', { status: 'requesting' })),
+  rec('user.peerMessage', user('<cross-session-message from="uds:/tmp/a.sock" from-name="omnifex-29">hi</cross-session-message>', {
+    isMeta: true, origin: { kind: 'peer', from: 'uds:/tmp/a.sock', name: 'omnifex-29', body: 'hi' },
+  })),
+  rec('queue-lifecycle', { type: 'command_lifecycle', command_uuid: 'u-001', state: 'completed' }),
 ];
 
 export const ALL_KIND_RECORDS: JsonlNode[] = entries.map(([, n]) => n);

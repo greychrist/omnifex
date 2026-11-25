@@ -69,6 +69,16 @@ function commandOutputLine(icon: IconName, title: string, output: string): Moder
   return { icon, title, body, mono: true, fold: body.split('\n').length > OPEN_LINES_MAX };
 }
 
+function peerMessageLine(raw: unknown, icon: IconName): ModernLine {
+  const origin = (raw as { origin?: { name?: unknown; from?: unknown; body?: unknown } }).origin;
+  const sender = [origin?.name, origin?.from].find((v): v is string => typeof v === 'string' && v !== '') ?? 'another session';
+  const title = `Message from ${sender}`;
+  const body = typeof origin?.body === 'string' ? origin.body.replace(/^\n+|\s+$/g, '') : '';
+  if (!body) return { icon, title };
+  if (!body.includes('\n') && body.length <= DETAIL_MAX) return { icon, title, detail: body };
+  return { icon, title, body, fold: body.split('\n').length > OPEN_LINES_MAX };
+}
+
 const ERROR_SUBTYPES = new Set(['api_error', 'error_during_execution', 'permission_denied']);
 
 export function modernLineOf(
@@ -187,6 +197,10 @@ function specificLine(node: JsonlNode, kindId: string, icon: IconName, label: st
       if (kindId === 'cli-state') {
         return { icon, title: `${label}: ${String(raw.type)}`, body: json, mono: true, fold: true };
       }
+      if (kindId === 'queue-lifecycle') {
+        const state = (raw as { state?: unknown }).state;
+        return { icon, title: typeof state === 'string' && state ? `${label}: ${state}` : label, body: json, mono: true, fold: true };
+      }
       if (isTaskLifecycleMarker(raw)) {
         const r = raw as { subtype: string; task_type?: unknown; description?: unknown; status?: unknown };
         const detail = [r.task_type, r.description, r.status].filter((v): v is string => typeof v === 'string' && v !== '').join(' · ');
@@ -209,6 +223,7 @@ function specificLine(node: JsonlNode, kindId: string, icon: IconName, label: st
       if (node.userKind === 'local-command' && commandEnvelopeKind(text) === 'output') {
         return commandOutputLine(icon, 'Command output', localCommandOutput(text));
       }
+      if (node.userKind === 'peer-message') return peerMessageLine(node.raw, icon);
       return null;
     }
 

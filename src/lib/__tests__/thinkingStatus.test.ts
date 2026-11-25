@@ -32,6 +32,12 @@ const toolResult = (): JsonlNode =>
     raw: { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] } },
   }) as unknown as JsonlNode;
 
+const peerMessage = (body: string): JsonlNode =>
+  ({
+    kind: 'user', userKind: 'peer-message', sessionId: '', receivedAt: '',
+    raw: { type: 'user', isMeta: true, origin: { kind: 'peer', name: 'omnifex-29', body }, message: { role: 'user', content: body } },
+  }) as unknown as JsonlNode;
+
 const subagentPrompt = (text: string): JsonlNode =>
   ({
     kind: 'user', userKind: 'prompt', sessionId: '', receivedAt: '',
@@ -96,6 +102,12 @@ describe('deriveThinkingStatus — burst start', () => {
 });
 
 describe('lastTurnThinkingTokens', () => {
+  it('stops at a message from another session, which starts its own turn', () => {
+    expect(
+      lastTurnThinkingTokens([userText('go'), thinkingTokens(5000), assistantText('a'), peerMessage('hi'), thinkingTokens(200), assistantText('b')]),
+    ).toBe(200);
+  });
+
   it('returns the burst total after the burst has ended', () => {
     expect(
       lastTurnThinkingTokens([userText('go'), thinkingTokens(1200), thinkingTokens(4800), assistantText('done')]),

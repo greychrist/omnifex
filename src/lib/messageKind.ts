@@ -33,11 +33,12 @@ function findMatchingToolUseName(
   return transcriptIndex(allMessages).toolUses.get(toolUseId)?.name;
 }
 
-/** Only `origin.kind` task-notification / coordinator are injected; `human`, absent or unknown fall to the content rules. */
+/** Only `origin.kind` task-notification / coordinator / peer are injected; `human`, absent or unknown fall to the content rules. */
 export function originInjectedKind(raw: unknown): string | null {
   const kind = (raw as { origin?: { kind?: unknown } })?.origin?.kind;
   if (kind === 'task-notification') return 'user.taskNotification';
   if (kind === 'coordinator') return 'user.coordinatorMessage';
+  if (kind === 'peer') return 'user.peerMessage';
   return null;
 }
 
@@ -80,6 +81,7 @@ export function classifyStandaloneKind(
     }
     if (isCliSidechannelRecord(raw)) return 'cli-state';
     if (isTaskLifecycleMarker(raw)) return 'task-lifecycle';
+    if (raw.type === 'command_lifecycle') return 'queue-lifecycle';
     return null;
   }
 

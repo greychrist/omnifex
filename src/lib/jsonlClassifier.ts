@@ -145,6 +145,8 @@ function classifyUser(r: Record<string, unknown>, sessionId: string, receivedAt:
     userKind = 'compact-summary';
   } else if (isToolResultOnly(content)) {
     userKind = 'tool-result';
+  } else if ((r.origin as { kind?: unknown } | undefined)?.kind === 'peer') {
+    userKind = 'peer-message';
   } else if (isMeta && hasSourceToolUseID) {
     userKind = 'meta-skill';
   } else if (isMeta && isAttachmentMarker(content)) {

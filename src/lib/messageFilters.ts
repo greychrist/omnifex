@@ -12,7 +12,7 @@ export function filterDisplayableMessages(messages: JsonlNode[]): JsonlNode[] {
 
   return messages.filter((message, index) => {
     // Skill injections are isMeta in the JSONL (isSynthetic live) but carry the SKILL.md body.
-    const isMeta = message.kind === 'user' && (message.raw as { isMeta?: boolean }).isMeta === true;
+    const isMeta = message.kind === 'user' && message.userKind !== 'peer-message' && (message.raw as { isMeta?: boolean }).isMeta === true;
     const isSkillInjected = isMeta && !!detectSkillInjection(message, messages);
 
     // A `type: 'summary'` record is meta but is the only signal the history was compacted.
@@ -23,6 +23,10 @@ export function filterDisplayableMessages(messages: JsonlNode[]): JsonlNode[] {
     }
 
     if (isTaskLifecycleMarker(rawShape)) {
+      return false;
+    }
+
+    if (rawType === "command_lifecycle") {
       return false;
     }
 
@@ -59,6 +63,8 @@ export function filterDisplayableMessages(messages: JsonlNode[]): JsonlNode[] {
     }
 
     if (message.kind === "user") {
+      // Drawn from `origin.body`; its content is the CLI's wrapper string.
+      if (message.userKind === 'peer-message') return true;
       if (isMeta && !isSkillInjected) return false;
 
       const msgContent = (message.raw as { message?: { content?: unknown } }).message?.content;

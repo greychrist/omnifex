@@ -99,7 +99,9 @@ export type UserKind =
   /** A built-in slash command's echo and stdout: run client-side, the model never replies. A skill's echo is a 'prompt'. */
   | 'local-command'
   /** `[Request interrupted by user]`: a `user` record nobody owes a reply to. */
-  | 'interrupt';
+  | 'interrupt'
+  /** Sent by another Claude session (`origin.kind: 'peer'`): written `isMeta`, but addressed to this session. */
+  | 'peer-message';
 
 export type SystemSubtype =
   | 'init'

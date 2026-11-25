@@ -34,7 +34,7 @@ export function lastTurnThinkingTokens(messages: JsonlNode[]): number | null {
   let inBurst = false;
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (message.kind === "user" && message.userKind === "prompt" && forwardedParentToolUseId(message.raw) === null) break;
+    if (message.kind === "user" && (message.userKind === "prompt" || message.userKind === "peer-message") && forwardedParentToolUseId(message.raw) === null) break;
     if (message.kind !== "system") {
       inBurst = false;
       continue;

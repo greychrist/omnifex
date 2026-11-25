@@ -120,7 +120,7 @@ function promptAnchors(
   const out: { node: Extract<JsonlNode, { kind: 'user' }>; index: number }[] = [];
   for (let i = 0; i < messages.length; i += 1) {
     const node = messages[i];
-    if (node.kind !== 'user' || node.userKind !== 'prompt') continue;
+    if (node.kind !== 'user' || (node.userKind !== 'prompt' && node.userKind !== 'peer-message')) continue;
     if (forwardedParentToolUseId(node.raw) !== null) continue;
     out.push({ node, index: i });
   }

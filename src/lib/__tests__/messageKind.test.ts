@@ -37,6 +37,8 @@ const EMITTABLE_IDS = [
   "attachment.deferred_tools_delta", "attachment.skill_listing", "attachment.project_doc_reads",
   "cli-state",
   "task-lifecycle",
+  "queue-lifecycle",
+  "user.peerMessage",
 ];
 
 describe('classifier ↔ registry coverage', () => {

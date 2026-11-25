@@ -32,6 +32,15 @@ const prompt = (uuid = 'p1'): JsonlNode =>
     raw: { type: 'user', uuid, message: { role: 'user', content: 'hi' } },
   }) as unknown as JsonlNode;
 
+const peerMessage = (uuid = 'peer1'): JsonlNode =>
+  ({
+    kind: 'user',
+    sessionId: 's1',
+    receivedAt: '2026-07-30T10:00:00Z',
+    userKind: 'peer-message',
+    raw: { type: 'user', uuid, isMeta: true, origin: { kind: 'peer', body: 'hi' }, message: { role: 'user', content: 'hi' } },
+  }) as unknown as JsonlNode;
+
 const toolResult = (): JsonlNode =>
   ({
     kind: 'user',
@@ -234,5 +243,16 @@ describe('turnDeltaSeries — the jump threshold', () => {
   it('keeps a turn delta whole across its tool loop', () => {
     const msgs = [assistant(100_000), prompt('p1'), assistant(425_000), toolResult(), assistant(427_000)];
     expect(turnDeltaSeries(msgs)[0].deltaTokens).toBe(327_000);
+  });
+});
+
+describe('turnDeltaSeries — a turn another session started', () => {
+  it('gets its own entry instead of folding into the previous prompt', () => {
+    const series = turnDeltaSeries([
+      prompt('p1'), assistant(10_000),
+      peerMessage('peer1'), assistant(25_000),
+    ]);
+    expect(series).toHaveLength(1);
+    expect(series[0]).toMatchObject({ prevTotal: 10_000, newTotal: 25_000, promptUuid: 'peer1' });
   });
 });

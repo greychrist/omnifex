@@ -42,6 +42,7 @@ exports[`what Standard draws (golden — never update with -u) > Greg's saved co
   "u-081-system.ui_toast",
   "u-085-user.prompt",
   "u-086-assistant.text.endTurn",
+  "u-090-user.peerMessage",
 ]
 `;
 
@@ -125,6 +126,7 @@ exports[`what Standard draws (golden — never update with -u) > default config,
   "u-084-unknown",
   "u-085-user.prompt",
   "u-086-assistant.text.endTurn",
+  "u-090-user.peerMessage",
 ]
 `;
 
@@ -171,6 +173,7 @@ exports[`what Standard draws (golden — never update with -u) > default config,
   "u-081-system.ui_toast",
   "u-085-user.prompt",
   "u-086-assistant.text.endTurn",
+  "u-090-user.peerMessage",
 ]
 `;
 
@@ -235,6 +238,7 @@ exports[`what Standard draws (golden — never update with -u) > default config,
   "u-084-unknown",
   "u-085-user.prompt",
   "u-086-assistant.text.endTurn",
+  "u-090-user.peerMessage",
 ]
 `;
 
@@ -390,6 +394,12 @@ exports[`what Standard draws per kind setting (golden — never update with -u) 
   "user.command": {
     "hidden": [
       "u-049-user.command",
+    ],
+    "shown": [],
+  },
+  "user.peerMessage": {
+    "hidden": [
+      "u-090-user.peerMessage",
     ],
     "shown": [],
   },
@@ -640,6 +650,12 @@ exports[`what Standard draws per kind setting (golden — never update with -u) 
     ],
     "shown": [],
   },
+  "user.peerMessage": {
+    "hidden": [
+      "u-090-user.peerMessage",
+    ],
+    "shown": [],
+  },
   "user.skillInjection": {
     "hidden": [
       "u-025-user.skillInjection",
@@ -732,6 +748,12 @@ exports[`what Standard draws per kind setting (golden — never update with -u) 
   "system.ui_toast": {
     "hidden": [
       "u-081-system.ui_toast",
+    ],
+    "shown": [],
+  },
+  "user.peerMessage": {
+    "hidden": [
+      "u-090-user.peerMessage",
     ],
     "shown": [],
   },
