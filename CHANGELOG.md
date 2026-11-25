@@ -5,6 +5,13 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.58] — 2026-11-25
+
+### Fixed
+
+- A bulleted list copied from Microsoft Teams now pastes into the prompt as a nested Markdown list instead of one run-together line. Teams wraps the message in an inline element, which the converter used to flatten.
+- The packaged app ships `node-pty` from its prebuilt binaries when no locally built copy exists.
+
 ## [0.5.57] — 2026-11-24
 
 ### Added
