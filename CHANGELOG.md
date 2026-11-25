@@ -5,6 +5,24 @@ All notable changes to OmniFex (formerly GreyChrist) are documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.59] — 2026-11-25
+
+### Added
+
+- Messages another Claude session sends this one now show in the transcript as "Message from <session>" with the text it sent, in Standard and Expanded. They used to be invisible: the CLI writes them as hidden records. A turn such a message starts counts as its own turn for the context-jump readout and the last-turn thinking total.
+- The hooks editor offers `PreSkillShellCommand` (Claude Code 2.1.332), which can refuse or ask about a skill's or command's inline shell commands as it loads. It matches on the shell tool, Bash or PowerShell.
+- Hovering a message, record or step tints it, so it is clear which one the Copy and raw JSON buttons belong to.
+
+### Changed
+
+- In Expanded, a record's time, Copy and raw JSON buttons sit under it in the same row and spacing as a message's, instead of at the far right with no time. The row's space is kept, so nothing moves on hover.
+- Reviewed against Claude Code 2.1.332. The release-review script now also checks the frame types Claude Code sends a host on its output stream, which never reach a transcript.
+
+### Fixed
+
+- `command_lifecycle` frames, sent while a queued message such as one from another session runs, no longer draw as "Unrecognized record". They are a Queued command record, shown in Expanded only.
+- The permission picker, the permission prompts and the mode a session resumes in follow the mode Claude Code reports it applied, rather than the one picked. In Plan, Claude Code can keep Plan and apply the pick when Plan ends.
+
 ## [0.5.58] — 2026-11-25
 
 ### Fixed
